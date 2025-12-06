@@ -59,12 +59,12 @@ public class CommandManager : MonoBehaviour
         }
     }
 
-    public async UniTask UndoTurn(Player player, List<Enemy> enemies)
+    public async UniTask<bool> UndoTurn(Player player, List<Enemy> enemies)
     {
         if (turnRecords.Count == 0)
         {
             Debug.Log("Undoできるターンがありません");
-            return;
+            return false;
         }
 
         AudioManager.Instance.PlaySE(AudioManager.SEType.reset);
@@ -87,6 +87,7 @@ public class CommandManager : MonoBehaviour
             }
         }
         isUndoing = false;
+        return true;
     }
 
     public void ResetTurn()

@@ -4,6 +4,7 @@ using UnityEngine.SceneManagement; // シーン遷移用
 using UnityEngine.Rendering.Universal;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
+using UniRx;
 
 
 public class OptionPresenter : MonoBehaviour
@@ -188,6 +189,12 @@ public class OptionPresenter : MonoBehaviour
                 view.UpdateGameSpeedDisplay(model.GameSpeed, direction);
                 ApplyGameSpeed(); // 設定を即時反映
                 break;
+
+            case OptionModel.ItemType.Language:
+                model.ChangeLanguage(direction);
+                view.UpdateLanguageDisplay(model.Language, direction);
+                ApplyLanguage(); // 設定を即時反映
+                break;
         }
     }
 
@@ -235,15 +242,10 @@ public class OptionPresenter : MonoBehaviour
 
         Screen.SetResolution(model.CurrentResolution.x, model.CurrentResolution.y, mode);
 
-        int baseWidth = 960;
-        int basePPU = 2;
-
-        // 幅に基づいて倍率を計算
-        float scale = (float)model.CurrentResolution.x / baseWidth;
-        int ppu = Mathf.RoundToInt(basePPU * scale);
-        pixelPerfectCamera.assetsPPU = ppu;
-        pixelPerfectCamera.refResolutionX = model.CurrentResolution.x;
-        pixelPerfectCamera.refResolutionY = model.CurrentResolution.y;
+        if (CameraManager.Instance != null)
+        {
+            CameraManager.Instance.ApplyResolutionSettings(model.CurrentResolution);
+        }
 
         GameSettings.screenMode = (mode == FullScreenMode.Windowed) ? 0 : 1;
         GameSettings.Resolution = model.CurrentResolution;
@@ -252,6 +254,17 @@ public class OptionPresenter : MonoBehaviour
     private void ApplyGameSpeed()
     {
         GameSettings.GameSpeed = model.GameSpeed == OptionModel.GameSpeedType.Normal ? 0 : 1;
+    }
+
+    private void ApplyLanguage()
+    {
+        GameSettings.Language = (int)model.Language;
+
+        var locales = UnityEngine.Localization.Settings.LocalizationSettings.AvailableLocales.Locales;
+        if (locales != null && locales.Count > (int)model.Language)
+        {
+             UnityEngine.Localization.Settings.LocalizationSettings.SelectedLocale = locales[(int)model.Language];
+        }
     }
 
     private void RefreshView()
@@ -263,6 +276,7 @@ public class OptionPresenter : MonoBehaviour
         view.UpdateScreenModeDisplay(model.ScreenMode);
         view.UpdateResolutionDisplay(model.CurrentResolution);
         view.UpdateGameSpeedDisplay(model.GameSpeed);
+        view.UpdateLanguageDisplay(model.Language);
     }
 
 

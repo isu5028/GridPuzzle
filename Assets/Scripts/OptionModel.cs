@@ -6,7 +6,7 @@ using System.Collections.Generic;
 public class OptionModel
 {
     // 設定項目の定義
-    public enum ItemType { Close, BackToTitle, BgmVolume, SeVolume, ScreenMode, Resolution, GameSpeed}
+    public enum ItemType { Close, BackToTitle, BgmVolume, SeVolume, ScreenMode, Resolution, Language, GameSpeed}
 
     public ItemType CurrentItem { get; private set; } = ItemType.Close;
 
@@ -17,8 +17,8 @@ public class OptionModel
     public int MaxLevel = 100;
     public int MinLevel = 0;
 
-    public enum ScreenModeType { Windowed, Fullscreen}
-    public ScreenModeType ScreenMode { get; private set; } = ScreenModeType.Windowed;
+    public enum ScreenModeType { Window, Fullscreen}
+    public ScreenModeType ScreenMode { get; private set; } = ScreenModeType.Window;
 
     public List<Vector2Int> AvailableResolutions { get; private set; } = new List<Vector2Int>()
     {
@@ -33,9 +33,19 @@ public class OptionModel
     public enum GameSpeedType { Normal, Fast}
     public GameSpeedType GameSpeed { get; private set; } = GameSpeedType.Normal;
 
+    public enum LanguageType { English, Japanese }
+    public LanguageType Language { get; private set; } = LanguageType.English;
+
     public OptionModel()
     {
-        CurrentResolutionIndex = 0;
+        // GameSettingsから初期値を反映
+        ScreenMode = (ScreenModeType)GameSettings.screenMode;
+
+        int resIndex = AvailableResolutions.FindIndex(r => r.x == GameSettings.Resolution.x && r.y == GameSettings.Resolution.y);
+        CurrentResolutionIndex = resIndex >= 0 ? resIndex : 0;
+
+        GameSpeed = (GameSpeedType)GameSettings.GameSpeed;
+        Language = (LanguageType)GameSettings.Language;
     }
 
     // 選択項目の移動
@@ -74,5 +84,10 @@ public class OptionModel
     {
         int count = AvailableResolutions.Count;
         CurrentResolutionIndex = (CurrentResolutionIndex + direction + count) % count;
+    }
+
+    public void ChangeLanguage(int direction)
+    {
+        Language = Utility.GetNextEnum(Language, direction);
     }
 }

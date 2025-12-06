@@ -1,5 +1,6 @@
 using UnityEngine;
 using Cysharp.Threading.Tasks;
+using UnityEngine.Rendering.Universal;
 using System.Threading;
 using DG.Tweening;
 using System;
@@ -13,6 +14,7 @@ public class CameraManager : MonoBehaviour
 
     [Header("Camera Settings")]
     [SerializeField] private Camera mainCamera = null!;
+    [SerializeField] private PixelPerfectCamera pixelPerfectCamera = null!;
 
     [Header("Shake Settings")]
     [SerializeField] private float defaultShakeStrength = 0.5f;
@@ -52,8 +54,16 @@ public class CameraManager : MonoBehaviour
     private void Start()
     {
         // 念のため、開始時に元の位置を記録
+        // 念のため、開始時に元の位置を記録
         originalPosition = mainCamera.transform.position;
         SceneManager.sceneLoaded += OnSceneLoaded;
+
+        // PixelPerfectCameraの初期化
+        if (pixelPerfectCamera == null && mainCamera != null)
+        {
+             mainCamera.TryGetComponent(out pixelPerfectCamera);
+        }
+        ApplyResolutionSettings(GameSettings.Resolution);
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -181,5 +191,23 @@ public class CameraManager : MonoBehaviour
         shakeOffset = Vector3.zero;
         isShaking = false;
 
+    }
+
+    public void ApplyResolutionSettings(Vector2Int resolution)
+    {
+        if (pixelPerfectCamera == null) return;
+
+        int baseWidth = 960;
+        int basePPU = 2;
+
+        // 幅に基づいて倍率を計算
+        float scale = (float)resolution.x / baseWidth;
+        int ppu = Mathf.RoundToInt(basePPU * scale);
+
+        if (ppu < 1) ppu = 1;
+
+        pixelPerfectCamera.assetsPPU = ppu;
+        pixelPerfectCamera.refResolutionX = resolution.x;
+        pixelPerfectCamera.refResolutionY = resolution.y;
     }
 }

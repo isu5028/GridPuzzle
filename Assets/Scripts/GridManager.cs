@@ -67,7 +67,7 @@ public class GridManager : MonoBehaviour
         turnManager = GetComponent<TurnManager>();
         commandManager = GetComponent<CommandManager>();
 
-        // UnitManagerのイベント購読 (UniRx)
+        // UnitManagerのイベント購読
         unitManager.OnUnitStateChanged
              .Subscribe(_ => UpdateWarpTiles())
              .AddTo(this);
@@ -79,11 +79,9 @@ public class GridManager : MonoBehaviour
         ContinueGame();
     }
 
-    // OnDestroyはUniRxの.AddTo(this)を使っていれば基本不要だが、明示的に購読解除してもよい
-    // 今回はAddTo(this)で自動解除させるのでメソッドごと削除してもいいが、前回のイベント登録解除のコードが残るなら削除する
-
     void Update()
     {
+
         if(Input.GetKeyDown(KeyCode.P))
         {
             SaveGame();
@@ -99,6 +97,7 @@ public class GridManager : MonoBehaviour
             GameProgressManager.Instance.DeleteSaveFile();
             Debug.Log("Game progress reset.");
         }
+
     }
 
     public void Reset()

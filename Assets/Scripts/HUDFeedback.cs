@@ -19,7 +19,7 @@ public class HUDFeedback : MonoBehaviour
     void Start()
     {
         unselectedColor = Utility.mainColors[0];
-        selectedColor = Utility.mainColors[0];
+        selectedColor = Utility.mainColors[1];
         originalScale = transform.localScale;
     }
 
@@ -34,12 +34,17 @@ public class HUDFeedback : MonoBehaviour
 #if UNITY_EDITOR
         if(Input.GetKeyDown(KeyCode.B))
         {
-            React().Forget();
+            PlayFeedback();
         }
 #endif
     }
 
-    public async UniTask React()
+    public void PlayFeedback()
+    {
+        PlayFeedbackAsync().Forget();
+    }
+
+    public async UniTask PlayFeedbackAsync()
     {
         cts?.Cancel();
         cts?.Dispose();

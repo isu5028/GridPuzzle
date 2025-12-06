@@ -7,6 +7,7 @@ using DG.Tweening;
 using Cysharp.Threading.Tasks;
 using Unity.VisualScripting;
 using UnityEditor;
+using UnityEngine.Localization.Components;
 
 public class OptionView : MonoBehaviour
 {
@@ -23,9 +24,11 @@ public class OptionView : MonoBehaviour
     [SerializeField] private Transform maskedSeBar = null!;
     [SerializeField] private TextMeshPro screenModeText = null!;
     [SerializeField] private TextMeshPro resolutionText = null!;
+    [SerializeField] private TextMeshPro languageText = null!;
     [SerializeField] private TextMeshPro gameSpeedText = null!;
     [SerializeField] private TextMeshPro maskedScreenModeText = null!;
     [SerializeField] private TextMeshPro maskedResolutionText = null!;
+    [SerializeField] private TextMeshPro maskedLanguageText = null!;
     [SerializeField] private TextMeshPro maskedGameSpeedText = null!;
 
     [Header("Horizontal UI")]
@@ -33,6 +36,7 @@ public class OptionView : MonoBehaviour
     [SerializeField] private HorizontalUI seHorizontalUI = null!;
     [SerializeField] private HorizontalUI screenModeHorizontalUI = null!;
     [SerializeField] private HorizontalUI resolutionHorizontalUI = null!;
+    [SerializeField] private HorizontalUI languageHorizontalUI = null!;
     [SerializeField] private HorizontalUI gameSpeedHorizontalUI = null!;
 
     [Header("Animation Settings")]
@@ -119,9 +123,9 @@ public class OptionView : MonoBehaviour
 
     public void UpdateScreenModeDisplay(OptionModel.ScreenModeType mode, int direction = 0)
     {
-        var displayText  = mode == OptionModel.ScreenModeType.Windowed ? "WINDOWED" : "FULLSCREEN";
-        screenModeText.text = displayText ;
-        maskedScreenModeText.text = displayText ;
+        string key = mode == OptionModel.ScreenModeType.Window ? "OPTION_SCREEN_MODE_WINDOW" : "OPTION_SCREEN_MODE_FULL_SCREEN";
+        SetLocalizedText(screenModeText, "StringTable", key);
+        SetLocalizedText(maskedScreenModeText, "StringTable", key);
 
         if (direction > 0) screenModeHorizontalUI.OnRightInput();
         else if (direction < 0) screenModeHorizontalUI.OnLeftInput();
@@ -136,13 +140,37 @@ public class OptionView : MonoBehaviour
         else if (direction < 0) resolutionHorizontalUI.OnLeftInput();
     }
 
+    public void UpdateLanguageDisplay(OptionModel.LanguageType language, int direction = 0)
+    {
+        string key = language == OptionModel.LanguageType.Japanese ? "OPTION_LANGUAGE_JAPANESE" : "OPTION_LANGUAGE_ENGLISH";
+        SetLocalizedText(languageText, "StringTable", key);
+        SetLocalizedText(maskedLanguageText, "StringTable", key);
+
+        if (direction > 0) languageHorizontalUI.OnRightInput();
+        else if (direction < 0) languageHorizontalUI.OnLeftInput();
+    }
+
     public void UpdateGameSpeedDisplay(OptionModel.GameSpeedType speed, int direction = 0)
     {
-        var displayText  = speed == OptionModel.GameSpeedType.Normal ? "NORMAL" : "FAST";
-        gameSpeedText.text = displayText ;
-        maskedGameSpeedText.text = displayText ;
+        string key = speed == OptionModel.GameSpeedType.Normal ? "OPTION_GAME_SPEED_NORMAL" : "OPTION_GAME_SPEED_FAST";
+        SetLocalizedText(gameSpeedText, "StringTable", key);
+        SetLocalizedText(maskedGameSpeedText, "StringTable", key);
 
         if (direction > 0) gameSpeedHorizontalUI.OnRightInput();
         else if (direction < 0) gameSpeedHorizontalUI.OnLeftInput();
+    }
+
+    private void SetLocalizedText(TextMeshPro textComp, string table, string key)
+    {
+        if (textComp.TryGetComponent<LocalizeStringEvent>(out var locEvent))
+        {
+            locEvent.StringReference.SetReference(table, key);
+        }
+        else
+        {
+            // フォールバック: 直接取得して設定
+            var text = UnityEngine.Localization.Settings.LocalizationSettings.StringDatabase.GetLocalizedString(table, key);
+            textComp.text = text;
+        }
     }
 }

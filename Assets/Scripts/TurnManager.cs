@@ -8,6 +8,8 @@ using Cysharp.Threading;
 [RequireComponent(typeof(UnitManager))]
 public class TurnManager : MonoBehaviour
 {
+    [SerializeField] private HUDFeedback undoFeedback = null!;
+    [SerializeField] private HUDFeedback resetFeedback = null!;
     private GridManager gridManager = null!;
     private UnitManager unitManager = null!;
     private bool isPlayerTurn = true;
@@ -106,10 +108,14 @@ public class TurnManager : MonoBehaviour
     public async UniTask UndoTurn()
     {
         if (!isPlayerTurn || isProcessingTurn) return;
-        await commandManager.UndoTurn(unitManager.Player, unitManager.Enemies);
+        bool executedUndo = await commandManager.UndoTurn(unitManager.Player, unitManager.Enemies);
 
-        // Undoで敵が復活する可能性があるので通知
-        unitManager.NotifyUnitStateChanged();
+        if (executedUndo)
+        {
+            // Undoで敵が復活する可能性があるので通知
+            unitManager.NotifyUnitStateChanged();
+            undoFeedback.PlayFeedback();
+        }
     }
 
     public void ResetTurn()
@@ -120,5 +126,6 @@ public class TurnManager : MonoBehaviour
 
         // Resetで敵が復活するので通知
         unitManager.NotifyUnitStateChanged();
+        resetFeedback.PlayFeedback();
     }
 }

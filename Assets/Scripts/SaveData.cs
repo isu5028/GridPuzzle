@@ -18,6 +18,13 @@ public class SaveData
     public int playerDirection;
     public int playerHP;
     public List<EnemySaveData> enemyList = new List<EnemySaveData>();
+
+    // --- オプション設定 ---
+    public int screenMode;
+    public int resolutionWidth;
+    public int resolutionHeight;
+    public int gameSpeed;
+    public int language;
 }
 
 [System.Serializable]

@@ -51,6 +51,9 @@ public class GameProgressManager : MonoBehaviour
         {
             Destroy(gameObject);
         }
+
+        // 起動時にロードして設定を反映
+        LoadProgress();
     }
 
     public void InitEntireProgress()
@@ -354,6 +357,13 @@ public class GameProgressManager : MonoBehaviour
         data.resetMapY = resetMapPos.y;
         data.playerHP = playerHP;
 
+        // GameSettingsの内容を保存
+        data.screenMode = GameSettings.screenMode;
+        data.resolutionWidth = GameSettings.Resolution.x;
+        data.resolutionHeight = GameSettings.Resolution.y;
+        data.gameSpeed = GameSettings.GameSpeed;
+        data.language = GameSettings.Language;
+
         // 書き込み
         string json = JsonUtility.ToJson(data);
         string encryptedJson = EncryptionUtils.Encrypt(json);
@@ -367,6 +377,11 @@ public class GameProgressManager : MonoBehaviour
         if (!File.Exists(SaveFilePath))
         {
             ResetEntireProgress();
+
+            // ファイルがない場合はデフォルト設定を適用
+            // GameSettingsクラスの初期値を使用
+            GameSettings.ApplySettings();
+
             HasLoadedData = false;
             return;
         }
@@ -386,7 +401,15 @@ public class GameProgressManager : MonoBehaviour
             SavedPlayerDirection = (Direction)data.playerDirection;
             SavedEnemyList = data.enemyList;
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
+            SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedPlayerHP = data.playerHP;
+
+            // GameSettingsの復元
+            GameSettings.screenMode = data.screenMode;
+            GameSettings.Resolution = new Vector2Int(data.resolutionWidth, data.resolutionHeight);
+            GameSettings.GameSpeed = data.gameSpeed;
+            GameSettings.Language = data.language;
+            GameSettings.ApplySettings();
 
             HasLoadedData = true;
             Debug.Log($"Loaded: Map({data.currentMapX},{data.currentMapY}) Player({data.playerGridX},{data.playerGridY})");

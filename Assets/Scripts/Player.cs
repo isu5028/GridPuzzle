@@ -75,7 +75,7 @@ public class Player : Unit
 
         // 長押しリピート
         undoTriggered
-            .SelectMany(_ => Observable.Timer(TimeSpan.FromSeconds(0.5f), TimeSpan.FromSeconds(0.25f))
+            .SelectMany(_ => Observable.Timer(TimeSpan.FromSeconds(0.4f), TimeSpan.FromSeconds(0.2f))
                 .TakeUntil(Observable.EveryUpdate().Where(__ => !inputUndo.IsPressed()))
             )
             .ObserveOnMainThread()
