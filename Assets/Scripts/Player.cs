@@ -3,6 +3,8 @@ using UnityEngine.InputSystem;
 
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
+using UniRx;
+using System;
 
 public class Player : Unit
 {
@@ -14,17 +16,12 @@ public class Player : Unit
 
     private bool isProcessingAction = false;
 
-    // Undo長押し用の変数
-    private float undoHoldTime = 0f;
-    private float undoInitialDelay = 0.5f; // 最初のUndo後の待機時間
-    private float undoRepeatDelay = 0.25f; // 連続Undo時の間隔
-    private float undoNextTriggerTime = 0f;
-
     private bool isInputBlocked = false;
 
-    protected override void Awake()
+    protected override void Start()
     {
-        base.Awake();
+        Initialize();
+        base.Start();
         inputMove = InputSystem.actions.FindAction("Move");
         inputAttack = InputSystem.actions.FindAction("Attack");
         inputStay = InputSystem.actions.FindAction("Stay");
@@ -51,92 +48,110 @@ public class Player : Unit
         isInputBlocked = false;
     }
 
-    private void Update()
+    private void Initialize()
     {
-        if (!turnManager.IsPlayerTurn) return;
-        if (isInputBlocked) return;
-        if (isProcessingAction) return;
-        if (turnManager.IsOptionOpen) return;
-        if (gridManager.IsTransitioning) return;
-        if (isMoving) return;
-        if (turnManager.IsMapOpen) return;
+        // 入力が可能な状態かどうかを判定するストリーム
+        var canInputStream = Observable.EveryUpdate()
+            .Where(_ =>
+                turnManager.IsPlayerTurn &&
+                !isInputBlocked &&
+                !isProcessingAction &&
+                !turnManager.IsOptionOpen &&
+                !gridManager.IsTransitioning &&
+                !isMoving &&
+                !turnManager.IsMapOpen
+            )
+            .Share();
 
-        if (inputUndo.IsPressed())
+        // --- Undo処理 ---
+        // 死亡していてもUndoは可能にする（isDeadチェックを通さない）
+
+        var undoTriggered = canInputStream.Where(_ => inputUndo.triggered);
+
+        // 単発
+        undoTriggered
+            .Subscribe(_ => turnManager.UndoTurn().Forget())
+            .AddTo(this);
+
+        // 長押しリピート
+        undoTriggered
+            .SelectMany(_ => Observable.Timer(TimeSpan.FromSeconds(0.5f), TimeSpan.FromSeconds(0.25f))
+                .TakeUntil(Observable.EveryUpdate().Where(__ => !inputUndo.IsPressed()))
+            )
+            .ObserveOnMainThread()
+            .Subscribe(_ =>
+            {
+                // リピート中も最低限のガード条件だけ再確認（ターン状態など）
+                if(turnManager.IsPlayerTurn && !isProcessingAction && !gridManager.IsTransitioning)
+                {
+                    turnManager.UndoTurn().Forget();
+                }
+            })
+            .AddTo(this);
+
+        // --- Reset ---
+        canInputStream
+            .Where(_ => inputReset.triggered)
+            .Subscribe(_ => turnManager.ResetTurn())
+            .AddTo(this);
+
+        // --- Move (死亡時は操作不可) ---
+        canInputStream
+            .Where(_ => !isDead)
+            .Select(_ => inputMove.ReadValue<Vector2>())
+            .Where(v => v != Vector2.zero)
+            .Subscribe(inputValue => HandleMoveInput(inputValue))
+            .AddTo(this);
+
+        // --- Attack (死亡時は操作不可) ---
+        canInputStream
+             .Where(_ => !isDead && inputAttack.triggered)
+             .Subscribe(_ =>
+             {
+                 turnManager.EnsureTurnStartSnapshot();
+                 isProcessingAction = true;
+                 TryAttack();
+             })
+             .AddTo(this);
+    }
+
+    private void HandleMoveInput(Vector2 inputValue)
+    {
+        turnManager.EnsureTurnStartSnapshot();
+
+        Direction newDirection = Utility.GetDirectionFromStickInput(inputValue);
+        currentDirection = newDirection;
+
+        if(inputStay.IsPressed())
         {
-            if (inputUndo.triggered)
-            {
-                // 最初の押下
-                turnManager.UndoTurn().Forget();
-                undoHoldTime = Time.time;
-                undoNextTriggerTime = Time.time + undoInitialDelay;
-            }
-            else if (Time.time >= undoNextTriggerTime)
-            {
-                // 長押し中の連続Undo
-                turnManager.UndoTurn().Forget();
-                undoNextTriggerTime = Time.time + undoRepeatDelay;
-            }
+            unitAnimator.SetDirection(newDirection);
             return;
         }
-        else
+
+        Vector2Int directionVector = Utility.GetVectorFromDirection(newDirection);
+        Vector2Int targetPos = currentPos + directionVector;
+
+        // グリッド外に出るかチェック
+        if (!gridManager.IsPositionInBounds(targetPos))
         {
-            undoHoldTime = 0f;
-        }
+            // 次のステージを取得
+            StageSO nextStage = gridManager.CurrentStageSO.GetAdjacentStage(newDirection);
 
-        if (inputReset.triggered)
-        {
-            turnManager.ResetTurn();
-            return;
-        }
-
-        if (isDead) return;
-        var inputValue = inputMove.ReadValue<Vector2>();
-
-        if (inputValue != Vector2.zero)
-        {
-            turnManager.EnsureTurnStartSnapshot();
-
-            Direction newDirection = Utility.GetDirectionFromStickInput(inputValue);
-            currentDirection = newDirection;
-
-            if(inputStay.IsPressed())
+            // 次のステージが存在する場合のみ実行
+            if (nextStage != null)
             {
-                unitAnimator.SetDirection(newDirection);
+                var newPos = currentPos + Utility.GetVectorFromDirection(newDirection);
+                var moveCommand = new MoveCommand(this, currentPos, newPos, currentDirection, newDirection);
+                commandManager.ExecuteCommand(moveCommand);
+                gridManager.TryTransition(newDirection);
                 return;
             }
 
-            Vector2Int directionVector = Utility.GetVectorFromDirection(newDirection);
-            Vector2Int targetPos = currentPos + directionVector;
-
-            // グリッド外に出るかチェック
-            if (!gridManager.IsPositionInBounds(targetPos))
-            {
-                // 次のステージを取得
-                StageSO nextStage = gridManager.CurrentStageSO.GetAdjacentStage(newDirection);
-
-                // 次のステージが存在する場合のみ実行
-                if (nextStage != null)
-                {
-                    var newPos = currentPos + Utility.GetVectorFromDirection(newDirection);
-                    var moveCommand = new MoveCommand(this, currentPos, newPos, currentDirection, newDirection);
-                    commandManager.ExecuteCommand(moveCommand);
-                    gridManager.TryTransition(newDirection);
-                    return;
-                }
-
-                return; // 移動処理はせず終了
-            }
-
-            isProcessingAction = true;
-            TryMoveAsync(currentDirection).Forget();
+            return; // 移動処理はせず終了
         }
 
-        if (inputAttack.triggered)
-        {
-            turnManager.EnsureTurnStartSnapshot();
-            isProcessingAction = true;
-            TryAttack();
-        }
+        isProcessingAction = true;
+        TryMoveAsync(currentDirection).Forget();
     }
 
     private async UniTaskVoid TryMoveAsync(Direction direction)

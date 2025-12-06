@@ -53,14 +53,6 @@ public class GridManager : MonoBehaviour
     private bool previousWarpState = true; // true: enemyWarpTile, false: playerWarpTile
     private Vector2Int currentResetMapPos;
 
-    private void Awake()
-    {
-        if (gridVisualizer == null)
-            gridVisualizer = GetComponent<GridVisualizer>();
-
-        unitManager = GetComponent<UnitManager>();
-    }
-
     public bool IsPositionInBounds(Vector2Int pos)
     {
         return pos.x >= 0 && pos.x < width && pos.y >= 0 && pos.y < height;
@@ -68,6 +60,10 @@ public class GridManager : MonoBehaviour
 
     private void Start()
     {
+        if (gridVisualizer == null)
+            gridVisualizer = GetComponent<GridVisualizer>();
+
+        unitManager = GetComponent<UnitManager>();
         turnManager = GetComponent<TurnManager>();
         commandManager = GetComponent<CommandManager>();
 

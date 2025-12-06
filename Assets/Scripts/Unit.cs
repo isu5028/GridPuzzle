@@ -22,7 +22,7 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] private OrderSpriteAnimation orderSpriteAnimation = null!;
     [SerializeField] private Transform maskTransform = null!;
     [SerializeField] private Transform maskedTransform = null!;
-    protected UnitAnimator unitAnimator = null!;
+    [SerializeField] protected UnitAnimator unitAnimator = null!;
 
     // Public Accessor for Animator
     public UnitAnimator UnitAnimator => unitAnimator;
@@ -63,23 +63,22 @@ public abstract class Unit : MonoBehaviour
         hp.Value = value;
     }
 
-    protected virtual void Awake()
-    {
-        TryGetComponent(out unitAnimator);
-    }
-
-    private void Start()
+    protected virtual void Start()
     {
         maskOriginalPos = maskTransform.localPosition;
         maskedOriginalPos = maskedTransform.localPosition;
         hpOriginalPos = hpTransform.localPosition;
         orderOriginalPos = orderTransform.localPosition;
-
         // UniRx Subscribe
         hp.Subscribe(x =>
         {
-            hpText.text = x.ToString();
+            if(hpText != null) hpText.text = x.ToString();
         }).AddTo(this);
+    }
+
+    protected virtual void OnEnable()
+    {
+
     }
 
     public virtual void Initialize(GridManager gridMgr,
@@ -101,20 +100,8 @@ public abstract class Unit : MonoBehaviour
 
         order = startOrder;
         orderText.text = (order + 1).ToString();
-
-        // 座標初期化のタイミングでOriginalPosを取得しておかないと、
-        // インスペクタで設定した初期配置とズレる可能性があるため、ここで更新することも考慮
-        // ただしStart()の方が早ければ問題ない。InitializeはStartより後に呼ばれることが保証されているか？
-        // 通常 Instanciate -> Awake -> Initialize の順なら Startはまだ。
-        // なのでStartで取得するのは安全ではない可能性があるため、Initialize内で強制的に初期位置をセットするか、
-        // OriginalPosをシリアライズされた初期値として扱う修正が必要かもしれない。
-        // 今回はReviveの問題に対処するため、Revive時に呼ばれるリセット処理を確認。
     }
 
-    protected virtual void OnEnable()
-    {
-        if(unitAnimator != null) unitAnimator.SetDirection(currentDirection);
-    }
 
     public void SetDirection(Direction direction)
     {
@@ -309,17 +296,6 @@ public abstract class Unit : MonoBehaviour
         maskTransform.localPosition = maskOriginalPos;
         maskedTransform.localPosition = maskedOriginalPos;
 
-        // ★修正ポイント
-        // Start()でのOriginalPos取得タイミングによっては、
-        // 既に移動演出中にStartが呼ばれてズレた位置をOriginalとして記憶している可能性がある
-        // または、初期化順序の問題で (0,0,0) を記憶している可能性もある
-        // ここでは、明示的に初期位置（おそらく親に対するオフセット）を設定し直す必要があるが、
-        // そもそもOriginalPosが正しく取れているかを確認しつつ、
-        // 不正な値(0,0,0 等で本来の位置と違う場合)なら安全策として定位置に戻す処理を入れるか、
-        // Startでの取得をやめてAwake相当で取るようにする。
-
-        // とりあえず今回はOriginalPosへの代入を信頼するが、もしStartが遅れて呼ばれるなら
-        // Initializeで明示的にセットしておいたほうが安全。
         if (hpOriginalPos == Vector3.zero && hpTransform.localPosition != Vector3.zero)
              hpOriginalPos = hpTransform.localPosition;
 

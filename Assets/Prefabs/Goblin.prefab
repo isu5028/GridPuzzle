@@ -629,6 +629,7 @@ MonoBehaviour:
   orderSpriteAnimation: {fileID: 4003218810468740025}
   maskTransform: {fileID: 8007873721606773688}
   maskedTransform: {fileID: 144093551611858362}
+  unitAnimator: {fileID: 3414781995330460015}
   type: 2
 --- !u!114 &3414781995330460015
 MonoBehaviour:

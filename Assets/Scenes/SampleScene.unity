@@ -12228,6 +12228,7 @@ GameObject:
   - component: {fileID: 2128509201}
   - component: {fileID: 2128509200}
   - component: {fileID: 2128509202}
+  - component: {fileID: 2128509204}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -12289,20 +12290,10 @@ MonoBehaviour:
   worldMapSO: {fileID: 11400000, guid: f7ac7d79249c6f948a2105fcb165ec5f, type: 2}
   stageSOs:
   - {fileID: 11400000, guid: 2b6898dbcc5bdbf4cb35bc1748f18fec, type: 2}
-  tilemap: {fileID: 2002689324}
-  transitionTilemap: {fileID: 1675487088}
-  wallTile: {fileID: 11400000, guid: 08aa7a61c0dad0643907ae4e80287519, type: 2}
-  floorTile: {fileID: 11400000, guid: 8d1b2e683a6da4e45bd41ae3afd58540, type: 2}
-  playerWarpTile: {fileID: 11400000, guid: 77888c8af25de4e4787bdea2a2cd62b7, type: 2}
-  playerWarpTileIdle: {fileID: 11400000, guid: 1a23a70e23a52cc48bf05b7dcbcefb27, type: 2}
-  enemyWarpTile: {fileID: 11400000, guid: 3caad6f78d3d7c44d877052ed0ed8209, type: 2}
-  warpChangeEffect: {fileID: 3670829601268216147, guid: 2da31d75412787e4ba337eb2f967428b, type: 3}
-  gridParent: {fileID: 380070838}
+  gridVisualizer: {fileID: 2128509203}
   playerPrefab: {fileID: 5965963898908367072, guid: ae26fe5a1bd43ab4bb47e029afe5b448, type: 3}
   patolEnemyPrefab: {fileID: 3173729069491268077, guid: 014310b172aab404285286d7901b91e6, type: 3}
   chaserEnemyPrefab: {fileID: 2706672242267340326, guid: 50bff1f3dda79c7488dca03d152c2a62, type: 3}
-  cellSize: 32
-  tilemapOffset: {x: -192, y: -128}
 --- !u!114 &2128509202
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -12323,7 +12314,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2128509196}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 27b87177b9bc15a4082e7e8190b1a871, type: 3}
   m_Name: 
@@ -12339,6 +12330,18 @@ MonoBehaviour:
   gridParent: {fileID: 380070838}
   cellSize: 32
   tilemapOffset: {x: -192, y: -128}
+--- !u!114 &2128509204
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2128509196}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 500d0bb97ca245043b0df088846782e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &2138894735
 GameObject:
   m_ObjectHideFlags: 0

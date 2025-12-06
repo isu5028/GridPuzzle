@@ -222,7 +222,6 @@ GameObject:
   - component: {fileID: 9074531523684565962}
   - component: {fileID: 6799400408837568895}
   - component: {fileID: 931283805753224837}
-  - component: {fileID: 424195762164623778}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -275,6 +274,7 @@ MonoBehaviour:
   orderSpriteAnimation: {fileID: 3796525545426586013}
   maskTransform: {fileID: 9128210083857115617}
   maskedTransform: {fileID: 5114767290867761484}
+  unitAnimator: {fileID: 6799400408837568895}
 --- !u!114 &6799400408837568895
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -306,34 +306,6 @@ SortingGroup:
   m_SortingLayer: 0
   m_SortingOrder: 200
   m_SortAtRoot: 1
---- !u!114 &424195762164623778
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5965963898908367072}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: db3f10044058ab54fa0e91dcd3df2ac3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  moveDuration: 0.2
-  attackDuration: 0.3
-  flashDuration: 0.15
-  damageShakeStrength: 5
-  attackShakeStrength: 4
-  spriteTransform: {fileID: 490713746818315958}
-  hpText: {fileID: 4630260888142393110}
-  orderText: {fileID: 3307514248055896484}
-  hpTransform: {fileID: 2649372303501961240}
-  orderTransform: {fileID: 6114054032663696123}
-  colorFlash: {fileID: 7355170018238807675}
-  hpSpriteAnimation: {fileID: 2103869418299656315}
-  orderSpriteAnimation: {fileID: 3796525545426586013}
-  maskTransform: {fileID: 9128210083857115617}
-  maskedTransform: {fileID: 5114767290867761484}
-  unitAnimator: {fileID: 6799400408837568895}
 --- !u!1 &6267593724380301220
 GameObject:
   m_ObjectHideFlags: 0
