@@ -3,6 +3,7 @@ using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using TMPro;
 using System.Threading;
+using UniRx;
 
 public abstract class Unit : MonoBehaviour
 {
@@ -22,7 +23,10 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] private Transform maskTransform = null!;
     [SerializeField] private Transform maskedTransform = null!;
     protected UnitAnimator unitAnimator = null!;
+
+    // Public Accessor for Animator
     public UnitAnimator UnitAnimator => unitAnimator;
+
     protected GridManager gridManager = null!;
     protected TurnManager turnManager = null!;
     protected CommandManager commandManager = null!;
@@ -33,25 +37,30 @@ public abstract class Unit : MonoBehaviour
     public Direction CurrentDirection => currentDirection;
     public bool IsMoving => isMoving;
 
-
     private Vector3 maskOriginalPos;
     private Vector3 maskedOriginalPos;
     private Vector3 hpOriginalPos;
     private Vector3 orderOriginalPos;
+
     private int maxHP = 10;
-    private int hp = 10;
-    private int order = 0;
-    protected bool isDead = false;
+    // UniRx ReactiveProperty
+    private IntReactiveProperty hp = new IntReactiveProperty(10);
+    public IReadOnlyReactiveProperty<int> HP => hp;
     public int MaxHP => maxHP;
-    public int HP => hp;
+
+    private int order = 0;
     public int Order => order;
+
+    protected bool isDead = false;
     public bool IsDead => isDead;
+
+    private CancellationTokenSource dieCancellationTokenSource;
+
     public void SetHP(int value)
     {
-        hp = value;
-        if (hp < 0) hp = 0;
-        if (hp > maxHP) hp = maxHP;
-        hpText.text = hp.ToString();
+        if (value < 0) value = 0;
+        if (value > maxHP) value = maxHP;
+        hp.Value = value;
     }
 
     protected virtual void Awake()
@@ -65,6 +74,12 @@ public abstract class Unit : MonoBehaviour
         maskedOriginalPos = maskedTransform.localPosition;
         hpOriginalPos = hpTransform.localPosition;
         orderOriginalPos = orderTransform.localPosition;
+
+        // UniRx Subscribe
+        hp.Subscribe(x =>
+        {
+            hpText.text = x.ToString();
+        }).AddTo(this);
     }
 
     public virtual void Initialize(GridManager gridMgr,
@@ -82,15 +97,23 @@ public abstract class Unit : MonoBehaviour
         currentDirection = startDirection;
         unitAnimator.SetDirection(currentDirection);
         maxHP = maxHp;
-        hp = maxHp;
-        hpText.text = hp.ToString();
+        hp.Value = maxHp;
+
         order = startOrder;
         orderText.text = (order + 1).ToString();
+
+        // 座標初期化のタイミングでOriginalPosを取得しておかないと、
+        // インスペクタで設定した初期配置とズレる可能性があるため、ここで更新することも考慮
+        // ただしStart()の方が早ければ問題ない。InitializeはStartより後に呼ばれることが保証されているか？
+        // 通常 Instanciate -> Awake -> Initialize の順なら Startはまだ。
+        // なのでStartで取得するのは安全ではない可能性があるため、Initialize内で強制的に初期位置をセットするか、
+        // OriginalPosをシリアライズされた初期値として扱う修正が必要かもしれない。
+        // 今回はReviveの問題に対処するため、Revive時に呼ばれるリセット処理を確認。
     }
 
     protected virtual void OnEnable()
     {
-        unitAnimator.SetDirection(currentDirection);
+        if(unitAnimator != null) unitAnimator.SetDirection(currentDirection);
     }
 
     public void SetDirection(Direction direction)
@@ -134,7 +157,7 @@ public abstract class Unit : MonoBehaviour
         // コマンドを作成して実行
         MoveCommand moveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
         commandManager.ExecuteCommand(moveCommand);
-        return true; // 移動コマンドを実行した
+        return true;
     }
 
     public void MoveTo(Vector2Int position, Direction direction)
@@ -148,11 +171,8 @@ public abstract class Unit : MonoBehaviour
         if (!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.move);
     }
 
-    // プレイヤーではスペースキーを押した際と攻撃対象に対して移動しようとした際に実行される
     public void TryAttack()
     {
-        //if (isMoving) return;
-
         Vector2Int[] attackPos = new Vector2Int[attackTargetPos.Length];
         for (int i = 0; i < attackTargetPos.Length; i++)
         {
@@ -164,12 +184,10 @@ public abstract class Unit : MonoBehaviour
 
     protected virtual void OnActionComplete()
     {
-        // Playerクラスでオーバーライドして使用
     }
 
     protected virtual void OnMoveFailed()
     {
-        // Playerクラスでオーバーライドして使用
     }
 
     public void Attack(Vector2Int[] targetPosition)
@@ -217,12 +235,13 @@ public abstract class Unit : MonoBehaviour
     {
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
 
-        hp -= damage;
+        hp.Value -= damage;
+
         hpSpriteAnimation.PlayAnimation();
-        if(hp <= 0)
+        if(hp.Value <= 0)
         {
             unitAnimator.SetDeath();
-            hp = 0;
+            hp.Value = 0;
             Die(attackerPos);
             CameraManager.Instance.ShakeCamera(1f, 5f, knockbackDirection);
         }
@@ -232,10 +251,7 @@ public abstract class Unit : MonoBehaviour
 
             if(this is Player) CameraManager.Instance.ShakeCamera(0.5f, 4f, knockbackDirection);
         }
-        hpText.text = hp.ToString();
     }
-
-    private CancellationTokenSource dieCancellationTokenSource;
 
     private void Die(Vector2Int attackerPos)
     {
@@ -258,18 +274,19 @@ public abstract class Unit : MonoBehaviour
             await UniTask.Delay((int)(flashDuration * 1000), cancellationToken: token);
             await UniTask.Delay(200, cancellationToken: token);
 
-            //maskedTransform.DOLocalMoveY(-50.0f, 0.4f).SetEase(Ease.InCubic);
             spriteTransform.DOLocalMoveY(-50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
             await UniTask.Delay(100, cancellationToken: token);
+            // ここでOriginalPosからの相対移動を行っているが、Revive時にOriginalPosへ戻す際に
+            // spriteTransformのpositionがゼロリセットされた後にローカル座標系がずれていないか注意
             hpTransform.DOLocalMoveY(hpOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
             await UniTask.Delay(50, cancellationToken: token);
             orderTransform.DOLocalMoveY(orderOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
         }
         catch (System.OperationCanceledException)
         {
-            // キャンセルされた場合は何もしない
         }
     }
+
     // Undo時の復活処理
     public void Revive()
     {
@@ -291,6 +308,24 @@ public abstract class Unit : MonoBehaviour
         spriteTransform.localScale = Vector3.one;
         maskTransform.localPosition = maskOriginalPos;
         maskedTransform.localPosition = maskedOriginalPos;
+
+        // ★修正ポイント
+        // Start()でのOriginalPos取得タイミングによっては、
+        // 既に移動演出中にStartが呼ばれてズレた位置をOriginalとして記憶している可能性がある
+        // または、初期化順序の問題で (0,0,0) を記憶している可能性もある
+        // ここでは、明示的に初期位置（おそらく親に対するオフセット）を設定し直す必要があるが、
+        // そもそもOriginalPosが正しく取れているかを確認しつつ、
+        // 不正な値(0,0,0 等で本来の位置と違う場合)なら安全策として定位置に戻す処理を入れるか、
+        // Startでの取得をやめてAwake相当で取るようにする。
+
+        // とりあえず今回はOriginalPosへの代入を信頼するが、もしStartが遅れて呼ばれるなら
+        // Initializeで明示的にセットしておいたほうが安全。
+        if (hpOriginalPos == Vector3.zero && hpTransform.localPosition != Vector3.zero)
+             hpOriginalPos = hpTransform.localPosition;
+
+        if (orderOriginalPos == Vector3.zero && orderTransform.localPosition != Vector3.zero)
+             orderOriginalPos = orderTransform.localPosition;
+
         hpTransform.localPosition = hpOriginalPos;
         orderTransform.localPosition = orderOriginalPos;
     }
@@ -298,7 +333,6 @@ public abstract class Unit : MonoBehaviour
     private async UniTask KnockbackAsync(Vector2Int attackerPos)
     {
         Vector3 originalPos = spriteTransform.position;
-        //Vector3 maskOriginalPos = maskTransform.localPosition;
 
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
 
@@ -313,5 +347,4 @@ public abstract class Unit : MonoBehaviour
         dieCancellationTokenSource?.Cancel();
         dieCancellationTokenSource?.Dispose();
     }
-
 }

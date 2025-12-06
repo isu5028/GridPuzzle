@@ -5,9 +5,11 @@ using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using Cysharp.Threading;
 
+[RequireComponent(typeof(UnitManager))]
 public class TurnManager : MonoBehaviour
 {
     private GridManager gridManager = null!;
+    private UnitManager unitManager = null!;
     private bool isPlayerTurn = true;
     public bool IsPlayerTurn => isPlayerTurn;
     private bool isProcessingTurn = false;
@@ -27,13 +29,14 @@ public class TurnManager : MonoBehaviour
     public void Initialize()
     {
         gridManager = GetComponent<GridManager>();
+        unitManager = GetComponent<UnitManager>();
         commandManager = GetComponent<CommandManager>();
 
         isPlayerTurn = true;
         isProcessingTurn = false;
 
         // 最初のターン開始時スナップショット
-        commandManager.CaptureTurnStart(gridManager.PlayerScript, gridManager.EnemyScripts);
+        commandManager.CaptureTurnStart(unitManager.Player, unitManager.Enemies);
         snapshotCapturedThisTurn = true;
     }
 
@@ -47,7 +50,7 @@ public class TurnManager : MonoBehaviour
     {
         if (!snapshotCapturedThisTurn)
         {
-            commandManager.CaptureTurnStart(gridManager.PlayerScript, gridManager.EnemyScripts);
+            commandManager.CaptureTurnStart(unitManager.Player, unitManager.Enemies);
             snapshotCapturedThisTurn = true;
         }
     }
@@ -63,8 +66,8 @@ public class TurnManager : MonoBehaviour
 
         commandManager.CompleteTurn();
 
-        // Warpタイルを更新（敵が全滅した場合にタイルを変更）
-        gridManager.UpdateWarpTilesPublic();
+        // UnitManagerへの状態変更通知
+        unitManager.NotifyUnitStateChanged();
 
         isPlayerTurn = true;
         isProcessingTurn = false;
@@ -79,7 +82,8 @@ public class TurnManager : MonoBehaviour
         bool anyExecuted = false;
         float startAll = Time.realtimeSinceStartup;
 
-        foreach (var enemy in gridManager.EnemyScripts)
+        // GridManagerではなくUnitManagerから敵リストを取得
+        foreach (var enemy in unitManager.Enemies)
         {
             if (enemy != null && !enemy.IsDead)
             {
@@ -102,10 +106,10 @@ public class TurnManager : MonoBehaviour
     public async UniTask UndoTurn()
     {
         if (!isPlayerTurn || isProcessingTurn) return;
-        await commandManager.UndoTurn(gridManager.PlayerScript, gridManager.EnemyScripts);
+        await commandManager.UndoTurn(unitManager.Player, unitManager.Enemies);
 
-        // Undoで敵が復活する可能性があるのでWarpタイルを更新
-        gridManager.UpdateWarpTilesPublic();
+        // Undoで敵が復活する可能性があるので通知
+        unitManager.NotifyUnitStateChanged();
     }
 
     public void ResetTurn()
@@ -114,7 +118,7 @@ public class TurnManager : MonoBehaviour
         commandManager.ResetTurn();
         gridManager.Reset();
 
-        // Resetで敵が復活するのでWarpタイルを更新
-        gridManager.UpdateWarpTilesPublic();
+        // Resetで敵が復活するので通知
+        unitManager.NotifyUnitStateChanged();
     }
 }

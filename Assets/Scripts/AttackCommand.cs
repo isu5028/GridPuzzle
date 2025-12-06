@@ -32,7 +32,8 @@ public class AttackCommand : ICommand
                 damageInfos.Add(new DamageInfo
                 {
                     target = targetUnit,
-                    previousHP = targetUnit.HP,
+                    // ReactiveProperty<int> から値を取り出すには .Value を使う
+                    previousHP = targetUnit.HP.Value,
                     wasDead = targetUnit.IsDead
                 });
             }
