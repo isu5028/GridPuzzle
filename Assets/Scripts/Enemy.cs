@@ -33,6 +33,7 @@ public class Enemy : Unit
     public void ForceKillSilent()
     {
         isDead = true;
+        ApplyDeadStateVisual();
         gameObject.SetActive(false); // 見た目を消す
     }
 

@@ -260,6 +260,7 @@ public class GridManager : MonoBehaviour
             {
                 bool shouldActive = !enemy.IsDead; // 死んでいる場合でもActiveにするかどうかはゲームデザインによるが、現状はActive(true)にしておく
                 enemy.gameObject.SetActive(true);
+                //enemy.gameObject.SetActive(!enemy.IsDead);
             }
         }
         else
@@ -554,12 +555,14 @@ public class GridManager : MonoBehaviour
             if (data.isDead)
             {
                 enemy.ForceKillSilent();
+                Debug.Log("Enemy is dead");
             }
             else
             {
                 enemy.ReviveSilent();
                 enemy.WarpTo(new Vector2Int(data.gridX, data.gridY), (Direction)data.direction);
                 enemy.SetHP(data.currentHP);
+                Debug.Log("Enemy is revived");
             }
         }
     }

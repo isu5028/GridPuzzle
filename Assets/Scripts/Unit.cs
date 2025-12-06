@@ -51,7 +51,7 @@ public abstract class Unit : MonoBehaviour
     private int order = 0;
     public int Order => order;
 
-    protected bool isDead = false;
+    [SerializeField] protected bool isDead = false;
     public bool IsDead => isDead;
 
     private CancellationTokenSource dieCancellationTokenSource;
@@ -63,17 +63,49 @@ public abstract class Unit : MonoBehaviour
         hp.Value = value;
     }
 
+    private bool visualsInitialized = false;
+
     protected virtual void Start()
     {
-        maskOriginalPos = maskTransform.localPosition;
-        maskedOriginalPos = maskedTransform.localPosition;
-        hpOriginalPos = hpTransform.localPosition;
-        orderOriginalPos = orderTransform.localPosition;
+        InitializeVisuals();
+
         // UniRx Subscribe
         hp.Subscribe(x =>
         {
             if(hpText != null) hpText.text = x.ToString();
         }).AddTo(this);
+    }
+
+    protected void InitializeVisuals()
+    {
+        if (visualsInitialized) return;
+
+        maskOriginalPos = maskTransform.localPosition;
+        maskedOriginalPos = maskedTransform.localPosition;
+        hpOriginalPos = hpTransform.localPosition;
+        orderOriginalPos = orderTransform.localPosition;
+
+        visualsInitialized = true;
+    }
+
+    public void ApplyDeadStateVisual()
+    {
+        // まだ初期化されていなければ初期化する（ロード時などStartより先に呼ばれる場合用）
+        InitializeVisuals();
+
+        if (!isDead) return;
+
+        // アニメーション停止
+        spriteTransform.DOKill();
+        hpTransform.DOKill();
+        orderTransform.DOKill();
+
+        // 死亡時の位置へ移動（DieAsyncと同じ状態にする）
+        spriteTransform.localPosition = new Vector3(spriteTransform.localPosition.x, -50.0f, spriteTransform.localPosition.z);
+        hpTransform.localPosition = new Vector3(hpOriginalPos.x, hpOriginalPos.y - 50.0f, hpOriginalPos.z);
+        orderTransform.localPosition = new Vector3(orderOriginalPos.x, orderOriginalPos.y - 50.0f, orderOriginalPos.z);
+
+        unitAnimator.SetDeath();
     }
 
     protected virtual void OnEnable()
