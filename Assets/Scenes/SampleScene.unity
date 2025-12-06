@@ -12224,6 +12224,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2128509197}
   - component: {fileID: 2128509198}
+  - component: {fileID: 2128509203}
   - component: {fileID: 2128509201}
   - component: {fileID: 2128509200}
   - component: {fileID: 2128509202}
@@ -12315,6 +12316,29 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxStoredTurns: 500
+--- !u!114 &2128509203
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2128509196}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27b87177b9bc15a4082e7e8190b1a871, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  tilemap: {fileID: 2002689324}
+  transitionTilemap: {fileID: 1675487088}
+  wallTile: {fileID: 11400000, guid: 08aa7a61c0dad0643907ae4e80287519, type: 2}
+  floorTile: {fileID: 11400000, guid: 8d1b2e683a6da4e45bd41ae3afd58540, type: 2}
+  playerWarpTile: {fileID: 11400000, guid: 77888c8af25de4e4787bdea2a2cd62b7, type: 2}
+  playerWarpTileIdle: {fileID: 11400000, guid: 1a23a70e23a52cc48bf05b7dcbcefb27, type: 2}
+  enemyWarpTile: {fileID: 11400000, guid: 3caad6f78d3d7c44d877052ed0ed8209, type: 2}
+  warpChangeEffect: {fileID: 3670829601268216147, guid: 2da31d75412787e4ba337eb2f967428b, type: 3}
+  gridParent: {fileID: 380070838}
+  cellSize: 32
+  tilemapOffset: {x: -192, y: -128}
 --- !u!1 &2138894735
 GameObject:
   m_ObjectHideFlags: 0
