@@ -29,7 +29,8 @@ public class GameProgressManager : MonoBehaviour
     private HashSet<Vector2Int> clearedPositions = new HashSet<Vector2Int>();
     private HashSet<Vector2Int> visitedPositions = new HashSet<Vector2Int>();
     private int mapLength = 8;
-    private string SaveFilePath => Application.persistentDataPath + "/savefile.json";
+    private string ManualSaveFilePath => Application.persistentDataPath + "/manualsavefile.json";
+    private string AutoSaveFilePath => Application.persistentDataPath + "/autosavefile.json";
     public Vector2Int SavedPlayerGridPos { get; private set; } = Vector2Int.zero;
     public Direction SavedPlayerDirection { get; private set; } = Direction.Right;
 
@@ -39,6 +40,8 @@ public class GameProgressManager : MonoBehaviour
     public List<StageEnemyData> SavedAllStagesEnemies { get; private set; } = new List<StageEnemyData>();
     public Vector2Int SavedResetMapPos { get; private set; } = Vector2Int.zero;
     public int SavedPlayerHP { get; private set; } = 0;
+
+    public enum SaveType { Manual, Auto }
 
     private void Awake()
     {
@@ -54,7 +57,7 @@ public class GameProgressManager : MonoBehaviour
         }
 
         // 起動時にロードして設定を反映
-        LoadProgress();
+        LoadProgress(SaveType.Manual);
     }
 
     public void InitEntireProgress()
@@ -314,16 +317,17 @@ public class GameProgressManager : MonoBehaviour
     }
 
     #region save
-    public void DeleteSaveFile()
+    public void DeleteSaveFile(SaveType saveType)
     {
-        if (File.Exists(SaveFilePath))
+        string filePath = saveType == SaveType.Manual ? ManualSaveFilePath : AutoSaveFilePath;
+        if (File.Exists(filePath))
         {
-            File.Delete(SaveFilePath);
-            Debug.Log("Deleted Save File: " + SaveFilePath);
+            File.Delete(filePath);
+            Debug.Log("Deleted Save File: " + filePath);
         }
     }
 
-    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies)
+    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, SaveType saveType)
     {
         SaveData data = new SaveData();
 
@@ -368,18 +372,22 @@ public class GameProgressManager : MonoBehaviour
         data.resolutionHeight = GameSettings.Resolution.y;
         data.gameSpeed = GameSettings.GameSpeed;
         data.language = GameSettings.Language;
+        data.saveTime = System.DateTime.Now.ToString();
+        Debug.Log("SaveTime: " + data.saveTime);
 
         // 書き込み
         string json = JsonUtility.ToJson(data);
         string encryptedJson = EncryptionUtils.Encrypt(json);
-        File.WriteAllText(SaveFilePath, encryptedJson);
+        string filePath = saveType == SaveType.Manual ? ManualSaveFilePath : AutoSaveFilePath;
+        File.WriteAllText(filePath, encryptedJson);
 
         Debug.Log($"Saved: Map({data.currentMapX},{data.currentMapY}) Player({data.playerGridX},{data.playerGridY})");
     }
 
-    public void LoadProgress()
+    public void LoadProgress(SaveType saveType)
     {
-        if (!File.Exists(SaveFilePath))
+        string filePath = saveType == SaveType.Manual ? ManualSaveFilePath : AutoSaveFilePath;
+        if (!File.Exists(filePath))
         {
             ResetEntireProgress();
 
@@ -394,7 +402,7 @@ public class GameProgressManager : MonoBehaviour
 
         try
         {
-            string encryptedJson = File.ReadAllText(SaveFilePath);
+            string encryptedJson = File.ReadAllText(filePath);
             string json = EncryptionUtils.Decrypt(encryptedJson);
             SaveData data = JsonUtility.FromJson<SaveData>(json);
 

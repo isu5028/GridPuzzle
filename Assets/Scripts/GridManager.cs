@@ -12,6 +12,7 @@ using UniRx;
 [RequireComponent(typeof(UnitManager))]
 public class GridManager : MonoBehaviour
 {
+    [SerializeField] private SaveFeedback saveFeedback = null!;
     [SerializeField] private WorldMapSO worldMapSO = null!;
     [SerializeField] private StageSO[] stageSOs = null!;
     private StageSO initialStageSO = null!;
@@ -78,28 +79,18 @@ public class GridManager : MonoBehaviour
         currentStageSO = stageSOs[0];
 
         GameProgressManager.Instance.InitEntireProgress();
-        ContinueGame();
+        ContinueGame(GameProgressManager.SaveType.Auto);
     }
+
 
     void Update()
     {
-
-        if(Input.GetKeyDown(KeyCode.P))
+        if(Input.GetKeyDown(KeyCode.L))
         {
-            SaveGame();
-            Debug.Log("Game progress saved.");
-        }
-        else if(Input.GetKeyDown(KeyCode.O))
-        {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
-            Debug.Log("Game progress loaded.");
-        }
-        else if(Input.GetKeyDown(KeyCode.L))
-        {
-            GameProgressManager.Instance.DeleteSaveFile();
+            GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Manual);
+            GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Auto);
             Debug.Log("Game progress reset.");
         }
-
     }
 
     public void Reset()
@@ -161,6 +152,8 @@ public class GridManager : MonoBehaviour
         currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
 
         LoadStage(stage, true, stage.PlayerStartPosition);
+        // ワープ完了後にオートセーブ
+        SaveGame(GameProgressManager.SaveType.Auto);
     }
 
     private List<GameObject> CreateTemporaryEnemies(StageSO nextstage, Vector3 transitionOffset)
@@ -535,7 +528,7 @@ public class GridManager : MonoBehaviour
     #endregion
 
     #region Save
-    public void SaveGame()
+    public void SaveGame(GameProgressManager.SaveType saveType = GameProgressManager.SaveType.Manual)
     {
         if (unitManager.Player == null) return;
 
@@ -594,13 +587,16 @@ public class GridManager : MonoBehaviour
             unitManager.Enemies, // これは現在ステージ用(互換性)
             currentResetMapPos,
             unitManager.Player.HP.Value, // ReactivePropertyなのでValueを取得
-            allStagesEnemies // 全ステージ用
+            allStagesEnemies, // 全ステージ用
+            saveType
         );
+
+        saveFeedback.PlayFeedback();
     }
 
-    public void ContinueGame()
+    public void ContinueGame(GameProgressManager.SaveType saveType = GameProgressManager.SaveType.Manual)
     {
-        GameProgressManager.Instance.LoadProgress();
+        GameProgressManager.Instance.LoadProgress(saveType);
 
         if (!GameProgressManager.Instance.HasLoadedData)
         {

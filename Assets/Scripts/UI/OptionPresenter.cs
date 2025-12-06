@@ -294,11 +294,28 @@ public class OptionPresenter : MonoBehaviour
 
     private async UniTaskVoid HandleSaveAsync()
     {
+        // 敵ターン中なら終了待ち
+        if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn)
+        {
+            Debug.Log("Waiting for turn to finish...");
+            // フィードバックを出したい場合はここでUI表示などを行う
 
+            await UniTask.WaitUntil(() => turnManager.IsPlayerTurn && !turnManager.IsProcessingTurn);
+        }
+
+        gridManager.SaveGame(GameProgressManager.SaveType.Manual);
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
+        Debug.Log("Game Saved via Option");
+        // "Saved" ポップアップなどを出すならここ
     }
 
     private async UniTaskVoid HandleLoadAsync()
     {
+        // ロード確認はOptionView側でやるか、今回は即実行
+        //gridManager.ContinueGame(GameProgressManager.SaveType.Manual);
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
 
+        // メニューを閉じる
+        HandleCloseAsync().Forget();
     }
 }

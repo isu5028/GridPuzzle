@@ -14,6 +14,7 @@ public class SaveData
 {
     public int resetMapX;
     public int resetMapY;
+    public string saveTime; // 保存日時
     // --- ワールドマップ情報 ---
     public int currentMapX; // ワールドマップ上のX
     public int currentMapY; // ワールドマップ上のY
