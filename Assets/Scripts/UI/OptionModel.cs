@@ -6,9 +6,9 @@ using System.Collections.Generic;
 public class OptionModel
 {
     // 設定項目の定義
-    public enum ItemType { Close, BackToTitle, BgmVolume, SeVolume, ScreenMode, Resolution, Language, GameSpeed}
+    public enum ItemType { Save, Load, GameSpeed, BgmVolume, SeVolume, ScreenMode, Resolution, Language, ReturnToTitle, Close}
 
-    public ItemType CurrentItem { get; private set; } = ItemType.Close;
+    public ItemType CurrentItem { get; private set; } = ItemType.Save;
 
     // 音量 (0〜100の整数で管理する例)
     public int BgmLevel { get; private set; } = 50;

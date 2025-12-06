@@ -36,6 +36,7 @@ public class GameProgressManager : MonoBehaviour
     // セーブデータが存在したかどうかのフラグ
     public bool HasLoadedData { get; private set; } = false;
     public List<EnemySaveData> SavedEnemyList { get; private set; } = new List<EnemySaveData>();
+    public List<StageEnemyData> SavedAllStagesEnemies { get; private set; } = new List<StageEnemyData>();
     public Vector2Int SavedResetMapPos { get; private set; } = Vector2Int.zero;
     public int SavedPlayerHP { get; private set; } = 0;
 
@@ -58,8 +59,9 @@ public class GameProgressManager : MonoBehaviour
 
     public void InitEntireProgress()
     {
-        SetCellType(0, 0, WorldMapCellType.Uncleared);
+        SetCellType(0, 0, WorldMapCellType.CurrentUnCleared);
         visitedPositions.Add(new Vector2Int(0, 0));
+        currentMapPosition = Vector2Int.zero;
     }
 
     public void ResetStageCleared()
@@ -321,7 +323,7 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
-    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP)
+    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies)
     {
         SaveData data = new SaveData();
 
@@ -353,6 +355,9 @@ public class GameProgressManager : MonoBehaviour
             data.enemyList.Add(enemyData);
         }
 
+        // 4. 全ステージの敵情報
+        data.allStagesEnemies = new List<StageEnemyData>(allStagesEnemies);
+
         data.resetMapX = resetMapPos.x;
         data.resetMapY = resetMapPos.y;
         data.playerHP = playerHP;
@@ -382,6 +387,7 @@ public class GameProgressManager : MonoBehaviour
             // GameSettingsクラスの初期値を使用
             GameSettings.ApplySettings();
 
+            InitEntireProgress();
             HasLoadedData = false;
             return;
         }
@@ -399,7 +405,9 @@ public class GameProgressManager : MonoBehaviour
             // ★追加: ステージ内プレイヤー情報の復元
             SavedPlayerGridPos = new Vector2Int(data.playerGridX, data.playerGridY);
             SavedPlayerDirection = (Direction)data.playerDirection;
+            SavedPlayerDirection = (Direction)data.playerDirection;
             SavedEnemyList = data.enemyList;
+            SavedAllStagesEnemies = data.allStagesEnemies;
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedPlayerHP = data.playerHP;

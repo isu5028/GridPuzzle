@@ -30,6 +30,7 @@ public class OptionView : MonoBehaviour
     [SerializeField] private TextMeshPro maskedResolutionText = null!;
     [SerializeField] private TextMeshPro maskedLanguageText = null!;
     [SerializeField] private TextMeshPro maskedGameSpeedText = null!;
+    [SerializeField] private HUDFeedback optionFeedback = null!;
 
     [Header("Horizontal UI")]
     [SerializeField] private HorizontalUI bgmHorizontalUI = null!;
@@ -73,6 +74,7 @@ public class OptionView : MonoBehaviour
         if (isAnimating) return;
 
         isAnimating = true;
+        optionFeedback.PlayFeedback();
         optionPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
@@ -83,6 +85,7 @@ public class OptionView : MonoBehaviour
         if (isAnimating) return;
 
         isAnimating = true;
+        optionFeedback.PlayFeedback();
         optionPanel.DOLocalMove(hiddenPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;

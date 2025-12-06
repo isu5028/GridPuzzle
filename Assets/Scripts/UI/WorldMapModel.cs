@@ -5,6 +5,7 @@ public class WorldMapModel
 {
     private WorldMapSO worldMapSO;
     private int mapLength = 8; // 定数管理またはGameProgressManagerから取得
+    public int MapSize => mapLength;
 
     public WorldMapModel(WorldMapSO worldMapSO)
     {

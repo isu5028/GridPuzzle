@@ -2,6 +2,14 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [System.Serializable]
+public class StageEnemyData
+{
+    public int stageX;
+    public int stageY;
+    public List<EnemySaveData> enemies;
+}
+
+[System.Serializable]
 public class SaveData
 {
     public int resetMapX;
@@ -18,6 +26,7 @@ public class SaveData
     public int playerDirection;
     public int playerHP;
     public List<EnemySaveData> enemyList = new List<EnemySaveData>();
+    public List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
 
     // --- オプション設定 ---
     public int screenMode;

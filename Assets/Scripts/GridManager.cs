@@ -18,6 +18,8 @@ public class GridManager : MonoBehaviour
     private StageSO currentStageSO = null!;
     public StageSO CurrentStageSO => currentStageSO;
     private Dictionary<StageSO, List<Enemy>> stageEnemiesMap = new Dictionary<StageSO, List<Enemy>>();
+    // ロード時に復元されたがまだ実体化されていない敵データ
+    private Dictionary<StageSO, List<EnemySaveData>> loadedStageEnemyData = new Dictionary<StageSO, List<EnemySaveData>>();
 
     [Header("Visualizer")]
     [SerializeField] private GridVisualizer gridVisualizer = null!;
@@ -182,6 +184,28 @@ public class GridManager : MonoBehaviour
                 tempEnemyObjects.Add(tempScript.gameObject);
             }
         }
+        else if (loadedStageEnemyData.ContainsKey(nextstage))
+        {
+            // ロードデータから一時的な表示用敵を作成
+            List<EnemySaveData> saveDataList = loadedStageEnemyData[nextstage];
+            List<EnemyStartData> defaultDataList = nextstage.EnemyStartData; // Prefab情報取得用
+
+            for (int i = 0; i < saveDataList.Count; i++)
+            {
+                EnemySaveData data = saveDataList[i];
+                if (data.isDead) continue; // 死んでいる敵は表示しない
+
+                if (i >= defaultDataList.Count) break;
+                EnemyStartData defaultData = defaultDataList[i];
+
+                Vector3 worldPos = GridToWorldPosition(new Vector2Int(data.gridX, data.gridY));
+                GameObject prefab = getEnemyPrefab(defaultData.EnemyType);
+
+                var tempScript = InstantiateAndInitializeEnemy(prefab, worldPos - transitionOffset, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, defaultData.MaxHP, defaultData.SetActionOrder);
+                // HPや見た目の詳細まではTransition用なので反映しなくても良いが、必要ならここで行う
+                tempEnemyObjects.Add(tempScript.gameObject);
+            }
+        }
         else
         {
             // 初期データから一時的な表示用敵を作成
@@ -251,29 +275,74 @@ public class GridManager : MonoBehaviour
     {
         if (stageEnemiesMap.ContainsKey(stage))
         {
-            // 既存の敵リストをUnitManagerにセット
+            // 1. 既に実体化されている場合（セッション内で訪問済み）
             List<Enemy> enemies = stageEnemiesMap[stage];
             unitManager.SetEnemies(enemies);
 
            // 状態に応じて表示
             foreach (var enemy in enemies)
             {
-                bool shouldActive = !enemy.IsDead; // 死んでいる場合でもActiveにするかどうかはゲームデザインによるが、現状はActive(true)にしておく
+                // ロード直後の「死んでいるけどActiveでありたい」要件を満たすため、SetActive(true)した上で見た目を調整
                 enemy.gameObject.SetActive(true);
-                //enemy.gameObject.SetActive(!enemy.IsDead);
+                if (enemy.IsDead)
+                {
+                    enemy.ApplyDeadStateVisual();
+                }
             }
+        }
+        else if (loadedStageEnemyData.ContainsKey(stage))
+        {
+            // 2. ロードデータはあるがまだ実体化されていない場合
+            List<EnemySaveData> saveDataList = loadedStageEnemyData[stage];
+            List<Enemy> newEnemies = GenerateEnemiesFromSaveData(stage, saveDataList);
+            unitManager.SetEnemies(newEnemies);
+            stageEnemiesMap.Add(stage, newEnemies);
+
+            // ロードデータは使い終わったので削除しても良いが、参照用に残しても無害
+            loadedStageEnemyData.Remove(stage);
         }
         else
         {
-            // 新規生成
-            // 一旦UnitManagerのリストを空にするか、新規リストを用意してから登録する
-            // UnitManager.SetEnemies で上書きする形にする
+            // 3. 全くの新規（初回訪問）
             List<Enemy> newEnemies = GenerateEnemies(stage);
             unitManager.SetEnemies(newEnemies);
             stageEnemiesMap.Add(stage, newEnemies);
         }
 
         unitManager.SortEnemiesByOrder();
+    }
+
+    private List<Enemy> GenerateEnemiesFromSaveData(StageSO stage, List<EnemySaveData> saveDataList)
+    {
+        List<Enemy> generatedEnemies = new List<Enemy>();
+        // ステージ初期データのPrefab情報を使うため、stage.EnemyStartDataを参照する
+        // ただし、SavedDataのIndexとEnemyStartDataの順序が一致している前提
+        List<EnemyStartData> defaultDataList = stage.EnemyStartData;
+
+        for (int i = 0; i < saveDataList.Count; i++)
+        {
+            EnemySaveData data = saveDataList[i];
+
+            // 対応する初期データがない場合はスキップ（ありえないはずだが）
+            if (i >= defaultDataList.Count) break;
+            EnemyStartData defaultData = defaultDataList[i];
+
+            Vector3 worldPos = GridToWorldPosition(new Vector2Int(data.gridX, data.gridY));
+            GameObject prefab = getEnemyPrefab(defaultData.EnemyType);
+
+            // 位置やHPはセーブデータから復元
+            var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, defaultData.MaxHP, defaultData.SetActionOrder);
+            enemyScript.name = $"Enemy_{defaultData.EnemyType}_{i}";
+            enemyScript.SetHP(data.currentHP);
+
+            if (data.isDead)
+            {
+                enemyScript.ForceKillSilent();
+            }
+
+            generatedEnemies.Add(enemyScript);
+        }
+        return generatedEnemies;
     }
 
     private void GenerateTilemap(StageSO stage)
@@ -469,12 +538,63 @@ public class GridManager : MonoBehaviour
     public void SaveGame()
     {
         if (unitManager.Player == null) return;
+
+        // 全ステージの敵情報を収集
+        List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
+
+        // 1. まずloadedStageEnemyData（未訪問だがロード済みのデータ）をそのまま追加
+        foreach (var kvp in loadedStageEnemyData)
+        {
+            Vector2Int coords = worldMapSO.GetStageCoordinates(kvp.Key);
+            if (coords.x != -1)
+            {
+                allStagesEnemies.Add(new StageEnemyData { stageX = coords.x, stageY = coords.y, enemies = kvp.Value });
+            }
+        }
+
+        // 2. 次にstageEnemiesMap（訪問済み・実体化済み）を追加。重複がある場合はこちらを優先（上書き）
+        foreach (var kvp in stageEnemiesMap)
+        {
+            StageSO stage = kvp.Key;
+            List<Enemy> enemies = kvp.Value;
+
+            // 現在のステージの場合は、UnitManagerの最新リストを使う必要があるかもしれないが、
+            // UnitManager.Enemiesの実体はstageEnemiesMap[currentStage]と同じ参照リストのはず。
+            // 念のためcurrentStageの場合はUnitManagerから取得するか、参照が同じならそのまま使う。
+            // Debug確認: stageEnemiesMap[current] == unitManager.Enemies は true になる設計。
+
+            Vector2Int coords = worldMapSO.GetStageCoordinates(stage);
+            if (coords.x == -1) continue;
+
+            // 既存リストから削除（もしloadedにあれば）
+            allStagesEnemies.RemoveAll(d => d.stageX == coords.x && d.stageY == coords.y);
+
+            // データ作成
+            List<EnemySaveData> enemyDataList = new List<EnemySaveData>();
+            for (int i = 0; i < enemies.Count; i++)
+            {
+                var enemy = enemies[i];
+                enemyDataList.Add(new EnemySaveData
+                {
+                    index = i,
+                    gridX = enemy.CurrentPos.x,
+                    gridY = enemy.CurrentPos.y,
+                    direction = (int)enemy.CurrentDirection,
+                    isDead = enemy.IsDead,
+                    currentHP = enemy.HP.Value
+                });
+            }
+
+            allStagesEnemies.Add(new StageEnemyData { stageX = coords.x, stageY = coords.y, enemies = enemyDataList });
+        }
+
         GameProgressManager.Instance.SaveProgress(
             unitManager.Player.CurrentPos,
             unitManager.Player.CurrentDirection,
-            unitManager.Enemies,
+            unitManager.Enemies, // これは現在ステージ用(互換性)
             currentResetMapPos,
-            unitManager.Player.HP.Value // ReactivePropertyなのでValueを取得
+            unitManager.Player.HP.Value, // ReactivePropertyなのでValueを取得
+            allStagesEnemies // 全ステージ用
         );
     }
 
@@ -499,9 +619,35 @@ public class GridManager : MonoBehaviour
             Vector2Int startPos = GameProgressManager.Instance.SavedPlayerGridPos;
             Direction startDir = GameProgressManager.Instance.SavedPlayerDirection;
             int playerHP = GameProgressManager.Instance.SavedPlayerHP;
+            // ロードした全ステージの敵データを辞書に展開
+            loadedStageEnemyData.Clear();
+            if (GameProgressManager.Instance.SavedAllStagesEnemies != null)
+            {
+                foreach (var stageData in GameProgressManager.Instance.SavedAllStagesEnemies)
+                {
+                    StageSO stage = worldMapSO.GetStageAt(stageData.stageX, stageData.stageY);
+                    if (stage != null)
+                    {
+                        loadedStageEnemyData[stage] = stageData.enemies;
+                    }
+                }
+            }
 
             LoadStageWithCustomStart(savedStage, startPos, startDir, playerHP);
-            ApplySavedEnemyData(GameProgressManager.Instance.SavedEnemyList);
+            // ApplySavedEnemyDataは不要になった（PrepareEnemiesForStageで処理されるため）
+            // ただし、SavedEnemyList(現在ステージ単体保存)とloadedStageEnemyData(全ステージ保存)の整合性が取れていれば問題ない
+            // 今回のSaveGame実装でallStagesEnemiesに現在ステージも含めているので、LoadStageWithCustomStart -> PrepareEnemiesForStage
+            // の中で loadedStageEnemyData から復元されるはず。
+            // 万が一 loadedStageEnemyData に現在ステージが含まれていない場合（古いセーブデータなど）のために
+            // 念のため ApplySavedEnemyData を呼ぶかどうかだが、二重適用を避けるため外す方が安全。
+            // 新仕様では loadedStageEnemyData が主となる。
+
+            // 古いセーブデータ互換性: SavedAllStagesEnemiesが空でSavedEnemyListがある場合
+            if ((GameProgressManager.Instance.SavedAllStagesEnemies == null || GameProgressManager.Instance.SavedAllStagesEnemies.Count == 0)
+                 && GameProgressManager.Instance.SavedEnemyList.Count > 0)
+            {
+                 ApplySavedEnemyData(GameProgressManager.Instance.SavedEnemyList);
+            }
             UpdateWarpTiles(); // イベント発火前かもしれないので手動更新しておく
 
             Debug.Log($"Game Continued at {savedStage.name} hp:{playerHP}");

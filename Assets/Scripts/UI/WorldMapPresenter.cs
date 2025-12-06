@@ -21,13 +21,15 @@ public class WorldMapPresenter : MonoBehaviour
     // 状態管理
     private bool isMapOpen = false;
     public bool IsMapOpen => isMapOpen;
+    private bool isAnimating = false;
     private Vector2Int cursorPosition;
 
     // 入力タイマー関連
-    [SerializeField] private float initialMoveDelay = 0.5f;
-    [SerializeField] private float moveRepeatRate = 0.1f;
+    [SerializeField] private float initialMoveDelay = 0.2f;
+    [SerializeField] private float moveRepeatRate = 0.05f;
     private float currentMoveTimer;
     private bool isHoldingMove;
+    private Direction lastMoveDirection;
 
     private void Start()
     {
@@ -49,7 +51,7 @@ public class WorldMapPresenter : MonoBehaviour
         if(turnManager.IsOptionOpen) return;
         HandleMapToggle();
 
-        if (!isMapOpen) return;
+        if (!isMapOpen || isAnimating) return;
 
         HandleCursorMove();
         HandleSelection();
@@ -57,25 +59,45 @@ public class WorldMapPresenter : MonoBehaviour
 
     private void HandleMapToggle()
     {
-        if (mapAction.triggered)
+        if (mapAction.triggered && !isAnimating)
         {
-            isMapOpen = !isMapOpen;
-            turnManager.SetMapState(isMapOpen);
             if (isMapOpen)
             {
-                // 開くときに最新データで更新
-                view.RefreshMap(model.GetAllMapData());
-                // カーソルを現在位置へ
-                cursorPosition = model.GetCurrentPlayerPosition();
-                view.UpdateCursorPosition(cursorPosition);
-
-                view.ShowAsync().Forget();
+                CloseMapAsync().Forget();
             }
             else
             {
-                view.HideAsync().Forget();
+                OpenMapAsync().Forget();
             }
         }
+    }
+
+    private async UniTaskVoid OpenMapAsync()
+    {
+        isAnimating = true;
+        isMapOpen = true;
+        turnManager.SetMapState(true);
+
+        // 開くときに最新データで更新
+        view.RefreshMap(model.GetAllMapData());
+        // カーソルを現在位置へ
+        cursorPosition = model.GetCurrentPlayerPosition();
+        view.UpdateCursorPosition(cursorPosition);
+
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+        await view.ShowAsync();
+        isAnimating = false;
+    }
+
+    private async UniTaskVoid CloseMapAsync()
+    {
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel); // またはselect
+        isAnimating = true;
+        await view.HideAsync();
+
+        isMapOpen = false;
+        turnManager.SetMapState(false);
+        isAnimating = false;
     }
 
     private void HandleCursorMove()
@@ -87,7 +109,18 @@ public class WorldMapPresenter : MonoBehaviour
         {
             isHoldingMove = false;
             currentMoveTimer = 0f;
+            lastMoveDirection = (Direction)(-1); // 無効な方向
             return;
+        }
+
+        Direction currentDirection = Utility.GetDirectionFromStickInput(moveInput);
+
+        // 方向が変わったらリセット（押し直し扱い）
+        if (currentDirection != lastMoveDirection)
+        {
+            isHoldingMove = false;
+            currentMoveTimer = 0f;
+            lastMoveDirection = currentDirection;
         }
 
         // 長押し・連打制御
@@ -95,7 +128,7 @@ public class WorldMapPresenter : MonoBehaviour
         {
             isHoldingMove = true;
             currentMoveTimer = initialMoveDelay;
-            ApplyMove(moveInput); // 初回移動
+            ApplyMove(currentDirection); // 初回移動
         }
         else
         {
@@ -103,25 +136,30 @@ public class WorldMapPresenter : MonoBehaviour
             if (currentMoveTimer <= 0f)
             {
                 currentMoveTimer = moveRepeatRate;
-                ApplyMove(moveInput); // 連続移動
+                ApplyMove(currentDirection); // 連続移動
             }
         }
     }
 
-    private void ApplyMove(Vector2 moveInput)
+    private void ApplyMove(Direction direction)
     {
         int dx = 0;
         int dy = 0;
-        if (moveInput.x > 0.5f) dx = 1;
-        else if (moveInput.x < -0.5f) dx = -1;
 
-        if (moveInput.y > 0.5f) dy = 1;
-        else if (moveInput.y < -0.5f) dy = -1;
+        switch (direction)
+        {
+            case Direction.Right: dx = 1; break;
+            case Direction.Left: dx = -1; break;
+            case Direction.Up: dy = 1; break;
+            case Direction.Down: dy = -1; break;
+        }
+
+        int mapSize = model.MapSize;
 
         // X方向トライ
         if (dx != 0)
         {
-            Vector2Int nextPos = new Vector2Int(cursorPosition.x + dx, cursorPosition.y);
+            Vector2Int nextPos = new Vector2Int((cursorPosition.x + dx + mapSize) % mapSize, cursorPosition.y);
             // ★Modelに問い合わせる（Unknownチェックなど）
             if (model.IsTraversable(nextPos))
             {
@@ -133,7 +171,8 @@ public class WorldMapPresenter : MonoBehaviour
         // Y方向トライ
         if (dy != 0)
         {
-            Vector2Int nextPos = new Vector2Int(cursorPosition.x, cursorPosition.y + dy);
+            // X移動後の座標を基準にするか、XY独立か。現在のロジックではX移動後のcursorPositionを使っているのでそれに従う
+            Vector2Int nextPos = new Vector2Int(cursorPosition.x, (cursorPosition.y + dy + mapSize) % mapSize);
             // ★Modelに問い合わせる
             if (model.IsTraversable(nextPos))
             {
@@ -166,7 +205,9 @@ public class WorldMapPresenter : MonoBehaviour
 
                     // 3. マップを閉じる
                     // 閉じる処理を待たずにゲーム再開させるならForget、演出を待つならawait
-                    CloseMapAndResume();
+                    // 3. マップを閉じる
+                    // 閉じる処理を待たずにゲーム再開させるならForget、演出を待つならawait
+                    CloseMapAndResumeAsync().Forget();
                 }
             }
             else
@@ -176,11 +217,15 @@ public class WorldMapPresenter : MonoBehaviour
         }
     }
 
-    private void CloseMapAndResume()
+    private async UniTaskVoid CloseMapAndResumeAsync()
     {
         // マップを閉じる
+        isAnimating = true;
+
+        await view.HideAsync();
+
         isMapOpen = false;
         turnManager.SetMapState(false);
-        view.HideAsync().Forget();
+        isAnimating = false;
     }
 }

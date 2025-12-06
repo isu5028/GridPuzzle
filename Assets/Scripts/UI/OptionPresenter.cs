@@ -14,7 +14,7 @@ public class OptionPresenter : MonoBehaviour
     [SerializeField] private PixelPerfectCamera pixelPerfectCamera = null!;
     private OptionModel model = null!;
     private bool isProcessingInput = false;
-    private float inputCooldown = 0.3f;
+    private float inputCooldown = 0.2f;
     private float lastInputTime = 0f;
     private bool isAnimating = false;
 
@@ -208,17 +208,18 @@ public class OptionPresenter : MonoBehaviour
             case OptionModel.ItemType.Close:
                 HandleCloseAsync().Forget();
                 break;
-
+            /*
             case OptionModel.ItemType.BackToTitle:
                 Debug.Log("タイトルへ戻る");
                 //SceneManager.LoadScene("TitleScene");
                 break;
+                */
         }
     }
 
     private async UniTaskVoid HandleCloseAsync()
     {
-        AudioManager.Instance?.PlaySE(AudioManager.SEType.select);
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
         isAnimating = true;
         await view.HideAsync(); // アニメーション完了を待つ
         SetOptionState(false); // アニメーション後に状態変更
@@ -227,7 +228,7 @@ public class OptionPresenter : MonoBehaviour
 
     private async UniTaskVoid HandleOpenAsync()
     {
-        AudioManager.Instance?.PlaySE(AudioManager.SEType.select);
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
         isAnimating = true;
         SetOptionState(true);
         await view.ShowAsync();
