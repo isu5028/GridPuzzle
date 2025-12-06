@@ -15,6 +15,7 @@ public class TurnManager : MonoBehaviour
     private bool isPlayerTurn = true;
     public bool IsPlayerTurn => isPlayerTurn;
     private bool isProcessingTurn = false;
+    public bool IsProcessingTurn => isProcessingTurn;
     private CommandManager commandManager = null!;
     public CommandManager CommandManager => commandManager;
     private bool snapshotCapturedThisTurn = false;

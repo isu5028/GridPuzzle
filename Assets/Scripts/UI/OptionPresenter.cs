@@ -12,6 +12,7 @@ public class OptionPresenter : MonoBehaviour
     [SerializeField] private OptionView view = null!;
     [SerializeField] private TurnManager turnManager = null!;
     [SerializeField] private PixelPerfectCamera pixelPerfectCamera = null!;
+    private GridManager gridManager;
     private OptionModel model = null!;
     private bool isProcessingInput = false;
     private float inputCooldown = 0.2f;
@@ -38,6 +39,7 @@ public class OptionPresenter : MonoBehaviour
 
     void Start()
     {
+        gridManager = FindFirstObjectByType<GridManager>();
         // Modelの初期化
         model = new OptionModel();
 
@@ -205,15 +207,25 @@ public class OptionPresenter : MonoBehaviour
 
         switch (model.CurrentItem)
         {
+            case OptionModel.ItemType.Save:
+                view.BlinkCursorAsync().Forget();
+                HandleSaveAsync().Forget();
+                break;
+
+            case OptionModel.ItemType.Load:
+                view.BlinkCursorAsync().Forget();
+                HandleLoadAsync().Forget();
+                break;
+
             case OptionModel.ItemType.Close:
+                view.BlinkCursorAsync().Forget();
                 HandleCloseAsync().Forget();
                 break;
-            /*
-            case OptionModel.ItemType.BackToTitle:
+
+            case OptionModel.ItemType.ReturnToTitle:
+                view.BlinkCursorAsync().Forget();
                 Debug.Log("タイトルへ戻る");
-                //SceneManager.LoadScene("TitleScene");
                 break;
-                */
         }
     }
 
@@ -280,5 +292,13 @@ public class OptionPresenter : MonoBehaviour
         view.UpdateLanguageDisplay(model.Language);
     }
 
+    private async UniTaskVoid HandleSaveAsync()
+    {
 
+    }
+
+    private async UniTaskVoid HandleLoadAsync()
+    {
+
+    }
 }

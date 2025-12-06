@@ -101,6 +101,13 @@ public class OptionView : MonoBehaviour
         }
     }
 
+    public async UniTask BlinkCursorAsync()
+    {
+        cursorObj.gameObject.SetActive(false);
+        await UniTask.Delay(150);
+        cursorObj.gameObject.SetActive(true);
+    }
+
     // 音量表示の更新
     public void UpdateBgmDisplay(int value, int direction = 0)
     {
