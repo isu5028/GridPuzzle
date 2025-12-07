@@ -15,6 +15,8 @@ public class OptionLoadView : MonoBehaviour
     [SerializeField] private Transform cursorObj = null!;
     [SerializeField] private TextMeshPro autoSaveText;
     [SerializeField] private TextMeshPro manualSaveText;
+    [SerializeField] private TextMeshPro maskedAutoSaveText;
+    [SerializeField] private TextMeshPro maskedManualSaveText;
 
     [SerializeField] private Transform optionLoadPanel = null!;
     [SerializeField] private float slideDuration = 0.3f;
@@ -23,6 +25,23 @@ public class OptionLoadView : MonoBehaviour
     private Vector3 visiblePosition;
     private bool isAnimating = false;
     public bool IsAnimating => isAnimating;
+
+    public void SetSaveData(string autoSaveDate, string manualSaveDate)
+    {
+        autoSaveText.text = autoSaveDate;
+        manualSaveText.text = manualSaveDate;
+        maskedAutoSaveText.text = autoSaveDate;
+        maskedManualSaveText.text = manualSaveDate;
+    }
+
+    public void UpdateCursorPosition(int index)
+    {
+        Debug.Log("Index " + index);
+        if (index >= 0 && index < itemPositions.Length)
+        {
+            cursorObj.position = itemPositions[index].position;
+        }
+    }
 
     void Start()
     {

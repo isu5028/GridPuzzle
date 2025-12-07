@@ -30,7 +30,6 @@ public class OptionView : MonoBehaviour
     [SerializeField] private TextMeshPro maskedResolutionText = null!;
     [SerializeField] private TextMeshPro maskedLanguageText = null!;
     [SerializeField] private TextMeshPro maskedGameSpeedText = null!;
-    [SerializeField] private HUDFeedback optionFeedback = null!;
 
     [Header("Horizontal UI")]
     [SerializeField] private HorizontalUI bgmHorizontalUI = null!;
@@ -43,7 +42,6 @@ public class OptionView : MonoBehaviour
     [Header("Animation Settings")]
     [SerializeField] private Transform optionPanel = null!; // アニメーションさせるパネル
     [SerializeField] private float slideDuration = 0.3f;
-
     // Presenterに通知するためのイベント
 
     [HideInInspector] public InputAction InputMove = null!;
@@ -74,7 +72,6 @@ public class OptionView : MonoBehaviour
         if (isAnimating) return;
 
         isAnimating = true;
-        optionFeedback.PlayFeedback();
         optionPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
@@ -85,8 +82,19 @@ public class OptionView : MonoBehaviour
         if (isAnimating) return;
 
         isAnimating = true;
-        optionFeedback.PlayFeedback();
         optionPanel.DOLocalMove(hiddenPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
+        await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
+        isAnimating = false;
+    }
+
+    public async UniTask HideUpAsync()
+    {
+        if (isAnimating) return;
+
+        isAnimating = true;
+        // 画面上部へ移動
+        Vector3 topPosition = new Vector3(visiblePosition.x, visiblePosition.y + Screen.height, visiblePosition.z);
+        optionPanel.DOLocalMove(topPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
     }

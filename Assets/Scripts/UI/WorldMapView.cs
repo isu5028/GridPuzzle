@@ -8,7 +8,6 @@ public class WorldMapView : MonoBehaviour
     [Header("UI References")]
     [SerializeField] private Transform mapPanel = null!;
     [SerializeField] private Transform cursorTransform = null!;
-    [SerializeField] private HUDFeedback mapFeedback = null!;
 
     [Header("Assets")]
     [SerializeField] private GameObject mapTilePrefab = null!;
@@ -99,7 +98,6 @@ public class WorldMapView : MonoBehaviour
     {
         if (isAnimating) return;
         isAnimating = true;
-        mapFeedback.PlayFeedback();
         mapPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
         await UniTask.Delay((int)(slideDuration * 1000));
         isAnimating = false;
@@ -109,7 +107,6 @@ public class WorldMapView : MonoBehaviour
     {
         if (isAnimating) return;
         isAnimating = true;
-        mapFeedback.PlayFeedback();
         mapPanel.DOLocalMove(hiddenPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
         await UniTask.Delay((int)(slideDuration * 1000));
         isAnimating = false;

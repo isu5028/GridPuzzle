@@ -12,7 +12,9 @@ public class OptionPresenter : MonoBehaviour
     [SerializeField] private OptionView view = null!;
     [SerializeField] private TurnManager turnManager = null!;
     [SerializeField] private PixelPerfectCamera pixelPerfectCamera = null!;
+    [SerializeField] private HUDFeedback optionFeedback = null!;
     private GridManager gridManager;
+    private OptionLoadPresenter optionLoadPresenter;
     private OptionModel model = null!;
     private bool isProcessingInput = false;
     private float inputCooldown = 0.2f;
@@ -27,6 +29,9 @@ public class OptionPresenter : MonoBehaviour
     private int consecutiveInputCount = 0;
     private bool isMaxSpeed = false; // 最大速度に到達したか
 
+    // Sub menu state
+    private bool isSubMenuOpen = false;
+
     public void SetOptionState(bool isOpen)
     {
         turnManager.SetOptionState(isOpen);
@@ -40,6 +45,7 @@ public class OptionPresenter : MonoBehaviour
     void Start()
     {
         gridManager = FindFirstObjectByType<GridManager>();
+        optionLoadPresenter = FindFirstObjectByType<OptionLoadPresenter>();
         // Modelの初期化
         model = new OptionModel();
 
@@ -52,12 +58,25 @@ public class OptionPresenter : MonoBehaviour
         // オプション開閉（最優先で処理）
         if (view.InputOption.triggered && !isAnimating)
         {
-            if (GetOptionState()) HandleCloseAsync().Forget();
-            else HandleOpenAsync().Forget();
+            if (isSubMenuOpen)
+            {
+                // Drop input if sub menu is open (handled by sub presenter)
+                return;
+            }
+            else if (GetOptionState())
+            {
+                HandleCloseAsync().Forget();
+                optionFeedback.PlayFeedback();
+            }
+            else
+            {
+                HandleOpenAsync().Forget();
+                optionFeedback.PlayFeedback();
+            }
             return;
         }
 
-        if (!GetOptionState()) return;
+        if (!GetOptionState() || isSubMenuOpen) return;
 
         // 決定ボタン
         if (view.InputDecide.triggered)
@@ -200,7 +219,6 @@ public class OptionPresenter : MonoBehaviour
         }
     }
 
-    // 決定ボタンの処理
     private void HandleSubmit()
     {
         //AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
@@ -311,11 +329,35 @@ public class OptionPresenter : MonoBehaviour
 
     private async UniTaskVoid HandleLoadAsync()
     {
-        // ロード確認はOptionView側でやるか、今回は即実行
-        //gridManager.ContinueGame(GameProgressManager.SaveType.Manual);
-        AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
+        isSubMenuOpen = true;
 
-        // メニューを閉じる
-        HandleCloseAsync().Forget();
+        // Viewを上へ隠す
+        isAnimating = true;
+
+        // Load Menuを開いて待機 (HideUpAsyncを渡して並列再生)
+        // さらに、Cancel時はShowAsync()を並列再生するようコールバックを渡す
+        bool loaded = await optionLoadPresenter.OpenAsync(
+            view.HideUpAsync(),
+            () => {
+                 // OptionViewを元に戻す（Loadが閉じるのと同時）
+                 return view.ShowAsync();
+            }
+        );
+
+        isAnimating = false; // Ensure cleared
+
+        if (loaded)
+        {
+            // ロード完了時はメニュー全体を閉じる
+            SetOptionState(false);
+            isSubMenuOpen = false;
+            return;
+        }
+
+        // キャンセルで戻ってきた場合
+        // OpenAsync内でShowAsyncが完了しているため、ここでは待たない
+        // ただし状態リセットは必要
+
+        isSubMenuOpen = false;
     }
 }

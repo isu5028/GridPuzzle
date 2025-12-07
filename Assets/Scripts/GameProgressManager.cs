@@ -443,6 +443,27 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
+    public SaveData? GetSaveData(SaveType saveType)
+    {
+        string filePath = saveType == SaveType.Manual ? ManualSaveFilePath : AutoSaveFilePath;
+        if (!File.Exists(filePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            string encryptedJson = File.ReadAllText(filePath);
+            string json = EncryptionUtils.Decrypt(encryptedJson);
+            return JsonUtility.FromJson<SaveData>(json);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("GetSaveData Error: " + e.Message);
+            return null;
+        }
+    }
+
     // ロード後に mapData 配列を正しい状態に戻すメソッド
     private void RebuildMapData()
     {

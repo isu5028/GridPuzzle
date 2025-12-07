@@ -9,6 +9,7 @@ public class WorldMapPresenter : MonoBehaviour
     [SerializeField] private GridManager gridManager = null!;
     [SerializeField] private TurnManager turnManager = null!;
     [SerializeField] private WorldMapSO worldMapSO = null!;
+    [SerializeField] private HUDFeedback mapFeedback = null!;
 
     // ModelはPresenterが生成、保持する
     private WorldMapModel model;
@@ -64,10 +65,12 @@ public class WorldMapPresenter : MonoBehaviour
             if (isMapOpen)
             {
                 CloseMapAsync().Forget();
+                mapFeedback.PlayFeedback();
             }
             else
             {
                 OpenMapAsync().Forget();
+                mapFeedback.PlayFeedback();
             }
         }
     }
