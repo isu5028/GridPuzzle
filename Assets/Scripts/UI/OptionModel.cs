@@ -46,6 +46,9 @@ public class OptionModel
 
         GameSpeed = (GameSpeedType)GameSettings.GameSpeed;
         Language = (LanguageType)GameSettings.Language;
+
+        BgmLevel = GameSettings.BgmVolume;
+        SeLevel = GameSettings.SeVolume;
     }
 
     // 選択項目の移動

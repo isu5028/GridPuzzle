@@ -31,12 +31,15 @@ public class TransitionOut : MonoBehaviour
 #endif
     }
 
-    async UniTaskVoid AnimateAsync()
+    public async UniTask AnimateAsync()
     {
+        var delay = slideDuration;
         for (int i = 0; i < squareTransforms.Length; i++)
         {
-            squareTransforms[i].DOScaleX(sizeAfter, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
+            squareTransforms[i].DOScaleX(sizeAfter, slideDuration).SetEase(Ease.OutCubic);
+            delay -= elementDelay;
             await UniTask.Delay(TimeSpan.FromSeconds(elementDelay));
         }
+        await UniTask.Delay(TimeSpan.FromSeconds(delay));
     }
 }

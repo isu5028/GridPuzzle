@@ -2,9 +2,11 @@ using System;
 using UnityEngine;
 using Cysharp.Threading.Tasks;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 public class OptionLoadPresenter : MonoBehaviour
 {
+    [SerializeField] private TransitionOut transitionOut = null!;
     [SerializeField] private OptionLoadView view = null!;
     [SerializeField] private OptionLoadConfirmationView confirmationView = null!;
     private GridManager gridManager;
@@ -232,19 +234,32 @@ public class OptionLoadPresenter : MonoBehaviour
 
     private void ExecuteConfirmation()
     {
+        HandleConfirmationDecideAsync().Forget();
+    }
+
+    bool isLoading = false;
+
+    private async UniTaskVoid HandleConfirmationDecideAsync()
+    {
+
+        if (confirmationView != null) await confirmationView.BlinkCursorAsync();
+
+        if (isLoading) return;
+
         if (confirmationIndex == 0) // Execute Load
         {
             GameProgressManager.SaveType targetType = currentLoadIndex == 0
                 ? GameProgressManager.SaveType.Auto
                 : GameProgressManager.SaveType.Manual;
 
-            AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
-            gridManager.ContinueGame(targetType);
+            await transitionOut.AnimateAsync();
 
-            // Close Everything
-            CloseAsync(true).Forget();
+            GameProgressManager.Instance.NextLoadType = targetType;
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
+            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+            isLoading = true;
         }
-        else // Cancel -> Close everything (Option Menu Return) as requested
+        else
         {
              CloseAsync(false).Forget();
         }
@@ -256,7 +271,7 @@ public class OptionLoadPresenter : MonoBehaviour
 
         if (!loaded)
         {
-             AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
         }
 
         isActive = false;
@@ -274,13 +289,10 @@ public class OptionLoadPresenter : MonoBehaviour
         UniTask viewHideTask;
         if (wasConfirmationOpen)
         {
-            // If confirmation was open, View is shifted UP.
-            // We should Hide UP to avoid sweeping across the screen content.
             viewHideTask = view.HideUpAsync();
         }
         else
         {
-            // Normal close (from center to down)
             viewHideTask = view.HideAsync();
         }
 

@@ -31,6 +31,19 @@ public class GameProgressManager : MonoBehaviour
     private int mapLength = 8;
     private string ManualSaveFilePath => Application.persistentDataPath + "/manualsavefile.json";
     private string AutoSaveFilePath => Application.persistentDataPath + "/autosavefile.json";
+    private string OptionSaveFilePath => Application.persistentDataPath + "/optionfile.json";
+
+    [System.Serializable]
+    public class OptionSaveData
+    {
+        public int screenMode;
+        public int resolutionWidth;
+        public int resolutionHeight;
+        public int gameSpeed;
+        public int language;
+        public int bgmVolume;
+        public int seVolume;
+    }
     public Vector2Int SavedPlayerGridPos { get; private set; } = Vector2Int.zero;
     public Direction SavedPlayerDirection { get; private set; } = Direction.Right;
 
@@ -42,6 +55,7 @@ public class GameProgressManager : MonoBehaviour
     public int SavedPlayerHP { get; private set; } = 0;
 
     public enum SaveType { Manual, Auto }
+    public SaveType? NextLoadType { get; set; } = null;
 
     private void Awake()
     {
@@ -50,14 +64,15 @@ public class GameProgressManager : MonoBehaviour
             instance = this;
             DontDestroyOnLoad(gameObject);
             InitializeMapData();
+            // 起動時にロードして設定を反映
+            // LoadProgress(SaveType.Manual); // <- Removed old behavior
+            LoadOptions(); // <- New behavior
         }
         else if (instance != this)
         {
             Destroy(gameObject);
+            return;
         }
-
-        // 起動時にロードして設定を反映
-        LoadProgress(SaveType.Manual);
     }
 
     public void InitEntireProgress()
@@ -367,11 +382,14 @@ public class GameProgressManager : MonoBehaviour
         data.playerHP = playerHP;
 
         // GameSettingsの内容を保存
+        // オプションはGameProgressManager.SaveOptions()で個別保存するためここでは保存しない
+        /*
         data.screenMode = GameSettings.screenMode;
         data.resolutionWidth = GameSettings.Resolution.x;
         data.resolutionHeight = GameSettings.Resolution.y;
         data.gameSpeed = GameSettings.GameSpeed;
         data.language = GameSettings.Language;
+        */
         data.saveTime = System.DateTime.Now.ToString();
         Debug.Log("SaveTime: " + data.saveTime);
 
@@ -393,7 +411,7 @@ public class GameProgressManager : MonoBehaviour
 
             // ファイルがない場合はデフォルト設定を適用
             // GameSettingsクラスの初期値を使用
-            GameSettings.ApplySettings();
+            // GameSettings.ApplySettings(); // LoadOptionsで初期化済みなので不要
 
             InitEntireProgress();
             HasLoadedData = false;
@@ -421,11 +439,14 @@ public class GameProgressManager : MonoBehaviour
             SavedPlayerHP = data.playerHP;
 
             // GameSettingsの復元
+            // オプションはLoadOptions()で管理するため、ここでは復元しない
+            /*
             GameSettings.screenMode = data.screenMode;
             GameSettings.Resolution = new Vector2Int(data.resolutionWidth, data.resolutionHeight);
             GameSettings.GameSpeed = data.gameSpeed;
             GameSettings.Language = data.language;
             GameSettings.ApplySettings();
+            */
 
             HasLoadedData = true;
             Debug.Log($"Loaded: Map({data.currentMapX},{data.currentMapY}) Player({data.playerGridX},{data.playerGridY})");
@@ -497,6 +518,49 @@ public class GameProgressManager : MonoBehaviour
 
                 SetCellType(x, y, type);
             }
+        }
+    }
+    #endregion
+    #region Option Save
+    public void SaveOptions()
+    {
+        OptionSaveData data = new OptionSaveData();
+        data.screenMode = GameSettings.screenMode;
+        data.resolutionWidth = GameSettings.Resolution.x;
+        data.resolutionHeight = GameSettings.Resolution.y;
+        data.gameSpeed = GameSettings.GameSpeed;
+        data.language = GameSettings.Language;
+        data.bgmVolume = GameSettings.BgmVolume;
+        data.seVolume = GameSettings.SeVolume;
+
+        string json = JsonUtility.ToJson(data);
+        string encryptedJson = EncryptionUtils.Encrypt(json); // Use existing encryption
+        File.WriteAllText(OptionSaveFilePath, encryptedJson);
+        Debug.Log("Options Saved.");
+    }
+
+    public void LoadOptions()
+    {
+        if (!File.Exists(OptionSaveFilePath)) return;
+
+        try
+        {
+            string encryptedJson = File.ReadAllText(OptionSaveFilePath);
+            string json = EncryptionUtils.Decrypt(encryptedJson);
+            OptionSaveData data = JsonUtility.FromJson<OptionSaveData>(json);
+
+            GameSettings.screenMode = data.screenMode;
+            GameSettings.Resolution = new Vector2Int(data.resolutionWidth, data.resolutionHeight);
+            GameSettings.GameSpeed = data.gameSpeed;
+            GameSettings.Language = data.language;
+            GameSettings.BgmVolume = data.bgmVolume;
+            GameSettings.SeVolume = data.seVolume;
+
+            GameSettings.ApplySettings();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("Load Options Error: " + e.Message);
         }
     }
     #endregion

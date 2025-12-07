@@ -27,8 +27,10 @@ public class GridManager : MonoBehaviour
 
     [Header("Prefabs")]
     [SerializeField] private GameObject playerPrefab = null!;
-    [SerializeField] private GameObject patolEnemyPrefab = null!;
-    [SerializeField] private GameObject chaserEnemyPrefab = null!;
+    [SerializeField] private GameObject slimeEnemyPrefab = null!;
+    [SerializeField] private GameObject goblinEnemyPrefab = null!;
+    [SerializeField] private GameObject skeletonEnemyPrefab = null!;
+    [SerializeField] private GameObject zonbieEnemyPrefab = null!;
 
     private CellType[,] cellData = new CellType[0, 0];
     private int width;
@@ -79,7 +81,11 @@ public class GridManager : MonoBehaviour
         currentStageSO = stageSOs[0];
 
         GameProgressManager.Instance.InitEntireProgress();
-        ContinueGame(GameProgressManager.SaveType.Auto);
+
+        GameProgressManager.SaveType loadType = GameProgressManager.Instance.NextLoadType ?? GameProgressManager.SaveType.Auto;
+        GameProgressManager.Instance.NextLoadType = null; // Reset
+
+        ContinueGame(loadType);
     }
 
 
@@ -218,7 +224,19 @@ public class GridManager : MonoBehaviour
 
     private GameObject getEnemyPrefab(EnemyType type)
     {
-        return type == EnemyType.Patrol ? patolEnemyPrefab : chaserEnemyPrefab;
+        switch (type)
+        {
+            case EnemyType.Slime:
+                return slimeEnemyPrefab;
+            case EnemyType.Goblin:
+                return goblinEnemyPrefab;
+            case EnemyType.Skeleton:
+                return skeletonEnemyPrefab;
+            case EnemyType.Zonbie:
+                return zonbieEnemyPrefab;
+            default:
+                return null!;
+        }
     }
 
     public void SwitchStage(StageSO nextstage, Direction entryDirection)

@@ -16,6 +16,7 @@ public class TransitionIn : MonoBehaviour
 
     void Start()
     {
+        isAnimating = true;
         AnimateAsync().Forget();
     }
 
@@ -39,7 +40,7 @@ public class TransitionIn : MonoBehaviour
         }
         for (int i = 0; i < squareTransforms.Length; i++)
         {
-            squareTransforms[i].DOScaleX(sizeAfter, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
+            squareTransforms[i].DOScaleX(sizeAfter, slideDuration).SetEase(Ease.InCubic);
             await UniTask.Delay(TimeSpan.FromSeconds(elementDelay));
         }
         isAnimating = false;

@@ -70,6 +70,11 @@ public class CameraManager : MonoBehaviour
     {
         Debug.Log("Scene Loaded: " + scene.name);
         mainCamera = Camera.main;
+        if (mainCamera != null)
+        {
+             mainCamera.TryGetComponent(out pixelPerfectCamera);
+        }
+        ApplyResolutionSettings(GameSettings.Resolution);
     }
 
     void LateUpdate()

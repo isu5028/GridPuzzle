@@ -6,6 +6,8 @@ public static class GameSettings
     public static Vector2Int Resolution = new Vector2Int(960, 540);
     public static int GameSpeed = 1;
     public static int Language = 0; // 0: English, 1: Japanese
+    public static int BgmVolume = 50;
+    public static int SeVolume = 50;
 
     public static void ApplySettings()
     {
@@ -28,6 +30,12 @@ public static class GameSettings
         else
         {
             op.Completed += _ => SetLanguage(Language);
+        }
+
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.SetBGMVolume(BgmVolume / 100f);
+            AudioManager.Instance.SetSEVolume(SeVolume / 100f);
         }
     }
 

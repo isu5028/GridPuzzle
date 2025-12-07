@@ -30,11 +30,12 @@ public class SaveData
     public List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
 
     // --- オプション設定 ---
-    public int screenMode;
-    public int resolutionWidth;
-    public int resolutionHeight;
-    public int gameSpeed;
-    public int language;
+    // オプションはOptionSaveDataで管理するため削除
+    // public int screenMode;
+    // public int resolutionWidth;
+    // public int resolutionHeight;
+    // public int gameSpeed;
+    // public int language;
 }
 
 [System.Serializable]

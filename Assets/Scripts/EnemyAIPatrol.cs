@@ -1,7 +1,7 @@
 using UnityEngine;
 using Cysharp.Threading.Tasks;
 using UnityEngine.Rendering;
-public class PatrolEnemyAI : EnemyAI
+public class EnemyAIPatrol : EnemyAI
 {
     public override async UniTask ExecuteAI(Enemy enemy)
     {

@@ -21,7 +21,7 @@ public class StageEditor : Editor
     }
 
     private EditMode currentMode = EditMode.Wall;
-    private EnemyType currentEnemyType = EnemyType.Patrol;
+    private EnemyType currentEnemyType = EnemyType.Slime;
     private int currentMaxHP = 10;
     private Direction currentEnemyDirection = Direction.Up;
 
@@ -34,8 +34,7 @@ public class StageEditor : Editor
     private readonly Color wallColor = new Color(0.3f, 0.3f, 0.3f);
     private readonly Color floorColor = new Color(0.9f, 0.9f, 0.9f);
     private readonly Color playerColor = new Color(0.2f, 0.8f, 0.2f);
-    private readonly Color patrolEnemyColor = new Color(0.8f, 0.2f, 0.2f);
-    private readonly Color chaserEnemyColor = new Color(0.8f, 0.4f, 0.2f);
+    private readonly Color enemyColor = new Color(0.8f, 0.2f, 0.2f);
     private readonly Color gridLineColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
     private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // 黄色半透明
 
@@ -259,7 +258,7 @@ public class StageEditor : Editor
             EditMode.Wall => "壁を配置",
             EditMode.Floor => "床を配置",
             EditMode.Player => "プレイヤーの初期位置を設定",
-            EditMode.Enemy => $"{(currentEnemyType == EnemyType.Patrol ? "巡回型" : "追跡型")}敵を配置",
+            EditMode.Enemy => $"{currentEnemyType}敵を配置",
             EditMode.EraseUnit => "プレイヤーまたは敵をクリックして削除",
             _ => ""
         };
@@ -366,13 +365,11 @@ public class StageEditor : Editor
                             CELL_SIZE * 0.8f
                         );
 
-                        Color enemyColor = enemy.EnemyType == EnemyType.Patrol
-                            ? patrolEnemyColor
-                            : chaserEnemyColor;
                         EditorGUI.DrawRect(enemyRect, enemyColor);
 
                         // 敵の種類を示す文字
-                        string label = enemy.EnemyType == EnemyType.Patrol ? "P" : "C";
+                        string typeName = enemy.EnemyType.ToString();
+                        string label = typeName.Length >= 2 ? typeName.Substring(0, 2) : typeName;
                         GUI.Label(enemyRect, label, new GUIStyle(GUI.skin.label)
                         {
                             alignment = TextAnchor.MiddleCenter,
@@ -539,13 +536,8 @@ public class StageEditor : Editor
         EditorGUILayout.BeginHorizontal();
         DrawColorBox(playerColor);
         EditorGUILayout.LabelField("プレイヤー (P)", GUILayout.Width(100));
-        DrawColorBox(patrolEnemyColor);
-        EditorGUILayout.LabelField("巡回敵 (P)", GUILayout.Width(100));
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.BeginHorizontal();
-        DrawColorBox(chaserEnemyColor);
-        EditorGUILayout.LabelField("追跡敵 (C)", GUILayout.Width(100));
+        DrawColorBox(enemyColor);
+        EditorGUILayout.LabelField("敵 (E)", GUILayout.Width(100));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.EndVertical();

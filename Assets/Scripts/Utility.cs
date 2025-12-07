@@ -5,8 +5,10 @@ using System;
 public enum EnemyType
 {
     None,
-    Patrol,  // 巡回型
-    Chaser   // 追跡型
+    Slime,
+    Goblin,
+    Skeleton,
+    Zonbie,
 }
 
 public enum CellType

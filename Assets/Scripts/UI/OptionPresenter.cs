@@ -13,8 +13,8 @@ public class OptionPresenter : MonoBehaviour
     [SerializeField] private TurnManager turnManager = null!;
     [SerializeField] private PixelPerfectCamera pixelPerfectCamera = null!;
     [SerializeField] private HUDFeedback optionFeedback = null!;
-    private GridManager gridManager;
-    private OptionLoadPresenter optionLoadPresenter;
+    [SerializeField] private GridManager gridManager = null!;
+    [SerializeField] private OptionLoadPresenter optionLoadPresenter;
     private OptionModel model = null!;
     private bool isProcessingInput = false;
     private float inputCooldown = 0.2f;
@@ -44,13 +44,12 @@ public class OptionPresenter : MonoBehaviour
 
     void Start()
     {
-        gridManager = FindFirstObjectByType<GridManager>();
-        optionLoadPresenter = FindFirstObjectByType<OptionLoadPresenter>();
         // Modelの初期化
         model = new OptionModel();
 
         // 初期の見た目を反映
         RefreshView();
+        ApplyScreenSettings();
     }
 
     void Update()
@@ -180,6 +179,8 @@ public class OptionPresenter : MonoBehaviour
                 }
                 view.UpdateBgmDisplay(model.BgmLevel, direction);
                 AudioManager.Instance.SetBGMVolume(model.BgmLevel / 100f);
+                GameSettings.BgmVolume = model.BgmLevel; // Sync
+                GameProgressManager.Instance.SaveOptions(); // Save
                 break;
 
             case OptionModel.ItemType.SeVolume:
@@ -191,31 +192,37 @@ public class OptionPresenter : MonoBehaviour
                 }
                 view.UpdateSeDisplay(model.SeLevel, direction);
                 AudioManager.Instance.SetSEVolume(model.SeLevel / 100f);
+                GameSettings.SeVolume = model.SeLevel; // Sync
+                GameProgressManager.Instance.SaveOptions(); // Save
                 AudioManager.Instance.PlaySE(AudioManager.SEType.tap);
                 break;
 
             case OptionModel.ItemType.ScreenMode:
                 model.ChangeScreenMode(direction);
                 view.UpdateScreenModeDisplay(model.ScreenMode, direction);
-                ApplyScreenSettings(); // 設定を即時反映
+                ApplyScreenSettings(); // Validates and Applies
+                GameProgressManager.Instance.SaveOptions(); // Save
                 break;
 
             case OptionModel.ItemType.Resolution:
                 model.ChangeResolution(direction);
                 view.UpdateResolutionDisplay(model.CurrentResolution, direction);
-                ApplyScreenSettings(); // 設定を即時反映
+                ApplyScreenSettings(); // Validates and Applies
+                GameProgressManager.Instance.SaveOptions(); // Save
                 break;
 
             case OptionModel.ItemType.GameSpeed:
                 model.ChangeGameSpeed(direction);
                 view.UpdateGameSpeedDisplay(model.GameSpeed, direction);
-                ApplyGameSpeed(); // 設定を即時反映
+                ApplyGameSpeed(); // Validates and Applies
+                GameProgressManager.Instance.SaveOptions(); // Save
                 break;
 
             case OptionModel.ItemType.Language:
                 model.ChangeLanguage(direction);
                 view.UpdateLanguageDisplay(model.Language, direction);
-                ApplyLanguage(); // 設定を即時反映
+                ApplyLanguage(); // Validates and Applies
+                GameProgressManager.Instance.SaveOptions(); // Save
                 break;
         }
     }
