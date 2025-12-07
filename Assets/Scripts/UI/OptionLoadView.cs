@@ -43,15 +43,17 @@ public class OptionLoadView : MonoBehaviour
         }
     }
 
+    private Vector3 hiddenUpPosition;
+
     void Start()
     {
         if (optionLoadPanel != null)
         {
             visiblePosition = new Vector3(0, 0, optionLoadPanel.localPosition.z);
             hiddenPosition = new Vector3(visiblePosition.x, visiblePosition.y - Screen.height, visiblePosition.z);
+            hiddenUpPosition = new Vector3(visiblePosition.x, visiblePosition.y + Screen.height, visiblePosition.z);
             optionLoadPanel.localPosition = hiddenPosition;
         }
-
     }
 
     public async UniTask ShowAsync()
@@ -70,6 +72,16 @@ public class OptionLoadView : MonoBehaviour
 
         isAnimating = true;
         optionLoadPanel.DOLocalMove(hiddenPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
+        await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
+        isAnimating = false;
+    }
+
+    public async UniTask HideUpAsync()
+    {
+        if (isAnimating) return;
+
+        isAnimating = true;
+        optionLoadPanel.DOLocalMove(hiddenUpPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
     }

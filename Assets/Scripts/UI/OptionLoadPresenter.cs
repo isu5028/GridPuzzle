@@ -6,9 +6,10 @@ using UnityEngine.InputSystem;
 public class OptionLoadPresenter : MonoBehaviour
 {
     [SerializeField] private OptionLoadView view = null!;
+    [SerializeField] private OptionLoadConfirmationView confirmationView = null!;
     private GridManager gridManager;
 
-    // Input Action references (can be assigned from OptionPresenter or found via InputSystem)
+    // Input Action references
     private InputAction inputMove;
     private InputAction inputDecide;
     private InputAction inputCancel;
@@ -30,6 +31,10 @@ public class OptionLoadPresenter : MonoBehaviour
     private UniTaskCompletionSource closeCompletionSource;
     private Func<UniTask> onCancelAnimation;
 
+    // Confirmation State
+    private bool isConfirmationOpen = false;
+    private int confirmationIndex = 0; // 0: Execute, 1: Cancel
+
     private void Start()
     {
         gridManager = FindFirstObjectByType<GridManager>();
@@ -45,6 +50,7 @@ public class OptionLoadPresenter : MonoBehaviour
         closeCompletionSource = new UniTaskCompletionSource();
         isLoaded = false;
         this.onCancelAnimation = onCancelAnimation;
+        isConfirmationOpen = false;
 
         RefreshData();
 
@@ -74,17 +80,31 @@ public class OptionLoadPresenter : MonoBehaviour
 
     private void HandleInput()
     {
-        if (view.IsAnimating) return;
+        if (view.IsAnimating || (isConfirmationOpen && confirmationView.IsAnimating)) return;
 
         if (inputCancel.triggered)
         {
-            CloseAsync(false).Forget();
+            if (isConfirmationOpen)
+            {
+                CloseConfirmationAsync().Forget();
+            }
+            else
+            {
+                CloseAsync(false).Forget();
+            }
             return;
         }
 
         if (inputDecide.triggered)
         {
-            ExecuteLoad();
+            if (isConfirmationOpen)
+            {
+                ExecuteConfirmation();
+            }
+            else
+            {
+                ExecuteLoadSelection();
+            }
             return;
         }
 
@@ -105,6 +125,19 @@ public class OptionLoadPresenter : MonoBehaviour
         if (isProcessingInput) return;
 
         Direction dir = Utility.GetDirectionFromStickInput(moveInput);
+
+        if (isConfirmationOpen)
+        {
+            HandleConfirmationInput(dir);
+        }
+        else
+        {
+            HandleLoadSelectionInput(dir);
+        }
+    }
+
+    private void HandleLoadSelectionInput(Direction dir)
+    {
         if (dir == Direction.Up || dir == Direction.Left)
         {
             int nextIndex = currentLoadIndex - 1;
@@ -121,6 +154,18 @@ public class OptionLoadPresenter : MonoBehaviour
         }
     }
 
+    private void HandleConfirmationInput(Direction dir)
+    {
+        // 0: Execute, 1: Cancel
+        if (dir == Direction.Up || dir == Direction.Down)
+        {
+            confirmationIndex = (confirmationIndex == 0) ? 1 : 0;
+            confirmationView.UpdateCursorPosition(confirmationIndex);
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.move);
+            SetInputCooldown(dir, false);
+        }
+    }
+
     private void ChangeSelection(int index)
     {
         if (currentLoadIndex != index)
@@ -131,7 +176,7 @@ public class OptionLoadPresenter : MonoBehaviour
         }
     }
 
-    private void ExecuteLoad()
+    private void ExecuteLoadSelection()
     {
         // 2 is Close
         if (currentLoadIndex == 2)
@@ -140,6 +185,12 @@ public class OptionLoadPresenter : MonoBehaviour
              return;
         }
 
+        // Show Confirmation
+        OpenConfirmationAsync().Forget();
+    }
+
+    private async UniTaskVoid OpenConfirmationAsync()
+    {
         GameProgressManager.SaveType targetType = currentLoadIndex == 0
             ? GameProgressManager.SaveType.Auto
             : GameProgressManager.SaveType.Manual;
@@ -147,16 +198,54 @@ public class OptionLoadPresenter : MonoBehaviour
         var data = GameProgressManager.Instance.GetSaveData(targetType);
         if (data == null)
         {
-            // Logic for no data (optional: play error SE)
-            return;
+             // No data found logic
+             return;
         }
 
         AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
 
-        gridManager.ContinueGame(targetType);
+        isConfirmationOpen = true;
+        confirmationIndex = 0;
+        confirmationView.UpdateCursorPosition(confirmationIndex);
 
-        // Success
-        CloseAsync(true).Forget();
+        // Animate Confirmation Show AND LoadView HideUp
+        await UniTask.WhenAll(
+            confirmationView.ShowAsync(),
+            view.HideUpAsync()
+        );
+    }
+
+    private async UniTaskVoid CloseConfirmationAsync()
+    {
+         AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+
+         // Animate Confirmation Hide AND LoadView Show (Return)
+         await UniTask.WhenAll(
+            confirmationView.HideAsync(),
+            view.ShowAsync()
+         );
+
+         isConfirmationOpen = false;
+    }
+
+    private void ExecuteConfirmation()
+    {
+        if (confirmationIndex == 0) // Execute Load
+        {
+            GameProgressManager.SaveType targetType = currentLoadIndex == 0
+                ? GameProgressManager.SaveType.Auto
+                : GameProgressManager.SaveType.Manual;
+
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
+            gridManager.ContinueGame(targetType);
+
+            // Close Everything
+            CloseAsync(true).Forget();
+        }
+        else // Cancel -> Close everything (Option Menu Return) as requested
+        {
+             CloseAsync(false).Forget();
+        }
     }
 
     private async UniTaskVoid CloseAsync(bool loaded)
@@ -170,6 +259,13 @@ public class OptionLoadPresenter : MonoBehaviour
 
         isActive = false;
         isLoaded = loaded;
+
+        // Ensure confirmation is hidden if it was open
+        if (isConfirmationOpen)
+        {
+             isConfirmationOpen = false;
+             confirmationView.HideAsync().Forget();
+        }
 
         if (!loaded && onCancelAnimation != null)
         {

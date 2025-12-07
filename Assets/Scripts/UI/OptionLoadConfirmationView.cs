@@ -22,6 +22,14 @@ public class OptionLoadConfirmationView : MonoBehaviour
     private bool isAnimating = false;
     public bool IsAnimating => isAnimating;
 
+    public void UpdateCursorPosition(int index)
+    {
+        if (index >= 0 && index < itemPositions.Length)
+        {
+            cursorObj.position = itemPositions[index].position;
+        }
+    }
+
     void Start()
     {
         if (optionLoadConfirmationPanel != null)
@@ -30,7 +38,6 @@ public class OptionLoadConfirmationView : MonoBehaviour
             hiddenPosition = new Vector3(visiblePosition.x, visiblePosition.y - Screen.height, visiblePosition.z);
             optionLoadConfirmationPanel.localPosition = hiddenPosition;
         }
-
     }
 
     public async UniTask ShowAsync()
