@@ -100,10 +100,12 @@ public class OptionLoadPresenter : MonoBehaviour
             if (isConfirmationOpen)
             {
                 ExecuteConfirmation();
+                confirmationView.BlinkCursorAsync().Forget();
             }
             else
             {
                 ExecuteLoadSelection();
+                view.BlinkCursorAsync().Forget();
             }
             return;
         }
@@ -260,6 +262,8 @@ public class OptionLoadPresenter : MonoBehaviour
         isActive = false;
         isLoaded = loaded;
 
+        bool wasConfirmationOpen = isConfirmationOpen;
+
         // Ensure confirmation is hidden if it was open
         if (isConfirmationOpen)
         {
@@ -267,13 +271,26 @@ public class OptionLoadPresenter : MonoBehaviour
              confirmationView.HideAsync().Forget();
         }
 
-        if (!loaded && onCancelAnimation != null)
+        UniTask viewHideTask;
+        if (wasConfirmationOpen)
         {
-            await UniTask.WhenAll(view.HideAsync(), onCancelAnimation.Invoke());
+            // If confirmation was open, View is shifted UP.
+            // We should Hide UP to avoid sweeping across the screen content.
+            viewHideTask = view.HideUpAsync();
         }
         else
         {
-            await view.HideAsync();
+            // Normal close (from center to down)
+            viewHideTask = view.HideAsync();
+        }
+
+        if (!loaded && onCancelAnimation != null)
+        {
+            await UniTask.WhenAll(viewHideTask, onCancelAnimation.Invoke());
+        }
+        else
+        {
+            await viewHideTask;
         }
 
         closeCompletionSource.TrySetResult();

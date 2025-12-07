@@ -8,6 +8,7 @@ using Cysharp.Threading.Tasks;
 using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine.Localization.Components;
+using System.Security;
 
 public class OptionView : MonoBehaviour
 {
@@ -65,6 +66,11 @@ public class OptionView : MonoBehaviour
             hiddenPosition = new Vector3(visiblePosition.x, visiblePosition.y - Screen.height, visiblePosition.z);
             optionPanel.localPosition = hiddenPosition;
         }
+    }
+
+    public void InitialShow()
+    {
+        optionPanel.localPosition = hiddenPosition;
     }
 
     public async UniTask ShowAsync()

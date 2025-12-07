@@ -61,6 +61,8 @@ public class OptionLoadView : MonoBehaviour
         if (isAnimating) return;
 
         isAnimating = true;
+        // Start from hidden position (Bottom) to ensure correct entry animation
+        optionLoadPanel.localPosition = hiddenPosition;
         optionLoadPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
@@ -84,5 +86,21 @@ public class OptionLoadView : MonoBehaviour
         optionLoadPanel.DOLocalMove(hiddenUpPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
+    }
+
+    public void ResetToHidden()
+    {
+        if (optionLoadPanel != null)
+        {
+            optionLoadPanel.localPosition = hiddenPosition;
+        }
+    }
+
+    public async UniTask BlinkCursorAsync()
+    {
+        if (cursorObj == null) return;
+        cursorObj.gameObject.SetActive(false);
+        await UniTask.Delay(150);
+        cursorObj.gameObject.SetActive(true);
     }
 }

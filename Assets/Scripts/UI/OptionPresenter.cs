@@ -71,6 +71,7 @@ public class OptionPresenter : MonoBehaviour
             else
             {
                 HandleOpenAsync().Forget();
+                view.InitialShow();
                 optionFeedback.PlayFeedback();
             }
             return;
@@ -79,7 +80,7 @@ public class OptionPresenter : MonoBehaviour
         if (!GetOptionState() || isSubMenuOpen) return;
 
         // 決定ボタン
-        if (view.InputDecide.triggered)
+        if (view.InputDecide.triggered && !isAnimating)
         {
             HandleSubmit();
             return;

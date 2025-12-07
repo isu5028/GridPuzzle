@@ -59,4 +59,12 @@ public class OptionLoadConfirmationView : MonoBehaviour
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
         isAnimating = false;
     }
+
+    public async UniTask BlinkCursorAsync()
+    {
+        if (cursorObj == null) return;
+        cursorObj.gameObject.SetActive(false);
+        await UniTask.Delay(150);
+        cursorObj.gameObject.SetActive(true);
+    }
 }
