@@ -48,6 +48,18 @@ public class Enemy : Unit
         unitAnimator.SetDirection(dir);
     }
 
+
+
+    public int GetAIState()
+    {
+        return enemyAI != null ? enemyAI.GetState() : 0;
+    }
+
+    public void SetAIState(int state)
+    {
+        if (enemyAI != null) enemyAI.SetState(state);
+    }
+
     public void ReviveSilent()
     {
         isDead = false;

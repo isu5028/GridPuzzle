@@ -85,9 +85,18 @@ public class TurnManager : MonoBehaviour
         bool anyExecuted = false;
         float startAll = Time.realtimeSinceStartup;
 
-        foreach (var enemy in unitManager.Enemies)
+        // Create a snapshot of the enemy list to allow modification (e.g. map transition removals) during iteration
+        var enemiesSnapshot = new List<Enemy>(unitManager.Enemies);
+
+        foreach (var enemy in enemiesSnapshot)
         {
-            if (enemy != null && !enemy.IsDead)
+            // Check if enemy is still valid and active in the current context
+            // If enemy was removed from UnitManager (e.g. moved to another map), we might still want to execute?
+            // "Active" check (gameObject.activeSelf) handles this if MoveEnemyToStage deactivates it.
+            // But if it deactivate itself, it shouldn't run?
+            // The enemy.ExecuteTurn() is awaited. If it moved, it finished its turn.
+
+            if (enemy != null && !enemy.IsDead && enemy.gameObject.activeInHierarchy)
             {
                 anyExecuted = true;
                 await enemy.ExecuteTurn();

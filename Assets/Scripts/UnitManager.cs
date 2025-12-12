@@ -59,6 +59,24 @@ public class UnitManager : MonoBehaviour
         }
     }
 
+    public void AddEnemy(Enemy enemy)
+    {
+        if (!enemyScripts.Contains(enemy))
+        {
+            enemyScripts.Add(enemy);
+            enemyObjects.Add(enemy.gameObject);
+        }
+    }
+
+    public void RemoveEnemy(Enemy enemy)
+    {
+        if (enemyScripts.Contains(enemy))
+        {
+            enemyScripts.Remove(enemy);
+            enemyObjects.Remove(enemy.gameObject);
+        }
+    }
+
     public void SetAllEnemiesActive(bool isActive)
     {
         foreach (var enemy in enemyObjects)

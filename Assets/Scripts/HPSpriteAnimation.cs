@@ -10,7 +10,7 @@ public class HPSpriteAnimation : MonoBehaviour
     [SerializeField] private float baseScale = 1.5f;
     private Vector3 originalScale;
 
-    private void Start()
+    private void Awake()
     {
         originalScale = transform.localScale;
     }

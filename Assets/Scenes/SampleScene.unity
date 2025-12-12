@@ -22042,6 +22042,7 @@ MonoBehaviour:
   goblinEnemyPrefab: {fileID: 2706672242267340326, guid: 50bff1f3dda79c7488dca03d152c2a62, type: 3}
   skeletonEnemyPrefab: {fileID: 2706672242267340326, guid: 5c83a9e42fe9b2246967acda27a965e6, type: 3}
   zombieEnemyPrefab: {fileID: 2706672242267340326, guid: 5ee3f796d520b2b4d8c561941f81c47d, type: 3}
+  boarEnemyPrefab: {fileID: 2706672242267340326, guid: 419390f049659e04a8b2fdda81b9453a, type: 3}
 --- !u!114 &2128509202
 MonoBehaviour:
   m_ObjectHideFlags: 0

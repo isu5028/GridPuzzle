@@ -26,6 +26,7 @@ public abstract class Unit : MonoBehaviour
 
     // Public Accessor for Animator
     public UnitAnimator UnitAnimator => unitAnimator;
+    public OrderSpriteAnimation OrderSpriteAnimation => orderSpriteAnimation;
 
     protected GridManager gridManager = null!;
     protected TurnManager turnManager = null!;
@@ -42,13 +43,12 @@ public abstract class Unit : MonoBehaviour
     private Vector3 hpOriginalPos;
     private Vector3 orderOriginalPos;
 
-    private int maxHP = 10;
-    // UniRx ReactiveProperty
-    private IntReactiveProperty hp = new IntReactiveProperty(10);
+    [SerializeField] protected int maxHP = 3;
+    protected ReactiveProperty<int> hp = new ReactiveProperty<int>(3);
     public IReadOnlyReactiveProperty<int> HP => hp;
     public int MaxHP => maxHP;
 
-    private int order = 0;
+    protected int order = 0;
     public int Order => order;
 
     [SerializeField] protected bool isDead = false;
@@ -129,6 +129,7 @@ public abstract class Unit : MonoBehaviour
         unitAnimator.SetDirection(currentDirection);
         maxHP = maxHp;
         hp.Value = maxHp;
+        if (hpText != null) hpText.text = maxHp.ToString();
 
         order = startOrder;
         orderText.text = (order + 1).ToString();
@@ -139,6 +140,12 @@ public abstract class Unit : MonoBehaviour
     {
         currentDirection = direction;
         unitAnimator.SetDirection(direction);
+    }
+
+    public void SetOrder(int order)
+    {
+        this.order = order;
+        if(orderText != null) orderText.text = (order + 1).ToString();
     }
 
     public void SetOrderText(string text)
@@ -223,17 +230,19 @@ public abstract class Unit : MonoBehaviour
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
-        Vector3 originalPos = spriteTransform.position;
+
+        // Use Local Position for robustness against Parent movement
+        Vector3 originalLocalPos = Vector3.zero; // Assuming sprite rests at zero locally
 
         Vector2Int directionVector = Utility.GetVectorFromDirection(currentDirection);
         Vector3 attackOffset = new Vector3(directionVector.x, directionVector.y, 0) * attackDistance;
 
-        Vector3 attackPos = originalPos + attackOffset;
+        Vector3 attackLocalPos = originalLocalPos + attackOffset;
 
         Sequence attackSequence = DOTween.Sequence();
 
         attackSequence
-            .Append(spriteTransform.DOMove(attackPos, attackDuration * 0.3f).SetEase(Ease.InQuad))
+            .Append(spriteTransform.DOLocalMove(attackLocalPos, attackDuration * 0.3f).SetEase(Ease.InQuad))
             .AppendCallback(() =>
             {
                 foreach (var pos in targetPosition)
@@ -247,7 +256,7 @@ public abstract class Unit : MonoBehaviour
                 }
                 if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
             })
-            .Append(spriteTransform.DOMove(originalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad));
+            .Append(spriteTransform.DOLocalMove(originalLocalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad));
 
         await attackSequence.AsyncWaitForCompletion();
 
@@ -257,30 +266,54 @@ public abstract class Unit : MonoBehaviour
 
     public void TakeDamage(int damage, Vector2Int attackerPos)
     {
+        Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
 
         hp.Value -= damage;
 
-        hpSpriteAnimation.PlayAnimation();
+        if (gameObject.activeInHierarchy)
+        {
+            hpSpriteAnimation.PlayAnimation();
+        }
+
+        // Force Visual Update even if inactive
+        if (hpText != null) hpText.text = hp.Value.ToString();
+
         if(hp.Value <= 0)
         {
             unitAnimator.SetDeath();
             hp.Value = 0;
             Die(attackerPos);
-            CameraManager.Instance.ShakeCamera(1f, 5f, knockbackDirection);
+            if(gameObject.activeInHierarchy) CameraManager.Instance.ShakeCamera(1f, 5f, knockbackDirection);
         }
         else
         {
-            colorFlash.AnimateToColor(Utility.mainColors[2], flashDuration);
-
-            if(this is Player) CameraManager.Instance.ShakeCamera(0.5f, 4f, knockbackDirection);
+            if (gameObject.activeInHierarchy)
+            {
+                colorFlash.AnimateToColor(Utility.mainColors[2], flashDuration);
+                if(this is Player) CameraManager.Instance.ShakeCamera(0.5f, 4f, knockbackDirection);
+            }
         }
     }
 
     private void Die(Vector2Int attackerPos)
     {
         isDead = true;
-        DieAsync(attackerPos).Forget();
+        if (gameObject.activeInHierarchy)
+        {
+            DieAsync(attackerPos).Forget();
+        }
+        else
+        {
+            // If inactive, just apply transform changes immediately or dirty flag?
+            // Actually, if inactive, we might not need to move transforms yet.
+            // But when it becomes active, it should be in Dead state.
+            // OnEnable/Start should check IsDead?
+            // Existing `ApplyDeadStateVisual` handles this!
+            // Line 92 `ApplyDeadStateVisual` calls `InitializeVisuals` then sets transforms.
+            // `GridManager.MoveEnemyToStage` calls `ApplyDeadStateVisual` if dead when activating.
+            // So we just set `isDead = true` and we are good.
+        }
     }
 
     private async UniTask DieAsync(Vector2Int attackerPos)

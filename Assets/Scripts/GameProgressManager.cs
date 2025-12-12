@@ -52,6 +52,7 @@ public class GameProgressManager : MonoBehaviour
     public bool HasLoadedData { get; private set; } = false;
     public List<EnemySaveData> SavedEnemyList { get; private set; } = new List<EnemySaveData>();
     public List<StageEnemyData> SavedAllStagesEnemies { get; private set; } = new List<StageEnemyData>();
+    public List<StageWallData> SavedAllStagesWalls { get; private set; } = new List<StageWallData>();
     public Vector2Int SavedResetMapPos { get; private set; } = Vector2Int.zero;
     public int SavedPlayerHP { get; private set; } = 0;
 
@@ -288,7 +289,19 @@ public class GameProgressManager : MonoBehaviour
     public void MarkPositionAsUnCleared(Vector2Int position)
     {
         visitedPositions.Add(position);
-        if (!clearedPositions.Contains(position))
+
+        // If it was cleared, remove it from cleared list because now an enemy is there
+        if (clearedPositions.Contains(position))
+        {
+            clearedPositions.Remove(position);
+        }
+
+        // Set to Uncleared (or CurrentUnCleared if it's current map)
+        if (currentMapPosition == position)
+        {
+            SetCellType(position.x, position.y, WorldMapCellType.CurrentUnCleared);
+        }
+        else
         {
             SetCellType(position.x, position.y, WorldMapCellType.Uncleared);
         }
@@ -349,7 +362,7 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
-    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, SaveType saveType)
+    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, List<StageWallData> allStagesWalls, SaveType saveType)
     {
         SaveData data = new SaveData();
 
@@ -383,6 +396,7 @@ public class GameProgressManager : MonoBehaviour
 
         // 4. 全ステージの敵情報
         data.allStagesEnemies = new List<StageEnemyData>(allStagesEnemies);
+        data.allStagesWalls = new List<StageWallData>(allStagesWalls);
 
         data.resetMapX = resetMapPos.x;
         data.resetMapY = resetMapPos.y;
@@ -441,6 +455,8 @@ public class GameProgressManager : MonoBehaviour
             SavedPlayerDirection = (Direction)data.playerDirection;
             SavedEnemyList = data.enemyList;
             SavedAllStagesEnemies = data.allStagesEnemies;
+            SavedAllStagesWalls = data.allStagesWalls ?? new List<StageWallData>(); // Handle legacy saves
+            SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedPlayerHP = data.playerHP;

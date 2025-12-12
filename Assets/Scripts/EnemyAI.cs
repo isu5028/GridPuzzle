@@ -15,4 +15,8 @@ public abstract class EnemyAI: MonoBehaviour
     }
 
     public abstract UniTask ExecuteAI(Enemy enemy);
+
+    // AI State Persistence
+    public virtual int GetState() { return 0; }
+    public virtual void SetState(int state) { }
 }

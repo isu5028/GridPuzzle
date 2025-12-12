@@ -10,6 +10,14 @@ public class StageEnemyData
 }
 
 [System.Serializable]
+public class StageWallData
+{
+    public int stageX;
+    public int stageY;
+    public List<Vector2IntData> destroyedWalls;
+}
+
+[System.Serializable]
 public class SaveData
 {
     public int resetMapX;
@@ -28,6 +36,7 @@ public class SaveData
     public int playerHP;
     public List<EnemySaveData> enemyList = new List<EnemySaveData>();
     public List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
+    public List<StageWallData> allStagesWalls = new List<StageWallData>();
 
     // --- オプション設定 ---
     // オプションはOptionSaveDataで管理するため削除
@@ -64,5 +73,9 @@ public class EnemySaveData
     public int direction;
     public bool isDead;
     public int currentHP;
+    public int aiState;
+    public int enemyType;
+    public int order;
+    public int maxHP;
     public int index;
 }

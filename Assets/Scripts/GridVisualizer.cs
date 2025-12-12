@@ -121,7 +121,7 @@ public class GridVisualizer : MonoBehaviour
         }
     }
 
-    public void SetupTransitionTilemap(StageSO stage, Direction entryDirection, bool nextStageHasEnemy)
+    public void SetupTransitionTilemap(StageSO stage, Direction entryDirection, bool nextStageHasEnemy, HashSet<Vector2Int> destroyedWalls = null)
     {
         transitionTilemap.ClearAllTiles();
         Vector2Int dir = Utility.GetVectorFromDirection(entryDirection);
@@ -137,6 +137,11 @@ public class GridVisualizer : MonoBehaviour
             for (int x = 0; x < w; x++)
             {
                 CellType type = stage.GetWallAt(x, y);
+                // 破壊された壁は床として扱う
+                if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                {
+                    type = CellType.Floor;
+                }
                 SetTileAt(transitionTilemap, x, y, type, nextStageHasEnemy);
             }
         }
