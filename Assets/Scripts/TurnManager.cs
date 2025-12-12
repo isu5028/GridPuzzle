@@ -85,7 +85,6 @@ public class TurnManager : MonoBehaviour
         bool anyExecuted = false;
         float startAll = Time.realtimeSinceStartup;
 
-        // GridManagerではなくUnitManagerから敵リストを取得
         foreach (var enemy in unitManager.Enemies)
         {
             if (enemy != null && !enemy.IsDead)

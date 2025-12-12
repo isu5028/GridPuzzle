@@ -7,19 +7,19 @@ using UniRx;
 
 public abstract class Unit : MonoBehaviour
 {
-    [SerializeField] private float moveDuration = 0.2f;
-    [SerializeField] private float attackDuration = 0.3f;
-    [SerializeField] private float attackDistance = 0.7f;
+    [SerializeField] protected float moveDuration = 0.2f;
+    [SerializeField] protected float attackDuration = 0.3f;
+    [SerializeField] protected float attackDistance = 0.7f;
     [SerializeField] private float flashDuration = 0.15f;
     [SerializeField] private Vector2Int[] attackTargetPos = null!;
-    [SerializeField] private Transform spriteTransform = null!;
+    [SerializeField] protected Transform spriteTransform = null!;
     [SerializeField] private TextMeshPro hpText = null!;
     [SerializeField] private TextMeshPro orderText = null!;
     [SerializeField] private Transform hpTransform = null!;
     [SerializeField] private Transform orderTransform = null!;
     [SerializeField] private ColorFlash colorFlash = null!;
     [SerializeField] private HPSpriteAnimation hpSpriteAnimation = null!;
-    [SerializeField] private OrderSpriteAnimation orderSpriteAnimation = null!;
+    [SerializeField] protected OrderSpriteAnimation orderSpriteAnimation = null!;
     [SerializeField] private Transform maskTransform = null!;
     [SerializeField] private Transform maskedTransform = null!;
     [SerializeField] protected UnitAnimator unitAnimator = null!;
@@ -139,6 +139,11 @@ public abstract class Unit : MonoBehaviour
     {
         currentDirection = direction;
         unitAnimator.SetDirection(direction);
+    }
+
+    public void SetOrderText(string text)
+    {
+        if (orderText != null) orderText.text = text;
     }
 
     public void SetPosition(Vector2Int position)

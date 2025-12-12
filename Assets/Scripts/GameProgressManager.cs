@@ -28,7 +28,8 @@ public class GameProgressManager : MonoBehaviour
     private Vector2Int currentMapPosition;
     private HashSet<Vector2Int> clearedPositions = new HashSet<Vector2Int>();
     private HashSet<Vector2Int> visitedPositions = new HashSet<Vector2Int>();
-    private int mapLength = 8;
+    private int mapHeight = 8;
+    private int mapWidth = 12;
     private string ManualSaveFilePath => Application.persistentDataPath + "/manualsavefile.json";
     private string AutoSaveFilePath => Application.persistentDataPath + "/autosavefile.json";
     private string OptionSaveFilePath => Application.persistentDataPath + "/optionfile.json";
@@ -111,8 +112,10 @@ public class GameProgressManager : MonoBehaviour
         currentMapPosition = Vector2Int.zero;
     }
 
-    public void UpdateStageStatus(Vector2Int position, bool isCurrent, bool isCleared)
+    public bool UpdateStageStatus(Vector2Int position, bool isCurrent, bool isCleared)
     {
+        bool isNewAreaUnlocked = false;
+
         // 1. クリア時の処理
         if (isCleared)
         {
@@ -121,7 +124,7 @@ public class GameProgressManager : MonoBehaviour
             clearedPositions.Add(position);
 
             // ★重要: クリアした時だけ、隣接する Unknown を Uncleared に変える
-            UnlockNeighbors(position);
+            isNewAreaUnlocked = UnlockNeighbors(position);
         }
         else
         {
@@ -175,6 +178,8 @@ public class GameProgressManager : MonoBehaviour
         WorldMapCellType finalType = isCurrent ? ConvertToCurrentType(baseType) : baseType;
 
         SetCellType(position.x, position.y, finalType);
+
+        return isNewAreaUnlocked;
     }
 
     // Current系 -> 通常系 (Currentフラグを外す)
@@ -202,8 +207,9 @@ public class GameProgressManager : MonoBehaviour
     }
 
     // ★追加: 隣接マスを開放するメソッド
-    private void UnlockNeighbors(Vector2Int center)
+    private bool UnlockNeighbors(Vector2Int center)
     {
+        bool unlocked = false;
         // 上下左右の座標オフセット
         Vector2Int[] directions = new Vector2Int[]
         {
@@ -218,8 +224,8 @@ public class GameProgressManager : MonoBehaviour
             Vector2Int neighborPos = center + dir;
 
             // マップ範囲内かチェック
-            if (neighborPos.x >= 0 && neighborPos.x < mapLength &&
-                neighborPos.y >= 0 && neighborPos.y < mapLength)
+            if (neighborPos.x >= 0 && neighborPos.x < mapWidth &&
+                neighborPos.y >= 0 && neighborPos.y < mapHeight)
             {
                 // 現在の状態を取得
                 WorldMapCellType currentType = GetCellType(neighborPos.x, neighborPos.y);
@@ -230,19 +236,20 @@ public class GameProgressManager : MonoBehaviour
                 {
                     SetCellType(neighborPos.x, neighborPos.y, WorldMapCellType.Uncleared);
                     visitedPositions.Add(neighborPos);
+                    unlocked = true;
                 }
             }
         }
+        return unlocked;
     }
 
     private void InitializeMapData()
     {
-        int mapLength = 8;
-        mapData = new WorldMapCellType[mapLength][];
-        for (int x = 0; x < mapLength; x++)
+        mapData = new WorldMapCellType[mapWidth][];
+        for (int x = 0; x < mapWidth; x++)
         {
-            mapData[x] = new WorldMapCellType[mapLength];
-            for (int y = 0; y < mapLength; y++)
+            mapData[x] = new WorldMapCellType[mapHeight];
+            for (int y = 0; y < mapHeight; y++)
             {
                 mapData[x][y] = WorldMapCellType.Unknown;
             }

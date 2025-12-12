@@ -21,14 +21,7 @@ public class TransitionOut : MonoBehaviour
 
     void Update()
     {
-#if UNITY_EDITOR
-        if (Input.GetKeyDown(KeyCode.L))
-        {
-            if (isAnimating) return;
-            isAnimating = true;
-            AnimateAsync().Forget();
-        }
-#endif
+
     }
 
     public async UniTask AnimateAsync()

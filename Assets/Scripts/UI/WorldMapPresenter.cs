@@ -157,12 +157,11 @@ public class WorldMapPresenter : MonoBehaviour
             case Direction.Down: dy = -1; break;
         }
 
-        int mapSize = model.MapSize;
-
         // X方向トライ
         if (dx != 0)
         {
-            Vector2Int nextPos = new Vector2Int((cursorPosition.x + dx + mapSize) % mapSize, cursorPosition.y);
+            int width = model.MapWidth;
+            Vector2Int nextPos = new Vector2Int((cursorPosition.x + dx + width) % width, cursorPosition.y);
             // ★Modelに問い合わせる（Unknownチェックなど）
             if (model.IsTraversable(nextPos))
             {
@@ -174,8 +173,9 @@ public class WorldMapPresenter : MonoBehaviour
         // Y方向トライ
         if (dy != 0)
         {
+            int height = model.MapHeight;
             // X移動後の座標を基準にするか、XY独立か。現在のロジックではX移動後のcursorPositionを使っているのでそれに従う
-            Vector2Int nextPos = new Vector2Int(cursorPosition.x, (cursorPosition.y + dy + mapSize) % mapSize);
+            Vector2Int nextPos = new Vector2Int(cursorPosition.x, (cursorPosition.y + dy + height) % height);
             // ★Modelに問い合わせる
             if (model.IsTraversable(nextPos))
             {
@@ -195,7 +195,6 @@ public class WorldMapPresenter : MonoBehaviour
             // Unknownでなければ選択可能
             if (model.GetCellType(cursorPosition) != WorldMapCellType.Unknown)
             {
-                // 1. Modelからステージデータを取得
                 StageSO targetStage = model.GetStageAt(cursorPosition);
 
                 if (targetStage != null)
@@ -203,13 +202,8 @@ public class WorldMapPresenter : MonoBehaviour
                     Debug.Log($"Warping to: {targetStage.name}");
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
 
-                    // 2. GridManagerを使ってワープ
                     gridManager.WarpToStage(targetStage);
 
-                    // 3. マップを閉じる
-                    // 閉じる処理を待たずにゲーム再開させるならForget、演出を待つならawait
-                    // 3. マップを閉じる
-                    // 閉じる処理を待たずにゲーム再開させるならForget、演出を待つならawait
                     CloseMapAndResumeAsync().Forget();
                 }
             }

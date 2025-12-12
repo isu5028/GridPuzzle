@@ -11,11 +11,14 @@ public class RangedAttackCommand : ICommand
     private bool wasDead;
     private bool hitUnit;
 
-    public RangedAttackCommand(Enemy attacker, Vector2Int targetPos, GridManager grid)
+    private Transform arrowPrefab;
+
+    public RangedAttackCommand(Enemy attacker, Vector2Int targetPos, GridManager grid, Transform arrowPrefab)
     {
         this.attacker = attacker;
         this.targetPos = targetPos;
         this.gridManager = grid;
+        this.arrowPrefab = arrowPrefab;
     }
 
     public void Execute()
@@ -29,7 +32,7 @@ public class RangedAttackCommand : ICommand
             wasDead = targetUnit.IsDead;
         }
 
-        attacker.PerformRangedAttack(targetPos, targetUnit);
+        attacker.PerformRangedAttack(targetPos, targetUnit, arrowPrefab);
     }
 
     public void Undo()

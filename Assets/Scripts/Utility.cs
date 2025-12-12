@@ -8,7 +8,7 @@ public enum EnemyType
     Slime,
     Goblin,
     Skeleton,
-    Zonbie,
+    Zombie,
 }
 
 public enum CellType

@@ -4,8 +4,10 @@ using UnityEngine;
 public class WorldMapModel
 {
     private WorldMapSO worldMapSO;
-    private int mapLength = 8; // 定数管理またはGameProgressManagerから取得
-    public int MapSize => mapLength;
+    private int mapWidth = 12;
+    private int mapHeight = 8;
+    public int MapWidth => mapWidth;
+    public int MapHeight => mapHeight;
 
     public WorldMapModel(WorldMapSO worldMapSO)
     {
@@ -40,8 +42,8 @@ public class WorldMapModel
     public bool IsTraversable(Vector2Int targetPos)
     {
         // 範囲外チェック
-        if (targetPos.x < 0 || targetPos.x >= mapLength ||
-            targetPos.y < 0 || targetPos.y >= mapLength)
+        if (targetPos.x < 0 || targetPos.x >= mapWidth ||
+            targetPos.y < 0 || targetPos.y >= mapHeight)
         {
             return false;
         }

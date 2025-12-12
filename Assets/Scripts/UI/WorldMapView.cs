@@ -2,6 +2,7 @@ using UnityEngine;
 using DG.Tweening;
 using Cysharp.Threading.Tasks;
 using System.Collections.Generic;
+using System.Security.Permissions;
 
 public class WorldMapView : MonoBehaviour
 {
@@ -19,7 +20,9 @@ public class WorldMapView : MonoBehaviour
     [Header("Settings")]
     [SerializeField] private Vector2 tileSize = new Vector2(24, 16);
     [SerializeField] private float slideDuration = 0.3f;
-    [SerializeField] private int mapLength = 8;
+    [SerializeField] private int mapWidth = 12;
+    [SerializeField] private int mapHeight = 8;
+    [SerializeField] private TextPopUpEach popUpText;
 
     private SpriteRenderer[,] mapTiles = null!;
     private Vector3 hiddenPosition;
@@ -33,13 +36,13 @@ public class WorldMapView : MonoBehaviour
         hiddenPosition = new Vector3(visiblePosition.x, visiblePosition.y - Screen.height, visiblePosition.z);
         mapPanel.localPosition = hiddenPosition;
 
-        cellOffset = tileSize * (mapLength - 1) / 2;
+        cellOffset = new Vector2(tileSize.x * (mapWidth - 1) / 2, tileSize.y * (mapHeight - 1) / 2);
 
         // タイルの生成
-        mapTiles = new SpriteRenderer[mapLength, mapLength];
-        for (int x = 0; x < mapLength; x++)
+        mapTiles = new SpriteRenderer[mapWidth, mapHeight];
+        for (int x = 0; x < mapWidth; x++)
         {
-            for (int y = 0; y < mapLength; y++)
+            for (int y = 0; y < mapHeight; y++)
             {
                 var tileObj = Instantiate(mapTilePrefab, mapPanel);
                 tileObj.transform.localPosition = GetLocalPosition(new Vector2Int(x, y));
@@ -51,11 +54,14 @@ public class WorldMapView : MonoBehaviour
     // マップ全体の再描画
     public void RefreshMap(WorldMapCellType[][] mapData)
     {
-        for (int x = 0; x < mapLength; x++)
+        for (int x = 0; x < mapWidth; x++)
         {
-            for (int y = 0; y < mapLength; y++)
+            for (int y = 0; y < mapHeight; y++)
             {
-                UpdateTileVisual(x, y, mapData[x][y]);
+                if (x < mapData.Length && y < mapData[x].Length)
+                {
+                    UpdateTileVisual(x, y, mapData[x][y]);
+                }
             }
         }
     }
@@ -97,6 +103,7 @@ public class WorldMapView : MonoBehaviour
     public async UniTask ShowAsync()
     {
         if (isAnimating) return;
+        popUpText.Hide();
         isAnimating = true;
         mapPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
         await UniTask.Delay((int)(slideDuration * 1000));

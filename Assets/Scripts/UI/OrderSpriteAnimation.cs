@@ -15,10 +15,6 @@ public class OrderSpriteAnimation : MonoBehaviour
     }
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.T))
-        {
-            PlayShakeRotationAnimation().Forget();
-        }
     }
 
     async UniTask PlayShakeRotationAnimation()

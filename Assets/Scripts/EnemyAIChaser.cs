@@ -6,7 +6,6 @@ using System.Linq;
 
 public class EnemyAIChaser : EnemyAI
 {
-    [SerializeField] Transform arrow;
     // A* Node
     private class Node
     {

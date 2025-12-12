@@ -22,14 +22,7 @@ public class TransitionIn : MonoBehaviour
 
     void Update()
     {
-#if UNITY_EDITOR
-        if (Input.GetKeyDown(KeyCode.K))
-        {
-            if (isAnimating) return;
-            isAnimating = true;
-            AnimateAsync().Forget();
-        }
-#endif
+
     }
 
     async UniTaskVoid AnimateAsync()

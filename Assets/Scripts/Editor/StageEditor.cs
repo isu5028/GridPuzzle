@@ -195,10 +195,10 @@ public class StageEditor : Editor
         SerializedProperty rightStageProp = serializedObject.FindProperty("rightStage");
         SerializedProperty leftStageProp = serializedObject.FindProperty("leftStage");
 
-        EditorGUILayout.PropertyField(upStageProp, new GUIContent("上 (North)"));
-        EditorGUILayout.PropertyField(downStageProp, new GUIContent("下 (South)"));
-        EditorGUILayout.PropertyField(rightStageProp, new GUIContent("右 (East)"));
-        EditorGUILayout.PropertyField(leftStageProp, new GUIContent("左 (West)"));
+        EditorGUILayout.PropertyField(upStageProp, new GUIContent("North"));
+        EditorGUILayout.PropertyField(downStageProp, new GUIContent("South"));
+        EditorGUILayout.PropertyField(rightStageProp, new GUIContent("East"));
+        EditorGUILayout.PropertyField(leftStageProp, new GUIContent("West"));
     }
 
     private void DrawEditModeSelector()

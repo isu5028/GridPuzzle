@@ -114,7 +114,7 @@ public class GridVisualizer : MonoBehaviour
                     {
                         Vector3 worldPos = GridToWorldPosition(new Vector2Int(x, y));
                         Instantiate(warpChangeEffect, worldPos, Quaternion.identity);
-                        AudioManager.Instance.PlaySE(AudioManager.SEType.enabledWarp); // GridManagerから参照できないと困る場合があるが、SingletonならOK
+                        AudioManager.Instance.PlaySE(AudioManager.SEType.enabledWarp);
                     }
                 }
             }

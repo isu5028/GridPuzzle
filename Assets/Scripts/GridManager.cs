@@ -12,6 +12,7 @@ using UniRx;
 [RequireComponent(typeof(UnitManager))]
 public class GridManager : MonoBehaviour
 {
+    [SerializeField] private TextPopUpEach popup = null!;
     [SerializeField] private SaveFeedback saveFeedback = null!;
     [SerializeField] private WorldMapSO worldMapSO = null!;
     [SerializeField] private StageSO[] stageSOs = null!;
@@ -30,7 +31,7 @@ public class GridManager : MonoBehaviour
     [SerializeField] private GameObject slimeEnemyPrefab = null!;
     [SerializeField] private GameObject goblinEnemyPrefab = null!;
     [SerializeField] private GameObject skeletonEnemyPrefab = null!;
-    [SerializeField] private GameObject zonbieEnemyPrefab = null!;
+    [SerializeField] private GameObject zombieEnemyPrefab = null!;
 
     private CellType[,] cellData = new CellType[0, 0];
     private int width;
@@ -232,8 +233,8 @@ public class GridManager : MonoBehaviour
                 return goblinEnemyPrefab;
             case EnemyType.Skeleton:
                 return skeletonEnemyPrefab;
-            case EnemyType.Zonbie:
-                return zonbieEnemyPrefab;
+            case EnemyType.Zombie:
+                return zombieEnemyPrefab;
             default:
                 return null!;
         }
@@ -406,7 +407,9 @@ public class GridManager : MonoBehaviour
 
         bool isCleared = !unitManager.HasAliveEnemy();
 
-        GameProgressManager.Instance.UpdateStageStatus(coords, true, isCleared);
+        bool isNewAreaUnlocked = GameProgressManager.Instance.UpdateStageStatus(coords, true, isCleared);
+
+        if (isNewAreaUnlocked) popup.Show();
     }
 
     // TurnManagerから直接呼ばれる代わりにイベント経由になったため不要だが、

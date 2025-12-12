@@ -21,12 +21,12 @@ MonoBehaviour:
   enemyStartData:
   - Position: {x: 10, y: 1}
     Direction: 2
-    EnemyType: 2
+    EnemyType: 3
     MaxHP: 1
     SetActionOrder: 1
   - Position: {x: 10, y: 6}
     Direction: 2
-    EnemyType: 2
+    EnemyType: 3
     MaxHP: 1
     SetActionOrder: 2
   upStage: {fileID: 11400000, guid: 04221a9998ba3eb4098190d159e3f8e8, type: 2}
