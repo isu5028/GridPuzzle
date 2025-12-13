@@ -22043,6 +22043,7 @@ MonoBehaviour:
   skeletonEnemyPrefab: {fileID: 2706672242267340326, guid: 5c83a9e42fe9b2246967acda27a965e6, type: 3}
   zombieEnemyPrefab: {fileID: 2706672242267340326, guid: 5ee3f796d520b2b4d8c561941f81c47d, type: 3}
   boarEnemyPrefab: {fileID: 2706672242267340326, guid: 419390f049659e04a8b2fdda81b9453a, type: 3}
+  collisionDeathEffectPrefab: {fileID: 7577238458505381766, guid: 7542ddf2a541d3e4dbd1037a91a0ef6e, type: 3}
 --- !u!114 &2128509202
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -22442,7 +22443,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
       propertyPath: seClips.Array.size
-      value: 11
+      value: 13
       objectReference: {fileID: 0}
     - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
       propertyPath: seClips.Array.data[7].clip
@@ -22475,6 +22476,22 @@ PrefabInstance:
     - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
       propertyPath: seClips.Array.data[10].type
       value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
+      propertyPath: seClips.Array.data[11].clip
+      value: 
+      objectReference: {fileID: 8300000, guid: 5a552053dbee9074e9d52d333064528d, type: 3}
+    - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
+      propertyPath: seClips.Array.data[11].type
+      value: 11
+      objectReference: {fileID: 0}
+    - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
+      propertyPath: seClips.Array.data[12].clip
+      value: 
+      objectReference: {fileID: 8300000, guid: d8f8020c7114a4240889ed96cc060ea1, type: 3}
+    - target: {fileID: 1646766802880991132, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
+      propertyPath: seClips.Array.data[12].type
+      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 3237337600438474422, guid: c8295a9a05ec1e244a73a99485b6eccc, type: 3}
       propertyPath: m_LocalPosition.x
