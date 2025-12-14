@@ -24,6 +24,7 @@ MonoBehaviour:
     EnemyType: 1
     MaxHP: 1
     SetActionOrder: 1
+    Ammo: 0
   upStage: {fileID: 11400000, guid: ba9d43e1551216f4b8bcc8e144ec55ef, type: 2}
   downStage: {fileID: 0}
   rightStage: {fileID: 11400000, guid: 78dabc48ca0fc9f4fbe2a037cb9a203a, type: 2}

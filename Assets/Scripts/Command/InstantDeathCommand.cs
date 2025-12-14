@@ -28,8 +28,13 @@ public class InstantDeathCommand : ICommand
             GameObject.Instantiate(effectPrefab, unit.transform.position, Quaternion.identity);
         }
 
+        // Screen Effects for Collision Death
+        CameraManager.Instance.ShakeCamera(0.5f, 8.0f, 40f, Vector2.up);
+        CameraManager.Instance.PlayGlitch(0.5f, 1.0f);
+        AudioManager.Instance.PlaySE(AudioManager.SEType.superposition);
+
         // Apply instant damage
-        unit.TakeDamage(damage, deathPos);
+        unit.TakeDamage(damage, deathPos, false);
     }
 
     public void Undo()

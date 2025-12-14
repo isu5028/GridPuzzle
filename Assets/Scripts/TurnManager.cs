@@ -65,17 +65,25 @@ public class TurnManager : MonoBehaviour
         isProcessingTurn = true;
         isPlayerTurn = false;
 
-        await ExecuteEnemyTurns();
+        try
+        {
+            await ExecuteEnemyTurns();
 
-        commandManager.CompleteTurn();
+            commandManager.CompleteTurn();
 
-        // UnitManagerへの状態変更通知
-        unitManager.NotifyUnitStateChanged();
-
-        isPlayerTurn = true;
-        isProcessingTurn = false;
-
-        snapshotCapturedThisTurn = false; // 次ターン最初の行動前にスナップショット取得させる
+            // UnitManagerへの状態変更通知
+            unitManager.NotifyUnitStateChanged();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[TurnManager] Error during enemy turn execution: {e}");
+        }
+        finally
+        {
+            isPlayerTurn = true;
+            isProcessingTurn = false;
+            snapshotCapturedThisTurn = false; // 次ターン最初の行動前にスナップショット取得させる
+        }
     }
 
     private async UniTask ExecuteEnemyTurns()

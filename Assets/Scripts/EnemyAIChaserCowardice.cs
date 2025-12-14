@@ -5,23 +5,7 @@ using System.Linq;
 
 public class EnemyAIChaserCowardice : EnemyAI
 {
-    // A* Node
-    private class Node
-    {
-        public Vector2Int Position;
-        public Node Parent;
-        public int G;
-        public int H;
-        public int F => G + H;
 
-        public Node(Vector2Int pos, Node parent, int g, int h)
-        {
-            Position = pos;
-            Parent = parent;
-            G = g;
-            H = h;
-        }
-    }
 
     public override async UniTask ExecuteAI(Enemy enemy)
     {
@@ -53,15 +37,10 @@ public class EnemyAIChaserCowardice : EnemyAI
         // 内積を使って判定 (Dot Product)
         float dot = dirVec.x * toEnemyVec.x + dirVec.y * toEnemyVec.y;
 
-        if (dot <= 0) return false;
+        // 壁などの遮蔽物は無視して、プレイヤーの前方にいるかどうかだけで判定
+        if (dot > 0) return true; // 前方（行動しない）
 
-        // 2. 遮蔽物判定 (Raycast Check)
-        if (!HasLineOfSight(playerPos, enemyPos))
-        {
-            return false; // 壁に隠れている
-        }
-
-        return true;
+        return false; // 後方または真横（行動する）
     }
 
     private bool HasLineOfSight(Vector2Int start, Vector2Int end)
@@ -110,7 +89,14 @@ public class EnemyAIChaserCowardice : EnemyAI
             return;
         }
 
-        List<Vector2Int> path = FindPath(currentPos, playerPos);
+        // 2. A* アルゴリズムで経路探索
+        // isTraversable条件: マップ内通行可能 かつ 他の敵がいない
+        List<Vector2Int> path = AStarPathfinder.FindPath(currentPos, playerPos, (pos) =>
+        {
+            if (!gridManager.IsCellWalkable(pos)) return false;
+            if (IsEnemyAtPosition(pos)) return false;
+            return true;
+        });
 
         if (path != null && path.Count > 0)
         {
@@ -128,61 +114,6 @@ public class EnemyAIChaserCowardice : EnemyAI
             enemy.TryAttack();
             await UniTask.WaitUntil(() => !enemy.IsMoving);
         }
-    }
-
-    private List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
-    {
-        List<Node> openList = new List<Node>();
-        HashSet<Vector2Int> closedList = new HashSet<Vector2Int>();
-        openList.Add(new Node(start, null, 0, GetManhattanDistance(start, target)));
-
-        int loopCount = 0;
-        int maxLoops = 500;
-
-        while (openList.Count > 0 && loopCount < maxLoops)
-        {
-            loopCount++;
-            Node currentNode = openList.OrderBy(n => n.F).First();
-
-            if (currentNode.Position == target) return ReconstructPath(currentNode);
-
-            openList.Remove(currentNode);
-            closedList.Add(currentNode.Position);
-
-            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
-            {
-                Vector2Int neighborPos = currentNode.Position + Utility.GetVectorFromDirection(dir);
-                if (closedList.Contains(neighborPos)) continue;
-                if (!gridManager.IsCellWalkable(neighborPos)) continue;
-                if (IsEnemyAtPosition(neighborPos)) continue;
-
-                int newG = currentNode.G + 1;
-                Node existingNode = openList.FirstOrDefault(n => n.Position == neighborPos);
-
-                if (existingNode == null)
-                {
-                    openList.Add(new Node(neighborPos, currentNode, newG, GetManhattanDistance(neighborPos, target)));
-                }
-                else if (newG < existingNode.G)
-                {
-                    existingNode.G = newG;
-                    existingNode.Parent = currentNode;
-                }
-            }
-        }
-        return null;
-    }
-
-    private List<Vector2Int> ReconstructPath(Node node)
-    {
-        List<Vector2Int> path = new List<Vector2Int>();
-        while (node.Parent != null)
-        {
-            path.Add(node.Position);
-            node = node.Parent;
-        }
-        path.Reverse();
-        return path;
     }
 
     private int GetManhattanDistance(Vector2Int a, Vector2Int b)

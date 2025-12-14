@@ -78,4 +78,5 @@ public class EnemySaveData
     public int order;
     public int maxHP;
     public int index;
+    public int ammo; // Added for Ranged Enemy Ammo persistence
 }

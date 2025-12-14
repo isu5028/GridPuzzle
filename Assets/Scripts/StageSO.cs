@@ -123,7 +123,7 @@ public class StageSO : ScriptableObject
         playerStartDirection = direction;
     }
 
-    public void AddEnemy(Vector2Int position, EnemyType type, Direction direction, int maxHP, int SetActionOrder)
+    public void AddEnemy(Vector2Int position, EnemyType type, Direction direction, int maxHP, int SetActionOrder, int ammo = -1)
     {
         enemyStartData.Add(new EnemyStartData
         {
@@ -131,7 +131,8 @@ public class StageSO : ScriptableObject
             Direction = direction,
             EnemyType = type,
             MaxHP = maxHP,
-            SetActionOrder = SetActionOrder
+            SetActionOrder = SetActionOrder,
+            Ammo = ammo
         });
     }
 
@@ -193,4 +194,5 @@ public struct EnemyStartData
     public EnemyType EnemyType;
     public int MaxHP;
     public int SetActionOrder;
+    public int Ammo; // Added for Ranged Enemy Ammo config
 }

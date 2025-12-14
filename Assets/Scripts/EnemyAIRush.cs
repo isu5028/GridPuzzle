@@ -25,6 +25,16 @@ public class EnemyAIRush : EnemyAI
     {
         currentState = (RushState)(state & 0x3); // First 2 bits
         chargeDirection = (Direction)((state >> 2) & 0x3); // Next 2 bits
+
+        // Visual Sync: Ensure enemy faces the charge direction if Charging
+        if (currentState == RushState.Charging)
+        {
+            var enemy = GetComponent<Enemy>();
+            if (enemy != null)
+            {
+                enemy.SetDirection(chargeDirection);
+            }
+        }
     }
 
     public override async UniTask ExecuteAI(Enemy enemy)
@@ -95,6 +105,12 @@ public class EnemyAIRush : EnemyAI
     {
         bool isMoving = true;
 
+        if (enemy.gameObject.activeInHierarchy)
+        {
+             // Small Shake at start of rush
+             CameraManager.Instance.ShakeCamera(0.5f, 2.0f, 60f, Utility.GetVectorFromDirection(dir));
+        }
+
         while (isMoving)
         {
             Vector2Int currentPos = enemy.CurrentPos;
@@ -140,6 +156,13 @@ public class EnemyAIRush : EnemyAI
                          // The user requested "Adjacent stage... same position... stop".
 
                          commandManager.ExecuteCommand(new RushAttackCommand(enemy, targetEnemy.CurrentPos, gridManager));
+                         // Large Shake on Unit Hit
+                         CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
+
+                         if (enemy.gameObject.activeInHierarchy)
+                         {
+                             await UniTask.WaitUntil(() => !enemy.IsMoving && (targetEnemy == null || !targetEnemy.IsBusy));
+                         }
 
                          return;
                      }
@@ -160,6 +183,22 @@ public class EnemyAIRush : EnemyAI
                  else
                  {
                      // End of world -> Stop at edge
+                     // Impact logic similar to Wall Collision
+
+                     // Recoil Damage (No target) - Execute regardless of visibility
+                     commandManager.ExecuteCommand(new RushAttackCommand(enemy, gridManager));
+
+                     if (enemy.gameObject.activeInHierarchy)
+                     {
+                         if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
+
+                         enemy.OrderSpriteAnimation.PlayAnimation();
+                         // Large Shake
+                         CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
+
+                         await UniTask.WaitUntil(() => !enemy.IsMoving);
+                     }
+
                      isMoving = false;
                      break;
                  }
@@ -178,6 +217,8 @@ public class EnemyAIRush : EnemyAI
                 {
                     if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
                     enemy.OrderSpriteAnimation.PlayAnimation();
+                    // Large Shake on Wall Hit
+                    CameraManager.Instance.ShakeCamera(0.3f, 8.0f, 80f, Utility.GetVectorFromDirection(dir));
                 }
 
                 isMoving = false; // Stop after breaking
@@ -203,7 +244,16 @@ public class EnemyAIRush : EnemyAI
                 {
                    // enemy.TryAttack(); replaced by Command
                    // Use RushAttackCommand for same-stage attack + recoil
+
+                   // Wait for target to be ready (e.g. Player moving towards us)
+                   if (targetUnit.IsBusy) await UniTask.WaitUntil(() => !targetUnit.IsBusy);
+
                    commandManager.ExecuteCommand(new RushAttackCommand(enemy, targetUnit.CurrentPos, gridManager));
+                   // Large Shake on Unit Hit
+                   CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 120f, Utility.GetVectorFromDirection(dir));
+
+                   await UniTask.WaitUntil(() => !enemy.IsMoving && (targetUnit == null || !targetUnit.IsBusy));
+                   await UniTask.Delay(100); // プレイヤーがすぐに行動できないように一瞬待つ
                 }
                 else
                 {
@@ -216,7 +266,8 @@ public class EnemyAIRush : EnemyAI
             }
 
             // 4. Empty -> Move
-            MoveCommand moveCmd = new MoveCommand(enemy, currentPos, nextPos, dir, dir);
+            // Suppress the default step sound
+            MoveCommand moveCmd = new MoveCommand(enemy, currentPos, nextPos, dir, dir, false);
             // Note: MoveCommand normally animates. If enemy is inactive, it should skip animation.
             // We need to ensure MoveCommand handles inactive enemies gracefully (DG.Tween might complain on inactive object).
             // Let's verify MoveCommand. Or create simple "Teleport" command for off-screen?
@@ -226,8 +277,13 @@ public class EnemyAIRush : EnemyAI
 
             if (enemy.gameObject.activeInHierarchy)
             {
-                if (GameSettings.GameSpeed == 0) await UniTask.Delay(100);
-                else await UniTask.Delay(30);
+                // Play Rush Sound explicitly (Manual Interval control if needed, or rely on Loop)
+                // Since this runs every frame/step, we play it every step.
+                // Rush sound is likely a quick "Whoosh" or "Step".
+                // We use debounce in AudioManager so it won't spam.
+                if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.rush);
+
+                await UniTask.Delay(50);
             }
             else
             {

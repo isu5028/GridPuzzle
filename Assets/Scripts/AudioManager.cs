@@ -23,6 +23,8 @@ public class AudioManager : MonoBehaviour
         cancel,
         decide,
         warp,
+        superposition,
+        rush,
     }
 
     public enum BGMType

@@ -9,6 +9,8 @@ public class EnemyAIChaserRanged : EnemyAI
 
     public override async UniTask ExecuteAI(Enemy enemy)
     {
+        if (!enemy.HasAmmo()) return;
+
         Vector2Int currentPos = enemy.CurrentPos;
         Direction currentDirection = enemy.CurrentDirection;
 

@@ -24,21 +24,25 @@ MonoBehaviour:
     EnemyType: 1
     MaxHP: 1
     SetActionOrder: 1
+    Ammo: 0
   - Position: {x: 6, y: 4}
     Direction: 2
     EnemyType: 1
     MaxHP: 1
     SetActionOrder: 2
+    Ammo: 0
   - Position: {x: 7, y: 3}
     Direction: 2
     EnemyType: 1
     MaxHP: 1
     SetActionOrder: 3
+    Ammo: 0
   - Position: {x: 8, y: 2}
     Direction: 2
     EnemyType: 1
     MaxHP: 1
     SetActionOrder: 4
+    Ammo: 0
   upStage: {fileID: 11400000, guid: 357bea096db24c349a5a468723e71f7b, type: 2}
   downStage: {fileID: 11400000, guid: 2b6898dbcc5bdbf4cb35bc1748f18fec, type: 2}
   rightStage: {fileID: 11400000, guid: 771b4535952fece4ca9d2417f57c55f0, type: 2}

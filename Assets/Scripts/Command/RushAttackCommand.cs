@@ -26,18 +26,7 @@ public class RushAttackCommand : ICommand
     }
     private List<DamageInfo> targetDamageInfos = new List<DamageInfo>();
 
-    public RushAttackCommand(Unit attacker, GridManager grid)
-    {
-        this.attacker = attacker;
-        this.gridManager = grid;
 
-        // Rush usually attacks in front. We can derive target pos from attacker orientation.
-        // Or we can pass it. `EnemyAIRush` calculates collision with `nextPos`.
-        // Ideally we pass `nextPos` as target.
-        // But `Unit.TryAttack` uses `attackTargetPos` relative to unit.
-        // EnemyRush logic works slightly differently: it collides during movement.
-        // Let's allow passing target position explicitly.
-    }
 
     // Overload to supply specific position
     public RushAttackCommand(Unit attacker, Vector2Int targetPos, GridManager grid)
@@ -45,6 +34,14 @@ public class RushAttackCommand : ICommand
         this.attacker = attacker;
         this.gridManager = grid;
         this.targetPositions = new Vector2Int[] { targetPos };
+    }
+
+    // Overload for No Target (Recoil Only)
+    public RushAttackCommand(Unit attacker, GridManager grid)
+    {
+        this.attacker = attacker;
+        this.gridManager = grid;
+        this.targetPositions = new Vector2Int[0];
     }
 
     public void Execute()
@@ -74,11 +71,12 @@ public class RushAttackCommand : ICommand
         // EnemyAIRush used `enemy.TryAttack()` which uses `attackTargetPos`.
         // But in Rush loop, we know exactly where we hit.
         // `Unit.Attack(targetPos)` exists.
-        attacker.Attack(targetPositions);
+        // Pass recoilDamage to sync Recoil with Impact
+        attacker.Attack(targetPositions, recoilDamage);
 
         // 4. Apply Recoil Damage to Attacker
-        Debug.Log($"[RushAttack] Recoil Damage to {attacker.name}");
-        attacker.TakeDamage(recoilDamage, attacker.CurrentPos); // Damage source is itself or collision? Using current pos is fine.
+        Debug.Log($"[RushAttack] Recoil Damage to {attacker.name} handled by Attack");
+        // attacker.TakeDamage(recoilDamage, attacker.CurrentPos); // Moved to Unit.Attack logic
     }
 
     public void Undo()

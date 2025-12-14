@@ -24,6 +24,7 @@ public class StageEditor : Editor
     private EnemyType currentEnemyType = EnemyType.Slime;
     private int currentMaxHP = 10;
     private Direction currentEnemyDirection = Direction.Up;
+    private int currentAmmo = 3; // Default ammo for Skeleton
 
     // グリッド描画設定
     private const float CELL_SIZE = 30f;
@@ -71,8 +72,10 @@ public class StageEditor : Editor
             xPos += 85;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "方向");
             xPos += 85;
-            EditorGUI.LabelField(new Rect(xPos, rect.y, 60, rect.height), "最大HP");
-            xPos += 65;
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "HP");
+            xPos += 45;
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "弾数");
+            xPos += 45;
             //EditorGUI.LabelField(new Rect(xPos, rect.y, 60, rect.height), "行動順");
             //xPos += 65;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 50, rect.height), "削除");
@@ -102,8 +105,21 @@ public class StageEditor : Editor
             xPos += 85;
 
             SerializedProperty maxHPProp = element.FindPropertyRelative("MaxHP");
-            EditorGUI.PropertyField(new Rect(xPos, rect.y, 60, height), maxHPProp, GUIContent.none);
-            xPos += 65;
+            EditorGUI.PropertyField(new Rect(xPos, rect.y, 40, height), maxHPProp, GUIContent.none);
+            xPos += 45;
+
+            // Ammo (Only for Skeleton)
+            SerializedProperty typeVal = element.FindPropertyRelative("EnemyType");
+            if (typeVal.enumValueIndex == (int)EnemyType.Skeleton)
+            {
+                SerializedProperty ammoProp = element.FindPropertyRelative("Ammo");
+                EditorGUI.PropertyField(new Rect(xPos, rect.y, 40, height), ammoProp, GUIContent.none);
+            }
+            else
+            {
+                EditorGUI.LabelField(new Rect(xPos, rect.y, 40, height), "-");
+            }
+            xPos += 45;
 
             // 行動順は読み取り専用でインデックスを表示
             //EditorGUI.LabelField(new Rect(xPos, rect.y, 60, height), $"{index}");
@@ -250,6 +266,14 @@ public class StageEditor : Editor
             EditorGUILayout.LabelField("敵の初期方向:", GUILayout.Width(150));
             currentEnemyDirection = (Direction)EditorGUILayout.EnumPopup(currentEnemyDirection);
             EditorGUILayout.EndHorizontal();
+
+            if (currentEnemyType == EnemyType.Skeleton)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("初期弾数(Ammo):", GUILayout.Width(150));
+                currentAmmo = EditorGUILayout.IntField(currentAmmo);
+                EditorGUILayout.EndHorizontal();
+            }
         }
 
         // 現在の編集モードを表示
@@ -493,7 +517,10 @@ public class StageEditor : Editor
             case EditMode.Enemy:
                 // 同じ位置に既に敵がいる場合は削除
                 stage.RemoveEnemyAt(new Vector2Int(x, y));
-                stage.AddEnemy(new Vector2Int(x, y), currentEnemyType, currentEnemyDirection, currentMaxHP, 0);
+
+                int ammo = (currentEnemyType == EnemyType.Skeleton) ? currentAmmo : -1;
+                stage.AddEnemy(new Vector2Int(x, y), currentEnemyType, currentEnemyDirection, currentMaxHP, 0, ammo);
+
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();
                 if (enemyReorderableList != null)

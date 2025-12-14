@@ -33,7 +33,11 @@ public class UnitAnimator : MonoBehaviour
     public void SetDirection(Direction direction)
     {
         AnimationClip clip = _directionAnimation.GetClip(direction);
-        if (clip == null) return;
+        if (clip == null)
+        {
+            Debug.LogWarning($"[UnitAnimator] Missing animation clip for direction: {direction} on {gameObject.name}");
+            return;
+        }
 
         // 現在再生中のアニメーション情報を取得
         AnimatorStateInfo currentState = _animator.GetCurrentAnimatorStateInfo(0);

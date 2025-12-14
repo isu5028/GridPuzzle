@@ -113,7 +113,7 @@ public class GameProgressManager : MonoBehaviour
         currentMapPosition = Vector2Int.zero;
     }
 
-    public bool UpdateStageStatus(Vector2Int position, bool isCurrent, bool isCleared)
+    public bool UpdateStageStatus(Vector2Int position, bool isCurrent, bool isCleared, WorldMapSO worldMap = null)
     {
         bool isNewAreaUnlocked = false;
 
@@ -125,7 +125,7 @@ public class GameProgressManager : MonoBehaviour
             clearedPositions.Add(position);
 
             // ★重要: クリアした時だけ、隣接する Unknown を Uncleared に変える
-            isNewAreaUnlocked = UnlockNeighbors(position);
+            isNewAreaUnlocked = UnlockNeighbors(position, worldMap);
         }
         else
         {
@@ -208,7 +208,7 @@ public class GameProgressManager : MonoBehaviour
     }
 
     // ★追加: 隣接マスを開放するメソッド
-    private bool UnlockNeighbors(Vector2Int center)
+    private bool UnlockNeighbors(Vector2Int center, WorldMapSO worldMap)
     {
         bool unlocked = false;
         // 上下左右の座標オフセット
@@ -228,6 +228,15 @@ public class GameProgressManager : MonoBehaviour
             if (neighborPos.x >= 0 && neighborPos.x < mapWidth &&
                 neighborPos.y >= 0 && neighborPos.y < mapHeight)
             {
+                // Check if stage actually exists in WorldMapSO
+                if (worldMap != null)
+                {
+                    if (worldMap.GetStageAt(neighborPos.x, neighborPos.y) == null)
+                    {
+                        continue; // Skip non-existent stage
+                    }
+                }
+
                 // 現在の状態を取得
                 WorldMapCellType currentType = GetCellType(neighborPos.x, neighborPos.y);
 

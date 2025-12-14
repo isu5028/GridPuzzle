@@ -38,6 +38,10 @@ public abstract class Unit : MonoBehaviour
     public Direction CurrentDirection => currentDirection;
     public bool IsMoving => isMoving;
 
+    protected bool isAnimating = false;
+    public bool IsAnimating => isAnimating; // Public accessor
+    public bool IsBusy => isMoving || isAnimating; // Convenience accessor
+
     private Vector3 maskOriginalPos;
     private Vector3 maskedOriginalPos;
     private Vector3 hpOriginalPos;
@@ -76,7 +80,7 @@ public abstract class Unit : MonoBehaviour
         }).AddTo(this);
     }
 
-    protected void InitializeVisuals()
+    protected virtual void InitializeVisuals()
     {
         if (visualsInitialized) return;
 
@@ -88,7 +92,7 @@ public abstract class Unit : MonoBehaviour
         visualsInitialized = true;
     }
 
-    public void ApplyDeadStateVisual()
+    public virtual void ApplyDeadStateVisual()
     {
         // まだ初期化されていなければ初期化する（ロード時などStartより先に呼ばれる場合用）
         InitializeVisuals();
@@ -191,7 +195,7 @@ public abstract class Unit : MonoBehaviour
         return true;
     }
 
-    public void MoveTo(Vector2Int position, Direction direction)
+    public void MoveTo(Vector2Int position, Direction direction, bool playSound = true)
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
@@ -199,7 +203,7 @@ public abstract class Unit : MonoBehaviour
         unitAnimator.SetDirection(direction);
         currentPos = position;
         currentDirection = direction;
-        if (!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.move);
+        if (!commandManager.IsUndoing && playSound) AudioManager.Instance.PlaySE(AudioManager.SEType.move);
     }
 
     public void TryAttack()
@@ -221,12 +225,31 @@ public abstract class Unit : MonoBehaviour
     {
     }
 
-    public void Attack(Vector2Int[] targetPosition)
+    public void Attack(Vector2Int[] targetPosition, int recoilDamage = 0)
     {
-        AttackAsync(targetPosition).Forget();
+        if (gameObject.activeInHierarchy)
+        {
+            AttackAsync(targetPosition, recoilDamage).Forget();
+        }
+        else
+        {
+            // Instant execution for off-screen calculation
+            foreach (var pos in targetPosition)
+            {
+                Unit targetUnit = gridManager.GetUnitAtPosition(pos);
+                if (targetUnit != null)
+                {
+                    targetUnit.TakeDamage(1, currentPos, false);
+                }
+            }
+            if (recoilDamage > 0)
+            {
+                TakeDamage(recoilDamage, currentPos, false);
+            }
+        }
     }
 
-    private async UniTask AttackAsync(Vector2Int[] targetPosition)
+    private async UniTask AttackAsync(Vector2Int[] targetPosition, int recoilDamage)
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
@@ -251,9 +274,14 @@ public abstract class Unit : MonoBehaviour
                     if (targetUnit != null)
                     {
                         targetUnit.TakeDamage(1, currentPos);
-                        if (this is Player) CameraManager.Instance.ShakeCamera(0.5f, 4f, Utility.GetVectorFromDirection(currentDirection));
+                        if (this is Player) CameraManager.Instance.ShakeCamera(0.4f, 8.0f, 20f, Utility.GetVectorFromDirection(currentDirection));
                     }
                 }
+                if (recoilDamage > 0)
+                {
+                    TakeDamage(recoilDamage, currentPos);
+                }
+
                 if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
             })
             .Append(spriteTransform.DOLocalMove(originalLocalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad));
@@ -264,7 +292,7 @@ public abstract class Unit : MonoBehaviour
         OnActionComplete();
     }
 
-    public void TakeDamage(int damage, Vector2Int attackerPos)
+    public void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
     {
         Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
@@ -284,14 +312,14 @@ public abstract class Unit : MonoBehaviour
             unitAnimator.SetDeath();
             hp.Value = 0;
             Die(attackerPos);
-            if(gameObject.activeInHierarchy) CameraManager.Instance.ShakeCamera(1f, 5f, knockbackDirection);
+            if(gameObject.activeInHierarchy && shakeCamera) CameraManager.Instance.ShakeCamera(0.5f, 5.0f, 30f, knockbackDirection);
         }
         else
         {
             if (gameObject.activeInHierarchy)
             {
                 colorFlash.AnimateToColor(Utility.mainColors[2], flashDuration);
-                if(this is Player) CameraManager.Instance.ShakeCamera(0.5f, 4f, knockbackDirection);
+                if(this is Player && shakeCamera) CameraManager.Instance.ShakeCamera(0.3f, 2.0f, 50f, knockbackDirection);
             }
         }
     }
@@ -316,14 +344,17 @@ public abstract class Unit : MonoBehaviour
         }
     }
 
-    private async UniTask DieAsync(Vector2Int attackerPos)
+    protected virtual async UniTask DieAsync(Vector2Int attackerPos)
     {
+        transform.DOKill(); // Stop movement (parent)
+        isMoving = false; // Reset logical movement state as tween is killed
         dieCancellationTokenSource?.Cancel();
         dieCancellationTokenSource?.Dispose();
 
         dieCancellationTokenSource = new CancellationTokenSource();
         var token = dieCancellationTokenSource.Token;
 
+        isAnimating = true; // Mark as animating death
         try
         {
             KnockbackAsync(attackerPos).Forget();
@@ -342,12 +373,17 @@ public abstract class Unit : MonoBehaviour
         catch (System.OperationCanceledException)
         {
         }
+        finally
+        {
+             isAnimating = false;
+        }
     }
 
     // Undo時の復活処理
-    public void Revive()
+    public virtual void Revive()
     {
         isDead = false;
+        isAnimating = false; // Reset animation state on revive
 
         // 死亡アニメーションをキャンセル
         dieCancellationTokenSource?.Cancel();

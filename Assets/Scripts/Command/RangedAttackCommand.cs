@@ -32,11 +32,14 @@ public class RangedAttackCommand : ICommand
             wasDead = targetUnit.IsDead;
         }
 
+        attacker.ConsumeAmmo();
         attacker.PerformRangedAttack(targetPos, targetUnit, arrowPrefab);
     }
 
     public void Undo()
     {
+        attacker.RecoverAmmo();
+
         if (hitUnit && targetUnit != null)
         {
             targetUnit.SetHP(previousHP);

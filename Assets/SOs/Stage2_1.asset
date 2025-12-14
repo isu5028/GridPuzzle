@@ -24,11 +24,13 @@ MonoBehaviour:
     EnemyType: 1
     MaxHP: 2
     SetActionOrder: 1
+    Ammo: 0
   - Position: {x: 8, y: 1}
     Direction: 2
     EnemyType: 1
     MaxHP: 2
     SetActionOrder: 2
+    Ammo: 0
   upStage: {fileID: 11400000, guid: 771b4535952fece4ca9d2417f57c55f0, type: 2}
   downStage: {fileID: 0}
   rightStage: {fileID: 11400000, guid: 4a84a097049b0db4e99125474832a273, type: 2}

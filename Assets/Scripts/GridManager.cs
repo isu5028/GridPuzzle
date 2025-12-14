@@ -13,6 +13,7 @@ using UniRx;
 public class GridManager : MonoBehaviour
 {
     [SerializeField] private TextPopUpEach popup = null!;
+    [SerializeField] private ShowWin showWin = null!;
     [SerializeField] private SaveFeedback saveFeedback = null!;
     [SerializeField] private WorldMapSO worldMapSO = null!;
     public WorldMapSO WorldMapSO => worldMapSO;
@@ -37,7 +38,7 @@ public class GridManager : MonoBehaviour
     [SerializeField] private GameObject skeletonEnemyPrefab = null!;
     [SerializeField] private GameObject zombieEnemyPrefab = null!;
     [SerializeField] private GameObject boarEnemyPrefab = null!;
-    [SerializeField] private GameObject collisionDeathEffectPrefab = null!;
+    [SerializeField] private GameObject errorEffectPrefab = null!;
 
     private CellType[,] cellData = new CellType[0, 0];
     private int width;
@@ -343,7 +344,7 @@ public class GridManager : MonoBehaviour
 
             // Execute InstantDeathCommand
             // visual effect is handled inside the command now
-            commandManager.ExecuteCommand(new InstantDeathCommand(unit, 999, collisionDeathEffectPrefab));
+            commandManager.ExecuteCommand(new InstantDeathCommand(unit, 999, errorEffectPrefab));
         }
     }
 
@@ -456,11 +457,13 @@ public class GridManager : MonoBehaviour
         // 状態に応じて表示
         foreach (var enemy in enemies)
         {
+            // 先にSetActive(true)してからWarpTo(SetDirection)しないと、Animatorがリセットされて向きが初期化されてしまう
+            enemy.gameObject.SetActive(true);
+
             // Update visual position to match logical position (in case it moved while inactive/background)
             enemy.WarpTo(enemy.CurrentPos, enemy.CurrentDirection);
 
             // ロード直後の「死んでいるけどActiveでありたい」要件を満たすため、SetActive(true)した上で見た目を調整
-            enemy.gameObject.SetActive(true);
             if (enemy.IsDead)
             {
                 enemy.ApplyDeadStateVisual();
@@ -512,7 +515,7 @@ public class GridManager : MonoBehaviour
                         maxHPToUse = 3; // Default fallback
                  }
 
-                var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse);
+                var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse, data.ammo);
 
                 newEnemy.SetHP(data.currentHP);
                 newEnemy.SetAIState(data.aiState);
@@ -520,6 +523,9 @@ public class GridManager : MonoBehaviour
 
                 // Ensure name is unique/helpful
                 newEnemy.name = $"Enemy_{(EnemyType)data.enemyType}_{data.index}_Loaded";
+
+                // Force update direction visuals immediately
+                newEnemy.SetDirection((Direction)data.direction);
 
                 generatedEnemies.Add(newEnemy);
             }
@@ -540,7 +546,7 @@ public class GridManager : MonoBehaviour
         }
 
         gridVisualizer.RefreshTilemap(width, height, cellData);
-        UpdateWarpTiles();
+        UpdateWarpTiles(true);
     }
 
     public CellType GetCellTypeAt(StageSO stage, Vector2Int pos)
@@ -697,10 +703,10 @@ public class GridManager : MonoBehaviour
         bool isCleared = !hasEnemy;
         bool isCurrent = (stage == currentStageSO);
 
-        GameProgressManager.Instance.UpdateStageStatus(coords, isCurrent, isCleared);
+        GameProgressManager.Instance.UpdateStageStatus(coords, isCurrent, isCleared, worldMapSO);
     }
 
-    private void UpdateWarpTiles()
+    private void UpdateWarpTiles(bool quiet = false)
     {
         bool hasAliveEnemy = unitManager.HasAliveEnemy();
 
@@ -708,6 +714,11 @@ public class GridManager : MonoBehaviour
         bool stateChanged = previousWarpState != currentWarpState;
 
         gridVisualizer.UpdateWarpTiles(width, height, cellData, hasAliveEnemy, isTransitioning, stateChanged);
+
+        if (!quiet && stateChanged && !hasAliveEnemy)
+        {
+            if (showWin != null) showWin.Show();
+        }
 
         previousWarpState = currentWarpState;
         SyncWorldMapStatus();
@@ -722,7 +733,7 @@ public class GridManager : MonoBehaviour
 
         bool isCleared = !unitManager.HasAliveEnemy();
 
-        bool isNewAreaUnlocked = GameProgressManager.Instance.UpdateStageStatus(coords, true, isCleared);
+        bool isNewAreaUnlocked = GameProgressManager.Instance.UpdateStageStatus(coords, true, isCleared, worldMapSO);
 
         if (isNewAreaUnlocked) popup.Show();
     }
@@ -762,22 +773,33 @@ public class GridManager : MonoBehaviour
 
             GameObject prefab = getEnemyPrefab(enemyData.EnemyType);
 
-            var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder);
+            var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder, enemyData.Ammo);
             enemyScript.name = $"Enemy_{enemyData.EnemyType}_{count}";
             count++;
+
+            // Force update direction visuals immediately
+            enemyScript.SetDirection(enemyData.Direction);
 
             generatedEnemies.Add(enemyScript);
         }
         return generatedEnemies;
     }
 
-    private Enemy InstantiateAndInitializeEnemy(GameObject prefab, Vector3 worldPos, Vector2Int gridPos, Direction dir, int maxHp, int order)
+    private Enemy InstantiateAndInitializeEnemy(GameObject prefab, Vector3 worldPos, Vector2Int gridPos, Direction dir, int maxHp, int order, int ammo = -1)
     {
-        GameObject enemy = Instantiate(prefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
-        var enemyScript = enemy.GetComponent<Enemy>();
+        GameObject enemyObj = Instantiate(prefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
+        var enemyScript = enemyObj.GetComponent<Enemy>();
+
+        // Ammo limitation applies only to Ranged Chaser
+        var ai = enemyObj.GetComponent<EnemyAIChaserRanged>();
+        if (ai == null)
+        {
+            ammo = -1;
+        }
+
         // Note: Initialize内でGridManagerを渡しているが、UnitManagerを使うようにUnit側も修正が必要かもしれない
         // 一旦はGridManagerのプロキシメソッド(GetUnitAtPositionなど)経由でUnitManagerにアクセスする形になる
-        enemyScript.Initialize(this, turnManager, commandManager, gridPos, dir, maxHp, order);
+        enemyScript.Initialize(this, turnManager, commandManager, gridPos, dir, maxHp, order, ammo);
         return enemyScript;
     }
 
@@ -939,7 +961,8 @@ public class GridManager : MonoBehaviour
                     aiState = enemy.GetAIState(),
                     enemyType = (int)enemy.Type,
                     order = enemy.Order,
-                    maxHP = enemy.MaxHP
+                    maxHP = enemy.MaxHP,
+                    ammo = enemy.CurrentAmmo.Value
                 });
             }
 

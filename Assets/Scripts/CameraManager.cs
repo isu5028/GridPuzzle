@@ -19,11 +19,13 @@ public class CameraManager : MonoBehaviour
     [Header("Shake Settings")]
     [SerializeField] private float defaultShakeStrength = 0.5f;
     [SerializeField] private float defaultShakeDuration = 0.3f;
+    [SerializeField] private GlitchEffect glitchEffect;
 
     private Vector3 originalPosition; // カメラの元の位置
     private Vector3 shakeOffset = Vector3.zero; // シェイクのオフセット
     private CancellationTokenSource shakeCancellationTokenSource;
     private bool isShaking = false; // シェイク中かどうかのフラグ
+    private float currentShakeMagnitude = 0f; // 現在のシェイク強度
 
     // Camera movement variables
     [Header("Movement Settings")]
@@ -63,6 +65,10 @@ public class CameraManager : MonoBehaviour
         {
              mainCamera.TryGetComponent(out pixelPerfectCamera);
         }
+        if (glitchEffect == null && mainCamera != null)
+        {
+            mainCamera.TryGetComponent(out glitchEffect);
+        }
         ApplyResolutionSettings(GameSettings.Resolution);
     }
 
@@ -73,6 +79,7 @@ public class CameraManager : MonoBehaviour
         if (mainCamera != null)
         {
              mainCamera.TryGetComponent(out pixelPerfectCamera);
+             if (glitchEffect == null) mainCamera.TryGetComponent(out glitchEffect);
         }
         ApplyResolutionSettings(GameSettings.Resolution);
     }
@@ -130,12 +137,27 @@ public class CameraManager : MonoBehaviour
 
     public void ShakeCamera()
     {
-        ShakeCamera(defaultShakeDuration, defaultShakeStrength, Vector2.up);
+        ShakeCamera(defaultShakeDuration, defaultShakeStrength, 50f, Vector2.up);
+    }
+
+    public void PlayGlitch(float duration, float intensity)
+    {
+        if (glitchEffect != null)
+        {
+            glitchEffect.PlayGlitch(duration, intensity);
+        }
     }
 
     // 方向を指定してカメラを揺らす
-    public void ShakeCamera(float duration, float magnitude, Vector2 direction)
+    public void ShakeCamera(float duration, float magnitude, float frequency, Vector2 direction)
     {
+        // Check if a stronger shake is already active
+        if (isShaking && magnitude < currentShakeMagnitude)
+        {
+            // Ignore smaller shake request while big one is running
+            return;
+        }
+
         // 前回のシェイクをキャンセル
         if (shakeCancellationTokenSource != null)
         {
@@ -144,19 +166,21 @@ public class CameraManager : MonoBehaviour
             //shakeCancellationTokenSource = null;
         }
 
-        // シェイクをリセット（重要：次のシェイクのために初期化）
+        // Initialize for new shake
+        currentShakeMagnitude = magnitude;
         shakeOffset = Vector3.zero;
         isShaking = false;
 
         // 新しいキャンセルトークンを作成
         shakeCancellationTokenSource = new CancellationTokenSource();
-        DoShakeCamera(duration * defaultShakeDuration, magnitude * defaultShakeStrength, direction, shakeCancellationTokenSource.Token).Forget();
+        // duration/magnitude are used directly (previously were multiplied by defaults which caused bug/squaring)
+        DoShakeCamera(duration, magnitude, frequency, direction, shakeCancellationTokenSource.Token).Forget();
     }
 
-    private async UniTask DoShakeCamera(float duration, float magnitude, Vector2 direction, CancellationToken cancellationToken)
+    private async UniTask DoShakeCamera(float duration, float magnitude, float frequency, Vector2 direction, CancellationToken cancellationToken)
     {
 
-        Debug.Log($"ShakeCamera: duration={duration}, magnitude={magnitude}, direction={direction}");
+        Debug.Log($"ShakeCamera: duration={duration}, magnitude={magnitude}, frequency={frequency}, direction={direction}");
 
         // 1フレーム待ってからシェイク開始（キャンセル処理を確実にするため）
         await UniTask.Yield(cancellationToken);
@@ -165,7 +189,6 @@ public class CameraManager : MonoBehaviour
         isShaking = true;
 
         float elapsed = 0f;
-        float frequency = 20f; // 調整可能な振動周波数
 
         // シェイクが終了するまでループ
         while(elapsed < duration)
@@ -194,7 +217,9 @@ public class CameraManager : MonoBehaviour
         }
 
         shakeOffset = Vector3.zero;
+        shakeOffset = Vector3.zero;
         isShaking = false;
+        currentShakeMagnitude = 0f;
 
     }
 
