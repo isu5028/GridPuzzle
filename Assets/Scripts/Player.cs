@@ -58,6 +58,7 @@ public class Player : Unit
                 !isProcessingAction &&
                 !turnManager.IsOptionOpen &&
                 !gridManager.IsTransitioning &&
+                !gridManager.IsEventPlaying &&
                 !isMoving &&
                 !turnManager.IsMapOpen
             )

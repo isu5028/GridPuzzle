@@ -11,6 +11,8 @@ public class StageSO : ScriptableObject
 
     [Header("Grid Layout")]
     [SerializeField] private CellType[] cellData;
+    [SerializeField] private Vector2Int syncMapOffset = Vector2Int.zero;
+    public Vector2Int SyncMapOffset => syncMapOffset;
 
     [SerializeField] private Vector2Int playerStartPosition = Vector2Int.zero;
     [SerializeField] private Direction playerStartDirection = Direction.Right;
@@ -94,12 +96,17 @@ public class StageSO : ScriptableObject
 
     public void SetWallAt(int x, int y, bool isWall)
     {
+        SetCellTypeAt(x, y, isWall ? CellType.Wall : CellType.Floor);
+    }
+
+    public void SetCellTypeAt(int x, int y, CellType type)
+    {
         if (x < 0 || x >= width || y < 0 || y >= height) return;
         int index = y * width + x;
         if (cellData == null) InitializeWallData();
         if (cellData != null && index < cellData.Length)
         {
-            cellData[index] = isWall ? CellType.Wall : CellType.Floor;
+            cellData[index] = type;
         }
     }
 

@@ -23,6 +23,8 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
+
+
     // ワールドマップの進行状態
     private WorldMapCellType[][] mapData = null!;
     private Vector2Int currentMapPosition;
@@ -251,6 +253,24 @@ public class GameProgressManager : MonoBehaviour
             }
         }
         return unlocked;
+    }
+
+    public void DebugUnlockAllStages(WorldMapSO worldMap)
+    {
+        if (worldMap == null) return;
+
+        for (int x = 0; x < mapWidth; x++)
+        {
+            for (int y = 0; y < mapHeight; y++)
+            {
+                // Only unlock if a stage exists at this coordinate
+                if (worldMap.GetStageAt(x, y) != null)
+                {
+                    MarkPositionAsCleared(new Vector2Int(x, y));
+                }
+            }
+        }
+        Debug.Log("DEBUG: All stages unlocked.");
     }
 
     private void InitializeMapData()

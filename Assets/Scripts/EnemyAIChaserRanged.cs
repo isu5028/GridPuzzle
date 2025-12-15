@@ -140,7 +140,7 @@ public class EnemyAIChaserRanged : EnemyAI
         // Y差が2なので、Y方向に動けば2ターンでX軸が合う（一直線になる）
         // X方向に動くと10ターン必要
 
-        if (xDiff < yDiff)
+        if (xDiff <= yDiff)
         {
             // X差の方が小さい -> X方向へ移動してY軸を合わせに行く？ 逆だ
             // 「X軸が合っている」状態とは x座標が同じこと。

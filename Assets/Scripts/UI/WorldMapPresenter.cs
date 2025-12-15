@@ -49,7 +49,7 @@ public class WorldMapPresenter : MonoBehaviour
 
     private void Update()
     {
-        if(turnManager.IsOptionOpen) return;
+        if(turnManager.IsOptionOpen || gridManager.IsEventPlaying) return;
         HandleMapToggle();
 
         if (!isMapOpen || isAnimating) return;
@@ -199,7 +199,7 @@ public class WorldMapPresenter : MonoBehaviour
 
                 if (targetStage != null)
                 {
-                    Debug.Log($"Warping to: {targetStage.name}");
+                    //Debug.Log($"Warping to: {targetStage.name}");
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
 
                     gridManager.WarpToStage(targetStage);

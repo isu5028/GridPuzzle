@@ -7,6 +7,8 @@ public class AudioManager : MonoBehaviour
 {
     public static AudioManager Instance { get; private set; } = null!;
 
+
+
     private AudioSource[] seSources = null!;
     private AudioSource bgmSource = null!;
 
@@ -25,6 +27,7 @@ public class AudioManager : MonoBehaviour
         warp,
         superposition,
         rush,
+        wipeout,
     }
 
     public enum BGMType

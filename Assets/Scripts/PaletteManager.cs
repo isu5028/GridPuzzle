@@ -7,6 +7,8 @@ public class PaletteManager : MonoBehaviour
     private static PaletteManager _instance;
     public static PaletteManager Instance => _instance;
 
+
+
     [Header("Configuration")]
     [Tooltip("The 4 colors used in the original sprite assets. MUST match the sprite pixels EXACTLY.")]
     [SerializeField] private Color[] sourcePalette = new Color[4];

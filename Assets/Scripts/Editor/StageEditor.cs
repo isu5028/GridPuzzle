@@ -15,6 +15,7 @@ public class StageEditor : Editor
     {
         Wall,       // 壁の配置
         Floor,      // 床の配置
+        SyncMap,    // SyncMapの配置
         Player,     // プレイヤー位置
         Enemy,      // 敵の配置
         EraseUnit   // Unit削除
@@ -36,6 +37,7 @@ public class StageEditor : Editor
     private readonly Color floorColor = new Color(0.9f, 0.9f, 0.9f);
     private readonly Color playerColor = new Color(0.2f, 0.8f, 0.2f);
     private readonly Color enemyColor = new Color(0.8f, 0.2f, 0.2f);
+    private readonly Color syncMapColor = new Color(0.0f, 1.0f, 1.0f, 0.5f); // シアン半透明
     private readonly Color gridLineColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
     private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // 黄色半透明
 
@@ -184,6 +186,7 @@ public class StageEditor : Editor
         SerializedProperty stageNameProp = serializedObject.FindProperty("stageName");
         SerializedProperty widthProp = serializedObject.FindProperty("width");
         SerializedProperty heightProp = serializedObject.FindProperty("height");
+        SerializedProperty syncMapOffsetProp = serializedObject.FindProperty("syncMapOffset");
 
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.PropertyField(stageNameProp, new GUIContent("ステージ名"));
@@ -192,6 +195,8 @@ public class StageEditor : Editor
         EditorGUILayout.PropertyField(widthProp, new GUIContent("幅"));
         EditorGUILayout.PropertyField(heightProp, new GUIContent("高さ"));
         EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.PropertyField(syncMapOffsetProp, new GUIContent("SyncMap Offset"));
 
         if (EditorGUI.EndChangeCheck())
         {
@@ -228,6 +233,9 @@ public class StageEditor : Editor
 
         if (GUILayout.Toggle(currentMode == EditMode.Floor, "床配置", "Button"))
             currentMode = EditMode.Floor;
+
+        if (GUILayout.Toggle(currentMode == EditMode.SyncMap, "SyncMap", "Button"))
+            currentMode = EditMode.SyncMap;
 
         if (GUILayout.Toggle(currentMode == EditMode.Player, "プレイヤー", "Button"))
             currentMode = EditMode.Player;
@@ -281,6 +289,7 @@ public class StageEditor : Editor
         {
             EditMode.Wall => "壁を配置",
             EditMode.Floor => "床を配置",
+            EditMode.SyncMap => "SyncMapマスを配置",
             EditMode.Player => "プレイヤーの初期位置を設定",
             EditMode.Enemy => $"{currentEnemyType}敵を配置",
             EditMode.EraseUnit => "プレイヤーまたは敵をクリックして削除",
@@ -338,7 +347,11 @@ public class StageEditor : Editor
                 cellRect.y = gridRect.y + GRID_PADDING + (stage.Height - 1 - y) * CELL_SIZE;
 
                 // セルの背景色
-                Color cellColor = stage.GetWallAt(x, y) == CellType.Wall ? wallColor : floorColor;
+                CellType cellType = stage.GetWallAt(x, y);
+                Color cellColor = floorColor;
+                if (cellType == CellType.Wall) cellColor = wallColor;
+                else if (cellType == CellType.SyncMap) cellColor = syncMapColor;
+
                 EditorGUI.DrawRect(cellRect, cellColor);
 
                 // 選択中の敵のセルをハイライト
@@ -510,6 +523,10 @@ public class StageEditor : Editor
                 stage.SetWallAt(x, y, false);
                 break;
 
+            case EditMode.SyncMap:
+                stage.SetCellTypeAt(x, y, CellType.SyncMap);
+                break;
+
             case EditMode.Player:
                 stage.SetPlayerPosition(new Vector2Int(x, y));
                 break;
@@ -558,6 +575,8 @@ public class StageEditor : Editor
         EditorGUILayout.LabelField("壁", GUILayout.Width(100));
         DrawColorBox(floorColor);
         EditorGUILayout.LabelField("床", GUILayout.Width(100));
+        DrawColorBox(syncMapColor);
+        EditorGUILayout.LabelField("SyncMap", GUILayout.Width(100));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();

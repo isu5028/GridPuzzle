@@ -7,6 +7,8 @@ public class SceneTransitionManager : MonoBehaviour
 {
     public static SceneTransitionManager Instance { get; private set; }
 
+
+
     [SerializeField] private Canvas canvas;
     [SerializeField] private Image fadeImage;
     [SerializeField] private float defaultDuration = 0.5f;

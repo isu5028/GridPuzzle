@@ -55,7 +55,7 @@ public class OptionPresenter : MonoBehaviour
     void Update()
     {
         // オプション開閉（最優先で処理）
-        if (view.InputOption.triggered && !isAnimating)
+        if (view.InputOption.triggered && !isAnimating && !gridManager.IsEventPlaying)
         {
             if (isSubMenuOpen)
             {

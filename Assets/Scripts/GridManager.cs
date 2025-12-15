@@ -71,6 +71,14 @@ public class GridManager : MonoBehaviour
     private bool previousWarpState = true; // true: enemyWarpTile, false: playerWarpTile
     private Vector2Int currentResetMapPos;
 
+    [SerializeField] private ShowWipeOut showWipeOut = null!;
+    [SerializeField] private TransitionOut transitionOut = null!;
+    [SerializeField] private End end = null!;
+
+    private bool isEventPlaying = false;
+    private bool isWaitingForTitleInput = false;
+    public bool IsEventPlaying => isEventPlaying;
+
     public bool IsPositionInBounds(Vector2Int pos)
     {
         return pos.x >= 0 && pos.x < width && pos.y >= 0 && pos.y < height;
@@ -80,6 +88,17 @@ public class GridManager : MonoBehaviour
     {
         if (gridVisualizer == null)
             gridVisualizer = GetComponent<GridVisualizer>();
+
+        gridVisualizer.OnSyncMapActivated += HandleSyncMapActivated;
+
+        if (showWipeOut == null) showWipeOut = FindObjectOfType<ShowWipeOut>();
+        if (transitionOut == null) transitionOut = FindObjectOfType<TransitionOut>();
+        if (end == null) end = FindObjectOfType<End>();
+
+        if (showWipeOut != null)
+        {
+            showWipeOut.OnHide += HandleWipeOutHidden;
+        }
 
         unitManager = GetComponent<UnitManager>();
         turnManager = GetComponent<TurnManager>();
@@ -101,19 +120,92 @@ public class GridManager : MonoBehaviour
         ContinueGame(loadType);
     }
 
+    private void HandleSyncMapActivated()
+    {
+        PlayEndingSequence().Forget();
+    }
+
+    private async UniTaskVoid PlayEndingSequence()
+    {
+        isEventPlaying = true;
+
+        if (showWipeOut != null)
+        {
+            showWipeOut.Show();
+            AudioManager.Instance.PlaySE(AudioManager.SEType.wipeout);
+        }
+
+        await UniTask.Delay(TimeSpan.FromSeconds(2.0f));
+
+        if (transitionOut != null)
+        {
+            await transitionOut.AnimateAsync();
+        }
+
+        await UniTask.Delay(TimeSpan.FromSeconds(0.5f));
+
+        if (end != null)
+        {
+            end.Show();
+        }
+
+        await UniTask.Delay(TimeSpan.FromSeconds(0.5f));
+
+        isWaitingForTitleInput = true;
+    }
+
+    private void HandleWipeOutHidden()
+    {
+        // isEventPlaying = false;
+    }
+
+    private void OnDestroy()
+    {
+        if (gridVisualizer != null)
+        {
+            gridVisualizer.OnSyncMapActivated -= HandleSyncMapActivated;
+        }
+
+        if (showWipeOut != null)
+        {
+            showWipeOut.OnHide -= HandleWipeOutHidden;
+        }
+    }
 
     void Update()
     {
+        if (isWaitingForTitleInput)
+        {
+            var attackAction = UnityEngine.InputSystem.InputSystem.actions.FindAction("Attack");
+            if (attackAction != null && attackAction.triggered)
+            {
+                SceneManager.LoadScene("Title");
+            }
+            return;
+        }
+
+        if (isEventPlaying) return;
+
         if(Input.GetKeyDown(KeyCode.L))
         {
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Manual);
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Auto);
             Debug.Log("Game progress reset.");
         }
+
+        if(Input.GetKeyDown(KeyCode.F12))
+        {
+            GameProgressManager.Instance.DebugUnlockAllStages(worldMapSO);
+            SyncWorldMapStatus(); // Refresh visuals immediately
+            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
+        }
     }
 
     public void Reset()
     {
+        isEventPlaying = false;
+        if (showWipeOut != null) showWipeOut.Hide();
+
         if (initialStageSO == null)
         {
             initialStageSO = worldMapSO.GetStageAt(currentResetMapPos.x, currentResetMapPos.y);
@@ -143,7 +235,7 @@ public class GridManager : MonoBehaviour
 
         HashSet<Vector2Int> destroyed = destroyedWalls.ContainsKey(nextstage) ? destroyedWalls[nextstage] : null;
 
-        gridVisualizer.SetupTransitionTilemap(nextstage, entryDirection, nextStageHasEnemy, destroyed);
+        gridVisualizer.SetupTransitionTilemap(nextstage, entryDirection, nextStageHasEnemy, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
         var dirVector = Utility.GetVectorFromDirection(entryDirection);
         Vector3 transitionOffset = (Vector3)(dirVector * gridVisualizer.TilemapOffset * 2);
@@ -294,6 +386,7 @@ public class GridManager : MonoBehaviour
         turnManager.Initialize();
         SyncWorldMapStatus();
         CheckAndResolveCollisions();
+        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, false, !isTransitioning);
     }
 
     private void CheckAndResolveCollisions()
@@ -340,7 +433,7 @@ public class GridManager : MonoBehaviour
         // Apply Death
         foreach (var unit in unitsToKill)
         {
-            Debug.Log($"[GridManager] Unit {unit.name} died due to collision at {unit.CurrentPos}");
+            //Debug.Log($"[GridManager] Unit {unit.name} died due to collision at {unit.CurrentPos}");
 
             // Execute InstantDeathCommand
             // visual effect is handled inside the command now
@@ -545,7 +638,7 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        gridVisualizer.RefreshTilemap(width, height, cellData);
+        gridVisualizer.RefreshTilemap(width, height, cellData, stage.SyncMapOffset, GameProgressManager.Instance.IsPositionCleared);
         UpdateWarpTiles(true);
     }
 
@@ -587,7 +680,7 @@ public class GridManager : MonoBehaviour
                     cellData[pos.x, pos.y] = CellType.Floor;
                     // Visualizer update (Might need a method to update single tile, but Refresh is safe)
                     // Optimization: Add UpdateTile(x, y, type) to Visualizer later if needed.
-                    gridVisualizer.RefreshTilemap(width, height, cellData);
+                    gridVisualizer.RefreshTilemap(width, height, cellData, stage.SyncMapOffset, GameProgressManager.Instance.IsPositionCleared);
                     UpdateWarpTiles();
                 }
             }
@@ -658,7 +751,7 @@ public class GridManager : MonoBehaviour
                      {
                          // Re-read default
                          cellData[pos.x, pos.y] = stage.GetWallAt(pos.x, pos.y);
-                         gridVisualizer.RefreshTilemap(width, height, cellData);
+                         gridVisualizer.RefreshTilemap(width, height, cellData, stage.SyncMapOffset, GameProgressManager.Instance.IsPositionCleared);
                          UpdateWarpTiles();
                      }
                 }
@@ -713,15 +806,20 @@ public class GridManager : MonoBehaviour
         bool currentWarpState = hasAliveEnemy;
         bool stateChanged = previousWarpState != currentWarpState;
 
+        SyncWorldMapStatus();
+
         gridVisualizer.UpdateWarpTiles(width, height, cellData, hasAliveEnemy, isTransitioning, stateChanged);
 
-        if (!quiet && stateChanged && !hasAliveEnemy)
+        if (!quiet && stateChanged)
         {
-            if (showWin != null) showWin.Show();
+            if(!hasAliveEnemy)
+            {
+                if (showWin != null) showWin.Show();
+            }
+            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0.5f, true);
         }
 
         previousWarpState = currentWarpState;
-        SyncWorldMapStatus();
     }
 
     private void SyncWorldMapStatus()
@@ -856,6 +954,7 @@ public class GridManager : MonoBehaviour
         await SwitchStageAsync(stage, direction);
         SwitchStage(stage, direction);
         isTransitioning = false;
+        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
     }
 
     public async UniTask PlayTransitionWithoutCommand(StageSO stage, Direction direction, Vector2Int startPos)
@@ -864,6 +963,7 @@ public class GridManager : MonoBehaviour
         await SwitchStageAsync(stage, direction);
         SwitchStageDirect(stage, startPos);
         isTransitioning = false;
+        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
     }
 
     #region utility methods (Proxy to UnitManager / Visualizer)
@@ -872,7 +972,7 @@ public class GridManager : MonoBehaviour
         if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height)
             return false;
         CellType cellType = cellData[pos.x, pos.y];
-        return cellType == CellType.Floor || cellType == CellType.Ice || cellType == CellType.DamageFloor || cellType == CellType.Warp;
+        return cellType == CellType.Floor || cellType == CellType.Ice || cellType == CellType.DamageFloor || cellType == CellType.Warp || cellType == CellType.SyncMap;
     }
 
     public Unit GetUnitAtPosition(Vector2Int pos)
@@ -1103,7 +1203,9 @@ public class GridManager : MonoBehaviour
         GenerateTilemap(stage);
 
         turnManager.Initialize();
+        turnManager.Initialize();
         SyncWorldMapStatus();
+        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, false, !isTransitioning);
     }
 
     private void ApplySavedEnemyData(List<EnemySaveData> savedList)
@@ -1122,14 +1224,14 @@ public class GridManager : MonoBehaviour
             if (data.isDead)
             {
                 enemy.ForceKillSilent();
-                Debug.Log("Enemy is dead");
+                //Debug.Log("Enemy is dead");
             }
             else
             {
                 enemy.ReviveSilent();
                 enemy.WarpTo(new Vector2Int(data.gridX, data.gridY), (Direction)data.direction);
                 enemy.SetHP(data.currentHP);
-                Debug.Log("Enemy is revived");
+                //Debug.Log("Enemy is revived");
             }
         }
     }

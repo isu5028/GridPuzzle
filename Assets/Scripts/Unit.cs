@@ -294,7 +294,7 @@ public abstract class Unit : MonoBehaviour
 
     public void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
     {
-        Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
+        //Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
 
         hp.Value -= damage;

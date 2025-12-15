@@ -19,6 +19,7 @@ public enum CellType
     Warp,
     DamageFloor,
     Ice,
+    SyncMap,
 }
 
 public enum Direction

@@ -12,6 +12,8 @@ public class CameraManager : MonoBehaviour
     // シングルトンインスタンス
     public static CameraManager Instance { get; private set; } = null!;
 
+
+
     [Header("Camera Settings")]
     [SerializeField] private Camera mainCamera = null!;
     [SerializeField] private PixelPerfectCamera pixelPerfectCamera = null!;
@@ -180,7 +182,7 @@ public class CameraManager : MonoBehaviour
     private async UniTask DoShakeCamera(float duration, float magnitude, float frequency, Vector2 direction, CancellationToken cancellationToken)
     {
 
-        Debug.Log($"ShakeCamera: duration={duration}, magnitude={magnitude}, frequency={frequency}, direction={direction}");
+        //Debug.Log($"ShakeCamera: duration={duration}, magnitude={magnitude}, frequency={frequency}, direction={direction}");
 
         // 1フレーム待ってからシェイク開始（キャンセル処理を確実にするため）
         await UniTask.Yield(cancellationToken);

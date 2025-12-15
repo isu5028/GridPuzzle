@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
@@ -14,6 +15,7 @@ public class GridVisualizer : MonoBehaviour
     [SerializeField] private TileBase playerWarpTileIdle = null!;
     [SerializeField] private TileBase enemyWarpTile = null!;
     [SerializeField] private GameObject warpChangeEffect = null!;
+    [SerializeField] private GameObject tileSyncMapPrefab = null!;
     [SerializeField] private Transform gridParent = null!;
 
     [Header("Settings")]
@@ -25,6 +27,16 @@ public class GridVisualizer : MonoBehaviour
     public Transform GridParent => gridParent;
     public Tilemap MainTilemap => tilemap;
     public Tilemap TransitionTilemap => transitionTilemap;
+
+    private List<GameObject> spawnedMainObjects = new List<GameObject>();
+    private List<GameObject> spawnedTransitionObjects = new List<GameObject>();
+
+    private struct SyncMapEntry
+    {
+        public Vector2Int coords;
+        public TileSyncMapController controller;
+    }
+    private List<SyncMapEntry> syncMapEntries = new List<SyncMapEntry>();
 
     // グリッド座標をワールド座標に変換
     public Vector3 GridToWorldPosition(Vector2Int gridPos)
@@ -44,18 +56,35 @@ public class GridVisualizer : MonoBehaviour
     public void ClearAllTiles()
     {
         tilemap.ClearAllTiles();
+        CleanupObjects(spawnedMainObjects);
     }
 
     public void ClearTransitionTiles()
     {
         transitionTilemap.ClearAllTiles();
+        CleanupObjects(spawnedTransitionObjects);
+    }
+
+    public void ClearSyncMapEntries()
+    {
+        syncMapEntries.Clear();
+    }
+
+    private void CleanupObjects(List<GameObject> list)
+    {
+        foreach (var obj in list)
+        {
+            if (obj != null) Destroy(obj);
+        }
+        list.Clear();
     }
 
     // 論理データ(cellData)に基づいてTilemapを描画する
-    public void RefreshTilemap(int width, int height, CellType[,] cellData)
+    public void RefreshTilemap(int width, int height, CellType[,] cellData, Vector2Int syncMapOffset, Func<Vector2Int, bool> isClearedCheck)
     {
         tilemap.ClearAllTiles();
-        FillTilemapFromData(tilemap, width, height, cellData);
+        ClearSyncMapEntries();
+        FillTilemapFromData(tilemap, width, height, cellData, syncMapOffset, isClearedCheck);
         // Warpタイルは状態によって変わるので、呼び出し元で別途UpdateWarpTilesを呼ぶか、ここで行う
         // 基本的な床と壁を配置
     }
@@ -70,7 +99,7 @@ public class GridVisualizer : MonoBehaviour
         tilemap.SetTile(tilePos, tile);
     }
 
-    public void SetTileAt(Tilemap targetMap, int x, int y, CellType type, bool hasAliveEnemy)
+    public void SetTileAt(Tilemap targetMap, int x, int y, CellType type, bool hasAliveEnemy, Vector2Int syncMapOffset, Func<Vector2Int, bool> isClearedCheck)
     {
         var pos = GetTilePosFromGridPos(x, y);
 
@@ -87,9 +116,59 @@ public class GridVisualizer : MonoBehaviour
                 TileBase tileToSet = hasAliveEnemy ? enemyWarpTile : playerWarpTile;
                 targetMap.SetTile(pos, tileToSet);
                 break;
+            case CellType.SyncMap:
+                targetMap.SetTile(pos, floorTile);
+                if (tileSyncMapPrefab != null)
+                {
+                    InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), syncMapOffset, isClearedCheck);
+                }
+                break;
             default:
                 targetMap.SetTile(pos, null);
                 break;
+        }
+    }
+
+    private void InstantiateSyncMapPrefab(Tilemap targetMap, Vector3Int tilePos, Vector2Int gridPos, Vector2Int offset, Func<Vector2Int, bool> isClearedCheck)
+    {
+        // タイルの中心位置を取得
+        Vector3 worldPos = targetMap.GetCellCenterWorld(tilePos);
+        GameObject obj = Instantiate(tileSyncMapPrefab, worldPos, Quaternion.identity, targetMap.transform);
+
+        if (obj != null)
+        {
+            var controller = obj.GetComponent<TileSyncMapController>();
+            if (controller != null)
+            {
+                // Calculate World Map Coordinates
+                Vector2Int worldMapCoords = gridPos + offset;
+                bool isCleared = isClearedCheck != null ? isClearedCheck(worldMapCoords) : false;
+
+                obj.name = $"TileSyncMap_({worldMapCoords.x},{worldMapCoords.y})";
+
+                if (isCleared)
+                {
+                    controller.Show(true);
+                }
+                else
+                {
+                    controller.Hide();
+                }
+
+                if (targetMap == tilemap)
+                {
+                    syncMapEntries.Add(new SyncMapEntry { coords = worldMapCoords, controller = controller });
+                }
+            }
+        }
+
+        if (targetMap == tilemap)
+        {
+            spawnedMainObjects.Add(obj);
+        }
+        else if (targetMap == transitionTilemap)
+        {
+            spawnedTransitionObjects.Add(obj);
         }
     }
 
@@ -121,9 +200,81 @@ public class GridVisualizer : MonoBehaviour
         }
     }
 
-    public void SetupTransitionTilemap(StageSO stage, Direction entryDirection, bool nextStageHasEnemy, HashSet<Vector2Int> destroyedWalls = null)
+    private Tween activationTween;
+    public event Action OnSyncMapActivated;
+
+    public void UpdateSyncMapVisuals(Func<Vector2Int, bool> isClearedCheck, float delay = 0f, bool triggerEvent = false, bool allowActivation = true)
     {
-        transitionTilemap.ClearAllTiles();
+        if (isClearedCheck == null) return;
+
+        // Cancel any pending activation
+        activationTween?.Kill();
+
+        bool allCleared = true;
+        // First pass: Check if all are cleared and update show/hide state
+        foreach (var entry in syncMapEntries)
+        {
+            if (entry.controller != null)
+            {
+                if (isClearedCheck(entry.coords))
+                {
+                    entry.controller.Show();
+                }
+                else
+                {
+                    entry.controller.Hide();
+                    allCleared = false;
+                }
+            }
+        }
+
+        // Second pass: If all are cleared, play activated animation
+        if (allCleared && syncMapEntries.Count > 0)
+        {
+            if (allowActivation)
+            {
+                if (delay > 0f)
+                {
+                    activationTween = DOVirtual.DelayedCall(delay, () =>
+                    {
+                        foreach (var entry in syncMapEntries)
+                        {
+                            if (entry.controller != null)
+                            {
+                                entry.controller.PlayActivated();
+                            }
+                        }
+                        if (triggerEvent) OnSyncMapActivated?.Invoke();
+                    });
+                }
+                else
+                {
+                    foreach (var entry in syncMapEntries)
+                    {
+                        if (entry.controller != null)
+                        {
+                            entry.controller.PlayActivated();
+                        }
+                    }
+                    if (triggerEvent) OnSyncMapActivated?.Invoke();
+                }
+            }
+        }
+        else
+        {
+             foreach (var entry in syncMapEntries)
+            {
+                if (entry.controller != null)
+                {
+                    entry.controller.ResetActivated();
+                }
+            }
+        }
+    }
+
+    public void SetupTransitionTilemap(StageSO stage, Direction entryDirection, bool nextStageHasEnemy, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
+    {
+        ClearTransitionTiles();
         Vector2Int dir = Utility.GetVectorFromDirection(entryDirection);
         transitionTilemap.transform.position = -new Vector3(dir.x * tilemapOffset.x * 2, dir.y * tilemapOffset.y * 2, 0);
 
@@ -142,12 +293,12 @@ public class GridVisualizer : MonoBehaviour
                 {
                     type = CellType.Floor;
                 }
-                SetTileAt(transitionTilemap, x, y, type, nextStageHasEnemy);
+                SetTileAt(transitionTilemap, x, y, type, nextStageHasEnemy, stage.SyncMapOffset, isClearedCheck);
             }
         }
     }
 
-    private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData)
+    private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData, Vector2Int syncMapOffset, Func<Vector2Int, bool> isClearedCheck)
     {
         for (int y = 0; y < height; y++)
         {
@@ -169,6 +320,13 @@ public class GridVisualizer : MonoBehaviour
                         break;
                     case CellType.Warp:
                         targetMap.SetTile(pos, floorTile); // 暫定Floor
+                        break;
+                    case CellType.SyncMap:
+                        targetMap.SetTile(pos, floorTile);
+                        if (tileSyncMapPrefab != null)
+                        {
+                            InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), syncMapOffset, isClearedCheck);
+                        }
                         break;
                     default:
                         targetMap.SetTile(pos, null);
