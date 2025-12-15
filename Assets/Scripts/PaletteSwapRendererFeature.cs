@@ -29,10 +29,9 @@ public class PaletteSwapRendererFeature : ScriptableRendererFeature
         public PaletteSwapPass(Material material)
         {
             this.material = material;
-            requiresIntermediateTexture = true; // Required for BlitCameraTexture logic to ensure we have a valid copy target if needed
+            requiresIntermediateTexture = true;
         }
 
-        // RenderGraph implementation (Unity 6 / URP 17+)
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
             UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
@@ -46,37 +45,43 @@ public class PaletteSwapRendererFeature : ScriptableRendererFeature
 
             TextureHandle source = resourceData.activeColorTexture;
 
-            // Create a temporary texture for the effect
+            // ディスクリプタ設定（WebGL向けにMSAAを1に強制）
             var desc = cameraData.cameraTargetDescriptor;
             desc.depthBufferBits = 0;
+            desc.msaaSamples = 1;
+
             TextureHandle tempTexture = UniversalRenderer.CreateRenderGraphTexture(renderGraph, desc, "_PaletteSwapTempTexture", false);
 
+            // Pass 1: 適用 (Source -> Temp)
             using (var builder = renderGraph.AddRasterRenderPass<PassData>(k_PassName, out var passData))
             {
                 passData.material = material;
                 passData.source = source;
                 passData.destination = tempTexture;
 
-                // We are reading from source and writing to tempTexture
                 builder.UseTexture(source, AccessFlags.Read);
-                builder.SetRenderAttachment(tempTexture, 0, AccessFlags.Write); // Index 0 fixed
+                builder.SetRenderAttachment(tempTexture, 0, AccessFlags.Write);
 
                 builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
                 {
-                    // For raster passes, we simply draw a full screen triangle
-                    // The shader fallback or Blit logic handles the sampling
+                    // 【重要】明示的に _MainTex をセットする
+                    data.material.SetTexture("_MainTex", data.source);
+
+                    // シェーダーのプロパティがグローバル変数を受け取れるよう、キーワード等を更新
+                    // (ShaderGraphによっては不要ですが、念のため)
+
                     Blitter.BlitTexture(context.cmd, data.source, new Vector4(1, 1, 0, 0), data.material, 0);
                 });
             }
 
-            // Copy back temp -> source
+            // Pass 2: 書き戻し (Temp -> Source)
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Palette Swap Copy Back", out var passData))
             {
                 passData.source = tempTexture;
                 passData.destination = source;
 
                 builder.UseTexture(tempTexture, AccessFlags.Read);
-                builder.SetRenderAttachment(source, 0, AccessFlags.Write); // Index 0 fixed
+                builder.SetRenderAttachment(source, 0, AccessFlags.Write);
 
                 builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
                 {
@@ -85,7 +90,7 @@ public class PaletteSwapRendererFeature : ScriptableRendererFeature
             }
         }
 
-        // Legacy Execute left empty or threw exception if strict, but safe to leave empty if RecordRenderGraph is called
+        // Legacy execute is empty
         [System.Obsolete]
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData) {}
     }

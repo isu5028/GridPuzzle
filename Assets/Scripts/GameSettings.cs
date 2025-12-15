@@ -4,16 +4,18 @@ public static class GameSettings
 {
     public static int screenMode = 0;
     public static Vector2Int Resolution = new Vector2Int(960, 540);
-    public static int GameSpeed = 1;
-    public static int Language = 0; // 0: English, 1: Japanese
+    public static int GameSpeed = 0;
+    public static int Language = 1; // 0: English, 1: Japanese
     public static int BgmVolume = 50;
     public static int SeVolume = 50;
 
     public static void ApplySettings()
     {
+#if !UNITY_WEBGL
         // 解像度とモードの適用 (0: Window, 1: Fullscreen)
         FullScreenMode mode = screenMode == 0 ? FullScreenMode.Windowed : FullScreenMode.FullScreenWindow;
         Screen.SetResolution(Resolution.x, Resolution.y, mode);
+#endif
 
         // PixelPerfectCameraの設定更新
         if (CameraManager.Instance != null)

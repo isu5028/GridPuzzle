@@ -30,6 +30,15 @@ public class TitleView : MonoBehaviour
              // If Load View comes up, Title might fade or move Up.
              hiddenPos = visiblePos + new Vector3(0, Screen.height, 0);
          }
+
+#if UNITY_WEBGL
+        if (itemPositions != null && itemPositions.Length > 2)
+        {
+            // Disable Quit button visual
+            if(itemPositions[2] != null) itemPositions[2].gameObject.SetActive(false);
+        }
+#endif
+
          isInitialized = true;
     }
 

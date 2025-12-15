@@ -327,20 +327,18 @@ public abstract class Unit : MonoBehaviour
     private void Die(Vector2Int attackerPos)
     {
         isDead = true;
+        if (this is Player)
+        {
+            AudioManager.Instance.SetMasterLowPassFilter(500);
+        }
+
         if (gameObject.activeInHierarchy)
         {
             DieAsync(attackerPos).Forget();
         }
         else
         {
-            // If inactive, just apply transform changes immediately or dirty flag?
-            // Actually, if inactive, we might not need to move transforms yet.
-            // But when it becomes active, it should be in Dead state.
-            // OnEnable/Start should check IsDead?
-            // Existing `ApplyDeadStateVisual` handles this!
-            // Line 92 `ApplyDeadStateVisual` calls `InitializeVisuals` then sets transforms.
-            // `GridManager.MoveEnemyToStage` calls `ApplyDeadStateVisual` if dead when activating.
-            // So we just set `isDead = true` and we are good.
+            // ...
         }
     }
 
@@ -383,6 +381,11 @@ public abstract class Unit : MonoBehaviour
     public virtual void Revive()
     {
         isDead = false;
+        if (this is Player)
+        {
+            AudioManager.Instance.SetMasterLowPassFilter(20000);
+        }
+
         isAnimating = false; // Reset animation state on revive
 
         // 死亡アニメーションをキャンセル

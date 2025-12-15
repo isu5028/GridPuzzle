@@ -260,7 +260,9 @@ public class TitleOptionPresenter : MonoBehaviour
             ? FullScreenMode.FullScreenWindow
             : FullScreenMode.Windowed;
 
+#if !UNITY_WEBGL
         Screen.SetResolution(model.CurrentResolution.x, model.CurrentResolution.y, mode);
+#endif
 
 
 

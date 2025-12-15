@@ -15,6 +15,11 @@ public class TitleModel
     {
         int current = (int)CurrentItem;
         int count = System.Enum.GetNames(typeof(TitleItem)).Length;
+
+#if UNITY_WEBGL
+        count--; // Quit is the last item, so reduce count to ignore it
+#endif
+
         current = (current + direction + count) % count;
         CurrentItem = (TitleItem)current;
     }

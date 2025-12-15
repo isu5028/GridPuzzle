@@ -66,6 +66,15 @@ public class OptionView : MonoBehaviour
             hiddenPosition = new Vector3(visiblePosition.x, visiblePosition.y - Screen.height, visiblePosition.z);
             optionPanel.localPosition = hiddenPosition;
         }
+
+#if UNITY_WEBGL
+        if (screenModeText) screenModeText.gameObject.SetActive(false);
+        if (maskedScreenModeText) maskedScreenModeText.gameObject.SetActive(false);
+        if (screenModeHorizontalUI) screenModeHorizontalUI.gameObject.SetActive(false);
+        if (resolutionText) resolutionText.gameObject.SetActive(false);
+        if (maskedResolutionText) maskedResolutionText.gameObject.SetActive(false);
+        if (resolutionHorizontalUI) resolutionHorizontalUI.gameObject.SetActive(false);
+#endif
     }
 
     public void InitialShow()
@@ -77,6 +86,8 @@ public class OptionView : MonoBehaviour
     {
         if (isAnimating) return;
 
+        //AudioManager.Instance.SetMasterHighPassFilter(400);
+
         isAnimating = true;
         optionPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
@@ -87,6 +98,8 @@ public class OptionView : MonoBehaviour
     {
         if (isAnimating) return;
 
+        AudioManager.Instance.SetMasterHighPassFilter(10);
+
         isAnimating = true;
         optionPanel.DOLocalMove(hiddenPosition, slideDuration).SetUpdate(true).SetEase(Ease.InCubic);
         await UniTask.Delay(TimeSpan.FromSeconds(slideDuration));
@@ -96,6 +109,8 @@ public class OptionView : MonoBehaviour
     public async UniTask HideUpAsync()
     {
         if (isAnimating) return;
+
+        AudioManager.Instance.SetMasterHighPassFilter(10);
 
         isAnimating = true;
         // 画面上部へ移動

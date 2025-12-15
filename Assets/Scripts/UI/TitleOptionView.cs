@@ -41,6 +41,18 @@ public class TitleOptionView : MonoBehaviour
     private Vector3 hiddenPos;
     private bool isInitialized = false;
 
+    private void Awake()
+    {
+#if UNITY_WEBGL
+        if (screenModeText) screenModeText.gameObject.SetActive(false);
+        if (maskedScreenModeText) maskedScreenModeText.gameObject.SetActive(false);
+        if (screenModeHorizontalUI) screenModeHorizontalUI.gameObject.SetActive(false);
+        if (resolutionText) resolutionText.gameObject.SetActive(false);
+        if (maskedResolutionText) maskedResolutionText.gameObject.SetActive(false);
+        if (resolutionHorizontalUI) resolutionHorizontalUI.gameObject.SetActive(false);
+#endif
+    }
+
     private void Initialize()
     {
         if (isInitialized) return;
@@ -143,6 +155,7 @@ public class TitleOptionView : MonoBehaviour
         Initialize();
         if (container)
         {
+            //AudioManager.Instance.SetMasterHighPassFilter(400);
             container.localPosition = hiddenPos;
             container.DOLocalMove(visiblePos, slideDuration).SetEase(Ease.OutCubic);
         }
@@ -154,6 +167,7 @@ public class TitleOptionView : MonoBehaviour
         Initialize();
         if (container)
         {
+            AudioManager.Instance.SetMasterHighPassFilter(10);
             container.DOLocalMove(hiddenPos, slideDuration).SetEase(Ease.InCubic);
         }
         await UniTask.Delay(System.TimeSpan.FromSeconds(slideDuration));

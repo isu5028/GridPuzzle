@@ -60,6 +60,11 @@ public class PaletteManager : MonoBehaviour
         UpdateShaderGlobals();
     }
 
+    private void LateUpdate()
+    {
+        UpdateShaderGlobals();
+    }
+
     private void OnValidate()
     {
         UpdateShaderGlobals();
@@ -101,11 +106,14 @@ public class PaletteManager : MonoBehaviour
         // Set Source Colors
         ApplySourceColorsOnly();
 
-        // Set Target Colors (Convert to Linear)
-        Shader.SetGlobalColor("_TargetColor0", palette.Colors[0].linear);
-        Shader.SetGlobalColor("_TargetColor1", palette.Colors[1].linear);
-        Shader.SetGlobalColor("_TargetColor2", palette.Colors[2].linear);
-        Shader.SetGlobalColor("_TargetColor3", palette.Colors[3].linear);
+        // Check current color space
+        bool isLinear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+
+        // Set Target Colors (Convert to Linear if strictly in Linear Space, otherwise keep as is)
+        Shader.SetGlobalColor("_TargetColor0", isLinear ? palette.Colors[0].linear : palette.Colors[0]);
+        Shader.SetGlobalColor("_TargetColor1", isLinear ? palette.Colors[1].linear : palette.Colors[1]);
+        Shader.SetGlobalColor("_TargetColor2", isLinear ? palette.Colors[2].linear : palette.Colors[2]);
+        Shader.SetGlobalColor("_TargetColor3", isLinear ? palette.Colors[3].linear : palette.Colors[3]);
     }
 
     private void ApplySourceColorsOnly()
@@ -114,11 +122,13 @@ public class PaletteManager : MonoBehaviour
 
         if (sourcePalette == null || sourcePalette.Length < 4) return;
 
-        // Convert to Linear to match the Scene Color in Linear Project Settings
-        Shader.SetGlobalColor("_SourceColor0", sourcePalette[0].linear);
-        Shader.SetGlobalColor("_SourceColor1", sourcePalette[1].linear);
-        Shader.SetGlobalColor("_SourceColor2", sourcePalette[2].linear);
-        Shader.SetGlobalColor("_SourceColor3", sourcePalette[3].linear);
+        bool isLinear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+
+        // Set Source Colors
+        Shader.SetGlobalColor("_SourceColor0", isLinear ? sourcePalette[0].linear : sourcePalette[0]);
+        Shader.SetGlobalColor("_SourceColor1", isLinear ? sourcePalette[1].linear : sourcePalette[1]);
+        Shader.SetGlobalColor("_SourceColor2", isLinear ? sourcePalette[2].linear : sourcePalette[2]);
+        Shader.SetGlobalColor("_SourceColor3", isLinear ? sourcePalette[3].linear : sourcePalette[3]);
     }
 
     // Debug method to cycle palettes

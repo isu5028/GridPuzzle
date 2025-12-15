@@ -32,6 +32,7 @@ public class InstantDeathCommand : ICommand
         CameraManager.Instance.ShakeCamera(0.5f, 8.0f, 40f, Vector2.up);
         CameraManager.Instance.PlayGlitch(0.5f, 1.0f);
         AudioManager.Instance.PlaySE(AudioManager.SEType.superposition);
+        AudioManager.Instance.TriggerSuperpositionEffect();
 
         // Apply instant damage
         unit.TakeDamage(damage, deathPos, false);

@@ -182,6 +182,18 @@ public class GameProgressManager : MonoBehaviour
 
         SetCellType(position.x, position.y, finalType);
 
+        // クリーア率に応じて音程を変える
+        float progress = (float)clearedPositions.Count;
+        float threshold = 8;
+        if (progress >= threshold)
+        {
+            AudioManager.Instance.SetMasterPitch(1.12f);
+        }
+        else
+        {
+            AudioManager.Instance.SetMasterPitch(1.0f);
+        }
+
         return isNewAreaUnlocked;
     }
 

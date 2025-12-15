@@ -10,7 +10,129 @@ public class AudioManager : MonoBehaviour
 
 
     private AudioSource[] seSources = null!;
-    private AudioSource bgmSource = null!;
+    [SerializeField] private AudioSource bgmSource;
+    [SerializeField] private UnityEngine.Audio.AudioMixer audioMixer;
+    private Tween masterHighPassTween;
+
+    public void SetMasterHighPassFilter(float cutoffFrequency, float duration = 0.2f)
+    {
+        if (audioMixer != null)
+        {
+            masterHighPassTween?.Kill();
+            audioMixer.GetFloat("MasterHighPass", out float currentVal);
+
+            masterHighPassTween = DOVirtual.Float(currentVal, cutoffFrequency, duration, val =>
+            {
+                audioMixer.SetFloat("MasterHighPass", val);
+            }).SetLink(gameObject);
+        }
+    }
+
+    private Tween masterLowPassTween;
+    private Tween masterChorusDepthTween;
+
+    private float _basePitch = 1.0f;
+    private float _effectPitchOffset = 0.0f;
+    private Tween _basePitchTween;
+    private Tween _effectPitchTween;
+
+    private void ApplyPitch()
+    {
+        if (audioMixer != null)
+        {
+            audioMixer.SetFloat("MasterPitch", _basePitch + _effectPitchOffset);
+        }
+    }
+
+    public void SetMasterLowPassFilter(float cutoffFrequency, float duration = 2.0f)
+    {
+        if (audioMixer != null)
+        {
+            masterLowPassTween?.Kill();
+            audioMixer.GetFloat("MasterLowPass", out float currentVal);
+
+            masterLowPassTween = DOVirtual.Float(currentVal, cutoffFrequency, duration, val =>
+            {
+                audioMixer.SetFloat("MasterLowPass", val);
+            }).SetLink(gameObject);
+        }
+    }
+
+    public void SetMasterChorusDepth(float depth, float duration = 0.2f)
+    {
+        if (audioMixer != null)
+        {
+            masterChorusDepthTween?.Kill();
+            audioMixer.GetFloat("MasterChorusDepth", out float currentVal);
+
+            masterChorusDepthTween = DOVirtual.Float(currentVal, depth, duration, val =>
+            {
+                audioMixer.SetFloat("MasterChorusDepth", val);
+            }).SetLink(gameObject);
+        }
+    }
+
+    public void SetMasterPitch(float pitch, float duration = 2.0f)
+    {
+        _basePitchTween?.Kill();
+        // Smoothly transition base pitch
+        _basePitchTween = DOVirtual.Float(_basePitch, pitch, duration, val =>
+        {
+            _basePitch = val;
+            ApplyPitch();
+        }).SetLink(gameObject);
+    }
+
+    public void TriggerSuperpositionEffect()
+    {
+        // 3秒間ChorusDepthを1にし、その後0.03に戻す
+        SetMasterChorusDepth(1.0f, 0.5f);
+        DOVirtual.DelayedCall(3.0f, () =>
+        {
+            SetMasterChorusDepth(0.03f, 2.0f);
+        }).SetLink(gameObject);
+    }
+
+    private Tween masterFreqGainTween;
+
+    public void SetMasterFreqGain(float gain, float duration = 2.0f)
+    {
+        if (audioMixer != null)
+        {
+            masterFreqGainTween?.Kill();
+            audioMixer.GetFloat("MasterFreqGain", out float currentVal);
+
+            masterFreqGainTween = DOVirtual.Float(currentVal, gain, duration, val =>
+            {
+                audioMixer.SetFloat("MasterFreqGain", val);
+            }).SetLink(gameObject);
+        }
+    }
+
+    private Tween masterRoomTween;
+
+    public void SetMasterRoom(float room, float duration = 0.0f)
+    {
+        if (audioMixer != null)
+        {
+            masterRoomTween?.Kill();
+            audioMixer.GetFloat("MasterRoom", out float currentVal);
+
+            masterRoomTween = DOVirtual.Float(currentVal, room, duration, val =>
+            {
+                audioMixer.SetFloat("MasterRoom", val);
+            }).SetLink(gameObject);
+        }
+    }
+
+    public void TriggerStageChangeEffect()
+    {
+        SetMasterRoom(0, 0.2f);
+        DOVirtual.DelayedCall(1f, () =>
+        {
+            SetMasterRoom(-10000.00f, 1f);
+        }).SetLink(gameObject);
+    }
 
     public enum SEType
     {
@@ -77,6 +199,14 @@ public class AudioManager : MonoBehaviour
         }
     }
 
+    void Start()
+    {
+        if (bgmClips.Length > 0)
+        {
+            PlayBGM(bgmClips[0].type);
+        }
+    }
+
     private void InitializeAudioSources()
     {
         print("InitializeAudioSources");
@@ -87,7 +217,7 @@ public class AudioManager : MonoBehaviour
             seSources[i].volume = seVolume / maxVolume;
         }
 
-        bgmSource = gameObject.AddComponent<AudioSource>();
+        //bgmSource = gameObject.AddComponent<AudioSource>();
         //bgmSource.volume = GetBGMVolume();
         bgmSource.volume = 1;
         bgmSource.loop = true;
@@ -162,6 +292,8 @@ public class AudioManager : MonoBehaviour
             Debug.LogWarning($"BGM clip for {bgmType} not found.");
             return;
         }
+
+        if (bgmSource.clip == clip && bgmSource.isPlaying) return;
 
         bgmSource.clip = clip;
         bgmSource.Play();

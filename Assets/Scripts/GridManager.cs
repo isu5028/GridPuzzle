@@ -189,6 +189,7 @@ public class GridManager : MonoBehaviour
 
         if (isEventPlaying) return;
 
+#if UNITY_EDITOR
         if(Input.GetKeyDown(KeyCode.L))
         {
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Manual);
@@ -202,6 +203,7 @@ public class GridManager : MonoBehaviour
             SyncWorldMapStatus(); // Refresh visuals immediately
             gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
         }
+#endif
     }
 
     public void Reset()
@@ -319,6 +321,8 @@ public class GridManager : MonoBehaviour
         currentStageSO = stage;
         initialStageSO = stage;
         commandManager.Warped();
+
+        currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
 
         currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
 
@@ -952,6 +956,7 @@ public class GridManager : MonoBehaviour
     public async UniTask ExecuteTransition(StageSO stage, Direction direction)
     {
         isTransitioning = true;
+        AudioManager.Instance.TriggerStageChangeEffect();
         TransitionCommand transitionCommand = new TransitionCommand(this, currentStageSO, stage, direction, unitManager.Player.CurrentPos);
         commandManager.ExecuteCommand(transitionCommand);
         await SwitchStageAsync(stage, direction);
@@ -963,6 +968,7 @@ public class GridManager : MonoBehaviour
     public async UniTask PlayTransitionWithoutCommand(StageSO stage, Direction direction, Vector2Int startPos)
     {
         isTransitioning = true;
+        AudioManager.Instance.TriggerStageChangeEffect();
         await SwitchStageAsync(stage, direction);
         SwitchStageDirect(stage, startPos);
         isTransitioning = false;

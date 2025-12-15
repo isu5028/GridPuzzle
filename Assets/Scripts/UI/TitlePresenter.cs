@@ -173,8 +173,10 @@ public class TitlePresenter : MonoBehaviour
 
     private void HandleQuit()
     {
+#if !UNITY_WEBGL
         AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel); // Or decide?
         Debug.Log("Quit Game");
         Application.Quit();
+#endif
     }
 }

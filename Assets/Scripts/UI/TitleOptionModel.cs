@@ -62,7 +62,15 @@ public class TitleOptionModel
     {
         int current = (int)CurrentItem;
         int count = System.Enum.GetNames(typeof(ItemType)).Length;
-        current = (current + direction + count) % count;
+        do
+        {
+            current = (current + direction + count) % count;
+        }
+#if UNITY_WEBGL
+        while ((ItemType)current == ItemType.ScreenMode || (ItemType)current == ItemType.Resolution);
+#else
+        while (false);
+#endif
         CurrentItem = (ItemType)current;
     }
 
