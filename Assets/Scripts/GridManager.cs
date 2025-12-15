@@ -73,7 +73,9 @@ public class GridManager : MonoBehaviour
 
     [SerializeField] private ShowWipeOut showWipeOut = null!;
     [SerializeField] private TransitionOut transitionOut = null!;
+
     [SerializeField] private End end = null!;
+    [SerializeField] private WorldMapPresenter worldMapPresenter = null!;
 
     private bool isEventPlaying = false;
     private bool isWaitingForTitleInput = false;
@@ -94,6 +96,7 @@ public class GridManager : MonoBehaviour
         if (showWipeOut == null) showWipeOut = FindObjectOfType<ShowWipeOut>();
         if (transitionOut == null) transitionOut = FindObjectOfType<TransitionOut>();
         if (end == null) end = FindObjectOfType<End>();
+        if (worldMapPresenter == null) worldMapPresenter = FindObjectOfType<WorldMapPresenter>();
 
         if (showWipeOut != null)
         {
@@ -638,7 +641,7 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        gridVisualizer.RefreshTilemap(width, height, cellData, stage.SyncMapOffset, GameProgressManager.Instance.IsPositionCleared);
+        gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
         UpdateWarpTiles(true);
     }
 
@@ -680,7 +683,7 @@ public class GridManager : MonoBehaviour
                     cellData[pos.x, pos.y] = CellType.Floor;
                     // Visualizer update (Might need a method to update single tile, but Refresh is safe)
                     // Optimization: Add UpdateTile(x, y, type) to Visualizer later if needed.
-                    gridVisualizer.RefreshTilemap(width, height, cellData, stage.SyncMapOffset, GameProgressManager.Instance.IsPositionCleared);
+                    gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
                     UpdateWarpTiles();
                 }
             }
@@ -751,7 +754,7 @@ public class GridManager : MonoBehaviour
                      {
                          // Re-read default
                          cellData[pos.x, pos.y] = stage.GetWallAt(pos.x, pos.y);
-                         gridVisualizer.RefreshTilemap(width, height, cellData, stage.SyncMapOffset, GameProgressManager.Instance.IsPositionCleared);
+                         gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
                          UpdateWarpTiles();
                      }
                 }
@@ -972,7 +975,7 @@ public class GridManager : MonoBehaviour
         if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height)
             return false;
         CellType cellType = cellData[pos.x, pos.y];
-        return cellType == CellType.Floor || cellType == CellType.Ice || cellType == CellType.DamageFloor || cellType == CellType.Warp || cellType == CellType.SyncMap;
+        return cellType == CellType.Floor || cellType == CellType.Ice || cellType == CellType.DamageFloor || cellType == CellType.Warp || cellType == CellType.SyncMap || cellType == CellType.Tutorial;
     }
 
     public Unit GetUnitAtPosition(Vector2Int pos)
@@ -1168,6 +1171,10 @@ public class GridManager : MonoBehaviour
         else
         {
             ResetAndStartNewGame();
+            if (worldMapPresenter != null)
+            {
+                worldMapPresenter.OpenMap(true);
+            }
         }
     }
 

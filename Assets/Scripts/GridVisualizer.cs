@@ -16,6 +16,7 @@ public class GridVisualizer : MonoBehaviour
     [SerializeField] private TileBase enemyWarpTile = null!;
     [SerializeField] private GameObject warpChangeEffect = null!;
     [SerializeField] private GameObject tileSyncMapPrefab = null!;
+    [SerializeField] private List<GameObject> tutorialPrefabs = new List<GameObject>();
     [SerializeField] private Transform gridParent = null!;
 
     [Header("Settings")]
@@ -80,11 +81,11 @@ public class GridVisualizer : MonoBehaviour
     }
 
     // 論理データ(cellData)に基づいてTilemapを描画する
-    public void RefreshTilemap(int width, int height, CellType[,] cellData, Vector2Int syncMapOffset, Func<Vector2Int, bool> isClearedCheck)
+    public void RefreshTilemap(int width, int height, CellType[,] cellData, StageSO stage, Func<Vector2Int, bool> isClearedCheck)
     {
         tilemap.ClearAllTiles();
         ClearSyncMapEntries();
-        FillTilemapFromData(tilemap, width, height, cellData, syncMapOffset, isClearedCheck);
+        FillTilemapFromData(tilemap, width, height, cellData, stage, isClearedCheck);
         // Warpタイルは状態によって変わるので、呼び出し元で別途UpdateWarpTilesを呼ぶか、ここで行う
         // 基本的な床と壁を配置
     }
@@ -99,7 +100,7 @@ public class GridVisualizer : MonoBehaviour
         tilemap.SetTile(tilePos, tile);
     }
 
-    public void SetTileAt(Tilemap targetMap, int x, int y, CellType type, bool hasAliveEnemy, Vector2Int syncMapOffset, Func<Vector2Int, bool> isClearedCheck)
+    public void SetTileAt(Tilemap targetMap, int x, int y, CellType type, bool hasAliveEnemy, StageSO stage, Func<Vector2Int, bool> isClearedCheck)
     {
         var pos = GetTilePosFromGridPos(x, y);
 
@@ -111,6 +112,13 @@ public class GridVisualizer : MonoBehaviour
             case CellType.Floor:
                 targetMap.SetTile(pos, floorTile);
                 break;
+            case CellType.Tutorial:
+                targetMap.SetTile(pos, floorTile);
+                if (tutorialPrefabs != null && stage != null)
+                {
+                    InstantiateTutorialPrefab(targetMap, pos, new Vector2Int(x, y), stage);
+                }
+                break;
             case CellType.Warp:
                 // 初期状態としてのWarp設定
                 TileBase tileToSet = hasAliveEnemy ? enemyWarpTile : playerWarpTile;
@@ -120,12 +128,49 @@ public class GridVisualizer : MonoBehaviour
                 targetMap.SetTile(pos, floorTile);
                 if (tileSyncMapPrefab != null)
                 {
-                    InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), syncMapOffset, isClearedCheck);
+                    InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), stage.SyncMapOffset, isClearedCheck);
                 }
                 break;
             default:
                 targetMap.SetTile(pos, null);
                 break;
+        }
+    }
+
+    private void InstantiateTutorialPrefab(Tilemap targetMap, Vector3Int tilePos, Vector2Int gridPos, StageSO stage)
+    {
+        int index = stage.GetTutorialIndex(gridPos);
+        // Index is 1-based (usually 1, 2, 3...)
+        // List is 0-based.
+        // Assuming tutorialPrefabs[0] matches index 1? Or user sets index 0 for 1st tutorial?
+        // Editor default index was 1.
+        // Let's adjust: Prefab lookup = index - 1?
+        // Or just use index if user manages it.
+        // "iはTutorialのIndex". "TutorialPrefab[i]"
+        // If index=1, usually `tutorialPrefabs[1]` if array is large enough.
+        // BUT safer is `index - 1` if Tutorial 1 means first prefab.
+        // Let's assume 1-based index in data, 0-based in list. So use `index - 1`.
+
+        int prefabIndex = index - 1;
+
+        if (prefabIndex >= 0 && prefabIndex < tutorialPrefabs.Count)
+        {
+            GameObject prefab = tutorialPrefabs[prefabIndex];
+            if (prefab != null)
+            {
+                // Align to tile center
+                Vector3 worldPos = targetMap.GetCellCenterWorld(tilePos);
+                GameObject obj = Instantiate(prefab, worldPos, Quaternion.identity, targetMap.transform);
+
+                if (targetMap == tilemap)
+                {
+                    spawnedMainObjects.Add(obj);
+                }
+                else if (targetMap == transitionTilemap)
+                {
+                    spawnedTransitionObjects.Add(obj);
+                }
+            }
         }
     }
 
@@ -293,12 +338,12 @@ public class GridVisualizer : MonoBehaviour
                 {
                     type = CellType.Floor;
                 }
-                SetTileAt(transitionTilemap, x, y, type, nextStageHasEnemy, stage.SyncMapOffset, isClearedCheck);
+                SetTileAt(transitionTilemap, x, y, type, nextStageHasEnemy, stage, isClearedCheck);
             }
         }
     }
 
-    private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData, Vector2Int syncMapOffset, Func<Vector2Int, bool> isClearedCheck)
+    private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData, StageSO stage, Func<Vector2Int, bool> isClearedCheck)
     {
         for (int y = 0; y < height; y++)
         {
@@ -321,11 +366,18 @@ public class GridVisualizer : MonoBehaviour
                     case CellType.Warp:
                         targetMap.SetTile(pos, floorTile); // 暫定Floor
                         break;
+                    case CellType.Tutorial:
+                        targetMap.SetTile(pos, floorTile);
+                        if (tutorialPrefabs != null && stage != null)
+                        {
+                            InstantiateTutorialPrefab(targetMap, pos, new Vector2Int(x, y), stage);
+                        }
+                        break;
                     case CellType.SyncMap:
                         targetMap.SetTile(pos, floorTile);
                         if (tileSyncMapPrefab != null)
                         {
-                            InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), syncMapOffset, isClearedCheck);
+                            InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), stage.SyncMapOffset, isClearedCheck);
                         }
                         break;
                     default:

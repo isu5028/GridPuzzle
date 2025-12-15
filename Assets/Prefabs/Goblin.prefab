@@ -33,7 +33,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 8}
+  m_AnchoredPosition: {x: 0, y: 6}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!331 &8213331895500519546
@@ -160,7 +160,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 5, y: 5}
+  m_SizeDelta: {x: 10, y: 5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!23 &89159009341861245
 MeshRenderer:
@@ -336,7 +336,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 5, y: 5}
+  m_SizeDelta: {x: 10, y: 5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!23 &2976160552375092379
 MeshRenderer:
@@ -630,8 +630,12 @@ MonoBehaviour:
   maskTransform: {fileID: 8007873721606773688}
   maskedTransform: {fileID: 144093551611858362}
   unitAnimator: {fileID: 3414781995330460015}
+  maxHP: 3
   isDead: 0
   type: 2
+  ammoText: {fileID: 0}
+  ammoTransform: {fileID: 0}
+  ammoSpriteAnimation: {fileID: 0}
 --- !u!114 &3414781995330460015
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -675,7 +679,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0159a23de08f7904fbb2d289809d831e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  fastSpeedAttackDelayMs: 200
 --- !u!1 &3546871636110419114
 GameObject:
   m_ObjectHideFlags: 0

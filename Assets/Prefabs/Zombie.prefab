@@ -160,7 +160,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 5, y: 5}
+  m_SizeDelta: {x: 10, y: 5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!23 &89159009341861245
 MeshRenderer:
@@ -336,7 +336,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 5, y: 5}
+  m_SizeDelta: {x: 10, y: 5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!23 &2976160552375092379
 MeshRenderer:
@@ -630,8 +630,12 @@ MonoBehaviour:
   maskTransform: {fileID: 8007873721606773688}
   maskedTransform: {fileID: 144093551611858362}
   unitAnimator: {fileID: 3414781995330460015}
+  maxHP: 3
   isDead: 0
   type: 4
+  ammoText: {fileID: 0}
+  ammoTransform: {fileID: 0}
+  ammoSpriteAnimation: {fileID: 0}
 --- !u!114 &3414781995330460015
 MonoBehaviour:
   m_ObjectHideFlags: 0

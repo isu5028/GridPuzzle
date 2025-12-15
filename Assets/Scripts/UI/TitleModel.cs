@@ -1,16 +1,21 @@
 using UnityEngine;
 
-public class TitleModel : MonoBehaviour
+public class TitleModel
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    public enum TitleItem { Start, Option, Quit }
+    public TitleItem CurrentItem { get; private set; } = TitleItem.Start;
+
+    public bool HasSaveData()
     {
-        
+        return GameProgressManager.Instance.GetSaveData(GameProgressManager.SaveType.Auto) != null ||
+               GameProgressManager.Instance.GetSaveData(GameProgressManager.SaveType.Manual) != null;
     }
 
-    // Update is called once per frame
-    void Update()
+    public void MoveSelection(int direction)
     {
-        
+        int current = (int)CurrentItem;
+        int count = System.Enum.GetNames(typeof(TitleItem)).Length;
+        current = (current + direction + count) % count;
+        CurrentItem = (TitleItem)current;
     }
 }

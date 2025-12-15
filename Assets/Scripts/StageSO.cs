@@ -17,6 +17,7 @@ public class StageSO : ScriptableObject
     [SerializeField] private Vector2Int playerStartPosition = Vector2Int.zero;
     [SerializeField] private Direction playerStartDirection = Direction.Right;
     [SerializeField] private List<EnemyStartData> enemyStartData = new List<EnemyStartData>();
+    [SerializeField] private List<TutorialIndexData> tutorialIndexData = new List<TutorialIndexData>();
 
     [Header("Adjacent Stages")]
     [SerializeField] private StageSO upStage;
@@ -75,6 +76,7 @@ public class StageSO : ScriptableObject
     public int PlayerMaxHP = 2;
     public int PlayerStartOrder = 0;
     public List<EnemyStartData> EnemyStartData => enemyStartData;
+    public List<TutorialIndexData> TutorialData => tutorialIndexData;
     public Direction PlayerStartDirection => playerStartDirection;
 
     // wallDataの初期化と取得・設定
@@ -191,6 +193,24 @@ public class StageSO : ScriptableObject
             enemyStartData[i] = enemy;
         }
     }
+
+    public void SetTutorialData(Vector2Int pos, int index)
+    {
+        tutorialIndexData.RemoveAll(d => d.Position == pos);
+        tutorialIndexData.Add(new TutorialIndexData { Position = pos, Index = index });
+    }
+
+    public void RemoveTutorialData(Vector2Int pos)
+    {
+        tutorialIndexData.RemoveAll(d => d.Position == pos);
+    }
+
+    public int GetTutorialIndex(Vector2Int pos)
+    {
+        int idx = tutorialIndexData.FindIndex(d => d.Position == pos);
+        if (idx != -1) return tutorialIndexData[idx].Index;
+        return 0;
+    }
 }
 
 [System.Serializable]
@@ -202,4 +222,11 @@ public struct EnemyStartData
     public int MaxHP;
     public int SetActionOrder;
     public int Ammo; // Added for Ranged Enemy Ammo config
+}
+
+[System.Serializable]
+public struct TutorialIndexData
+{
+    public Vector2Int Position;
+    public int Index;
 }

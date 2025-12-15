@@ -88,7 +88,7 @@ public class TurnManager : MonoBehaviour
 
     private async UniTask ExecuteEnemyTurns()
     {
-        const float minTotalSeconds = 0.2f;
+        const float minTotalSeconds = 0f;
 
         bool anyExecuted = false;
         float startAll = Time.realtimeSinceStartup;

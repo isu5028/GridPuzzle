@@ -23,6 +23,7 @@ public class WorldMapPresenter : MonoBehaviour
     private bool isMapOpen = false;
     public bool IsMapOpen => isMapOpen;
     private bool isAnimating = false;
+    private bool isForceOpen = false;
     private Vector2Int cursorPosition;
 
     // 入力タイマー関連
@@ -64,21 +65,34 @@ public class WorldMapPresenter : MonoBehaviour
         {
             if (isMapOpen)
             {
+                if (isForceOpen)
+                {
+                    // Cannot close forced map via toggle
+                    AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+                    return;
+                }
+
                 CloseMapAsync().Forget();
                 mapFeedback.PlayFeedback();
             }
             else
             {
-                OpenMapAsync().Forget();
+                OpenMapAsync(false).Forget(); // Normal open
                 mapFeedback.PlayFeedback();
             }
         }
     }
 
-    private async UniTaskVoid OpenMapAsync()
+    public void OpenMap(bool force = false)
+    {
+        OpenMapAsync(force).Forget();
+    }
+
+    private async UniTaskVoid OpenMapAsync(bool force)
     {
         isAnimating = true;
         isMapOpen = true;
+        isForceOpen = force;
         turnManager.SetMapState(true);
 
         // 開くときに最新データで更新
@@ -222,6 +236,7 @@ public class WorldMapPresenter : MonoBehaviour
         await view.HideAsync();
 
         isMapOpen = false;
+        isForceOpen = false;
         turnManager.SetMapState(false);
         isAnimating = false;
     }

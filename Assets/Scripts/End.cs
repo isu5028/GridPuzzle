@@ -12,14 +12,14 @@ public class End : MonoBehaviour
     private CancellationTokenSource cts;
     private Vector3 thanksOriginalPos;
     private Vector3 returnOriginalPos;
-    private Vector3 hiddenOffset = new Vector3(0, -100, 0);
+    private Vector3 hiddenOffset = new Vector3(0, 200, 0);
 
     void Start()
     {
         thanksOriginalPos = textThanks.transform.localPosition;
         returnOriginalPos = textReturn.transform.localPosition;
-        textThanks.transform.localPosition = thanksOriginalPos + hiddenOffset;
-        textReturn.transform.localPosition = returnOriginalPos + hiddenOffset;
+        textThanks.transform.localPosition = thanksOriginalPos;
+        textReturn.transform.localPosition = returnOriginalPos;
 
         //Show();
     }
@@ -39,12 +39,12 @@ public class End : MonoBehaviour
     public async UniTask ShowAsync(CancellationToken token)
     {
         await UniTask.Delay((int)(duration * 2000), cancellationToken: token).SuppressCancellationThrow();
-        textThanks.transform.localPosition = thanksOriginalPos + hiddenOffset;
-        textReturn.transform.localPosition = returnOriginalPos + hiddenOffset;
+        textThanks.transform.localPosition = thanksOriginalPos;
+        textReturn.transform.localPosition = returnOriginalPos;
 
-        textThanks.transform.DOLocalMoveY(thanksOriginalPos.y, duration).SetEase(Ease.OutCubic);
+        textThanks.transform.DOLocalMoveY(thanksOriginalPos.y + hiddenOffset.y, duration).SetEase(Ease.OutCubic);
         await UniTask.Delay((int)(duration * 500), cancellationToken: token).SuppressCancellationThrow();
-        textReturn.transform.DOLocalMoveY(returnOriginalPos.y, duration).SetEase(Ease.OutCubic);
+        textReturn.transform.DOLocalMoveY(returnOriginalPos.y + hiddenOffset.y, duration).SetEase(Ease.OutCubic);
         await UniTask.Delay((int)(duration * 500), cancellationToken: token).SuppressCancellationThrow();
     }
 }

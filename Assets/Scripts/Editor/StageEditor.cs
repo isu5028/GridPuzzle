@@ -18,14 +18,17 @@ public class StageEditor : Editor
         SyncMap,    // SyncMapの配置
         Player,     // プレイヤー位置
         Enemy,      // 敵の配置
-        EraseUnit   // Unit削除
+        EraseUnit,  // Unit削除
+        Tutorial    // チュートリアル配置
     }
 
     private EditMode currentMode = EditMode.Wall;
     private EnemyType currentEnemyType = EnemyType.Slime;
     private int currentMaxHP = 10;
     private Direction currentEnemyDirection = Direction.Up;
+
     private int currentAmmo = 3; // Default ammo for Skeleton
+    private int currentTutorialIndex = 1;
 
     // グリッド描画設定
     private const float CELL_SIZE = 30f;
@@ -38,6 +41,7 @@ public class StageEditor : Editor
     private readonly Color playerColor = new Color(0.2f, 0.8f, 0.2f);
     private readonly Color enemyColor = new Color(0.8f, 0.2f, 0.2f);
     private readonly Color syncMapColor = new Color(0.0f, 1.0f, 1.0f, 0.5f); // シアン半透明
+    private readonly Color tutorialColor = new Color(1f, 0.64f, 0f, 0.5f); // オレンジ半透明
     private readonly Color gridLineColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
     private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // 黄色半透明
 
@@ -246,6 +250,9 @@ public class StageEditor : Editor
         if (GUILayout.Toggle(currentMode == EditMode.EraseUnit, "Unit削除", "Button"))
             currentMode = EditMode.EraseUnit;
 
+        if (GUILayout.Toggle(currentMode == EditMode.Tutorial, "Tutorial", "Button"))
+            currentMode = EditMode.Tutorial;
+
         EditorGUILayout.EndHorizontal();
 
         // プレイヤーの初期方向を選択するためのフィールド
@@ -284,17 +291,26 @@ public class StageEditor : Editor
             }
         }
 
-        // 現在の編集モードを表示
-        string modeText = currentMode switch
+        if (currentMode == EditMode.Tutorial)
         {
-            EditMode.Wall => "壁を配置",
-            EditMode.Floor => "床を配置",
-            EditMode.SyncMap => "SyncMapマスを配置",
-            EditMode.Player => "プレイヤーの初期位置を設定",
-            EditMode.Enemy => $"{currentEnemyType}敵を配置",
-            EditMode.EraseUnit => "プレイヤーまたは敵をクリックして削除",
-            _ => ""
-        };
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Index:", GUILayout.Width(50));
+            currentTutorialIndex = EditorGUILayout.IntField(currentTutorialIndex);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        // 現在の編集モードを表示
+        string modeText = "";
+        switch (currentMode)
+        {
+            case EditMode.Wall: modeText = "壁を配置"; break;
+            case EditMode.Floor: modeText = "床を配置"; break;
+            case EditMode.SyncMap: modeText = "SyncMapマスを配置"; break;
+            case EditMode.Player: modeText = "プレイヤーの初期位置を設定"; break;
+            case EditMode.Enemy: modeText = $"{currentEnemyType}敵を配置"; break;
+            case EditMode.EraseUnit: modeText = "プレイヤーまたは敵をクリックして削除"; break;
+            case EditMode.Tutorial: modeText = "チュートリアルセル(Index)を配置"; break;
+        }
 
         EditorGUILayout.HelpBox(modeText, MessageType.Info);
     }
@@ -351,6 +367,7 @@ public class StageEditor : Editor
                 Color cellColor = floorColor;
                 if (cellType == CellType.Wall) cellColor = wallColor;
                 else if (cellType == CellType.SyncMap) cellColor = syncMapColor;
+                else if (cellType == CellType.Tutorial) cellColor = tutorialColor;
 
                 EditorGUI.DrawRect(cellRect, cellColor);
 
@@ -435,6 +452,22 @@ public class StageEditor : Editor
                     }
                 }
 
+                // Tutorial Index Drawing
+                if (cellType == CellType.Tutorial)
+                {
+                    int tIndex = stage.GetTutorialIndex(new Vector2Int(x, y));
+                    if (tIndex > 0)
+                    {
+                         GUI.Label(cellRect, tIndex.ToString(), new GUIStyle(GUI.skin.label)
+                        {
+                            alignment = TextAnchor.MiddleCenter,
+                            fontStyle = FontStyle.Bold,
+                            fontSize = 14,
+                            normal = { textColor = Color.white }
+                        });
+                    }
+                }
+
                 // グリッドライン
                 Handles.color = gridLineColor;
                 Rect lineRect = new Rect(cellRect.x, cellRect.y, CELL_SIZE, CELL_SIZE);
@@ -442,6 +475,7 @@ public class StageEditor : Editor
             }
         }
     }
+
 
     private void DrawDirectionArrow(Rect cellRect, Direction direction, Color arrowColor)
     {
@@ -517,14 +551,17 @@ public class StageEditor : Editor
         {
             case EditMode.Wall:
                 stage.SetWallAt(x, y, true);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
                 break;
 
             case EditMode.Floor:
                 stage.SetWallAt(x, y, false);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
                 break;
 
             case EditMode.SyncMap:
                 stage.SetCellTypeAt(x, y, CellType.SyncMap);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
                 break;
 
             case EditMode.Player:
@@ -558,6 +595,12 @@ public class StageEditor : Editor
                 stage.RemoveEnemyAt(clickPos);
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();
+
+                break;
+
+            case EditMode.Tutorial:
+                stage.SetCellTypeAt(x, y, CellType.Tutorial);
+                stage.SetTutorialData(new Vector2Int(x, y), currentTutorialIndex);
                 break;
         }
 
@@ -577,6 +620,8 @@ public class StageEditor : Editor
         EditorGUILayout.LabelField("床", GUILayout.Width(100));
         DrawColorBox(syncMapColor);
         EditorGUILayout.LabelField("SyncMap", GUILayout.Width(100));
+        DrawColorBox(tutorialColor);
+        EditorGUILayout.LabelField("Tutorial", GUILayout.Width(100));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();

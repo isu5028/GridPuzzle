@@ -65,28 +65,17 @@ public class EnemyAIRush : EnemyAI
                 enemy.SetDirection(dir);
             }
             // Enter Charge State using Command
-            chargeDirection = dir; // Movement direction doesn't need undo persistence as it's recalculated or transient?
-            // Actually, if we undo to Charging state, we need `chargeDirection` to be correct.
-            // But `chargeDirection` is set immediately before entering state.
-            // If we save/load, we need to know direction.
-            // Simplified: Re-calculate direction if in Charging state? Or store it in state bits?
-            // For now, let's assume direction is either re-derived or we add it to state.
-            // Since `GetDirectionTo` is deterministic, if player moves, alignment might break?
-            // But `Charging` implies we are locked in.
-            // Let's use Command for state.
-
-            // Enter Charge State using Command
             chargeDirection = dir;
 
             // Pack State and Direction for Command
             int targetState = (int)RushState.Charging | ((int)dir << 2);
             commandManager.ExecuteCommand(new SetRushStateCommand(this, targetState));
 
-            // Visual feedback for charging (e.g. "!" emote or shake)
-            enemy.OrderSpriteAnimation.PlayAnimation(); // Use order sprite as a temporary "!" indicator
+            // Visual feedback
+            enemy.OrderSpriteAnimation.PlayAnimation();
 
-            // End turn (Wait 1 turn)
-            await UniTask.CompletedTask;
+            // Wait time for Charge initiation
+            await UniTask.Delay(200);
         }
         else
         {

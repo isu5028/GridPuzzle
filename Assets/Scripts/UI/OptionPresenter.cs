@@ -15,6 +15,8 @@ public class OptionPresenter : MonoBehaviour
     [SerializeField] private HUDFeedback optionFeedback = null!;
     [SerializeField] private GridManager gridManager = null!;
     [SerializeField] private OptionLoadPresenter optionLoadPresenter;
+    [SerializeField] private OptionWarningPresenter warningPresenter = null!;
+    [SerializeField] private TransitionOut transitionOut = null!;
     private OptionModel model = null!;
     private bool isProcessingInput = false;
     private float inputCooldown = 0.2f;
@@ -250,7 +252,7 @@ public class OptionPresenter : MonoBehaviour
 
             case OptionModel.ItemType.ReturnToTitle:
                 view.BlinkCursorAsync().Forget();
-                Debug.Log("タイトルへ戻る");
+                HandleReturnToTitleAsync().Forget();
                 break;
         }
     }
@@ -367,5 +369,23 @@ public class OptionPresenter : MonoBehaviour
         // ただし状態リセットは必要
 
         isSubMenuOpen = false;
+    }
+    private async UniTaskVoid HandleReturnToTitleAsync()
+    {
+        isSubMenuOpen = true;
+
+        bool confirmed = await warningPresenter.OpenAsync("OPTION_RETURN_WARNING", view.HideAsync(), () => view.ShowAsync());
+
+        if (confirmed)
+        {
+             // Transition Out
+             if (transitionOut != null) await transitionOut.AnimateAsync();
+             // Load Title
+             SceneManager.LoadScene("Title");
+        }
+        else
+        {
+             isSubMenuOpen = false;
+        }
     }
 }
