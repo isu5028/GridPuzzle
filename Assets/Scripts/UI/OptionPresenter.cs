@@ -90,8 +90,8 @@ public class OptionPresenter : MonoBehaviour
         // 上下左右の入力
         Vector2 moveInput = view.InputMove.ReadValue<Vector2>();
 
-        // 入力がない場合は即座にクールダウンをリセット
-        if (moveInput == Vector2.zero)
+        // 入力がない場合（デッドゾーン考慮）
+        if (moveInput.sqrMagnitude < 0.25f)
         {
             ResetInputAcceleration();
             isProcessingInput = false; // クールダウンもリセット
@@ -99,7 +99,7 @@ public class OptionPresenter : MonoBehaviour
         }
 
         // 入力クールダウン処理
-        if (isProcessingInput && Time.time - lastInputTime > inputCooldown)
+        if (isProcessingInput && Time.unscaledTime - lastInputTime > inputCooldown)
         {
             isProcessingInput = false;
         }
@@ -133,7 +133,7 @@ public class OptionPresenter : MonoBehaviour
     private void SetInputCooldown(Direction currentInput, bool enableAcceleration)
     {
         isProcessingInput = true;
-        lastInputTime = Time.time;
+        lastInputTime = Time.unscaledTime;
         lastDirection = currentInput;
 
         if (enableAcceleration)

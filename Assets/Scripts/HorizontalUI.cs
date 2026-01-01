@@ -30,7 +30,7 @@ public class HorizontalUI : MonoBehaviour
 
         // 新しいアニメーションシーケンスを作成
         rightArrowSequence = DOTween.Sequence();
-        rightArrowSequence
+        rightArrowSequence.SetUpdate(true)
             .Append(rightArrow.DOLocalMoveX(rightArrowStartPos.x + moveDistance, moveDuration * 0.4f)
                 .SetEase(Ease.OutQuad))
             .Append(rightArrow.DOLocalMoveX(rightArrowStartPos.x, moveDuration * 0.6f)
@@ -48,7 +48,7 @@ public class HorizontalUI : MonoBehaviour
 
         // 新しいアニメーションシーケンスを作成
         leftArrowSequence = DOTween.Sequence();
-        leftArrowSequence
+        leftArrowSequence.SetUpdate(true)
             .Append(leftArrow.DOLocalMoveX(leftArrowStartPos.x - moveDistance, moveDuration * 0.4f)
                 .SetEase(Ease.OutQuad))
             .Append(leftArrow.DOLocalMoveX(leftArrowStartPos.x, moveDuration * 0.6f)

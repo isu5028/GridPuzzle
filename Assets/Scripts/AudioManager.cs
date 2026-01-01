@@ -14,7 +14,7 @@ public class AudioManager : MonoBehaviour
     [SerializeField] private UnityEngine.Audio.AudioMixer audioMixer;
     private Tween masterHighPassTween;
 
-    public void SetMasterHighPassFilter(float cutoffFrequency, float duration = 0.2f)
+    public void SetMasterHighPassFilter(float cutoffFrequency, float duration = 0.05f)
     {
         if (audioMixer != null)
         {
@@ -219,7 +219,7 @@ public class AudioManager : MonoBehaviour
 
         //bgmSource = gameObject.AddComponent<AudioSource>();
         //bgmSource.volume = GetBGMVolume();
-        bgmSource.volume = 1;
+        bgmSource.volume = 0.5f;
         bgmSource.loop = true;
     }
 
@@ -249,7 +249,8 @@ public class AudioManager : MonoBehaviour
 
     public void SetBGMVolume(float volume)
     {
-        bgmSource.volume = volume * volume / maxVolume;
+        float vol = volume * volume / maxVolume;
+        bgmSource.volume = vol;
     }
 
     public void PlaySE(SEType seType)

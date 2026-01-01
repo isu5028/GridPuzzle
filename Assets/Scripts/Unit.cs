@@ -13,8 +13,8 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] private float flashDuration = 0.15f;
     [SerializeField] private Vector2Int[] attackTargetPos = null!;
     [SerializeField] protected Transform spriteTransform = null!;
-    [SerializeField] private TextMeshPro hpText = null!;
-    [SerializeField] private TextMeshPro orderText = null!;
+    [SerializeField] protected TextMeshPro hpText = null!;
+    [SerializeField] protected TextMeshPro orderText = null!;
     [SerializeField] private Transform hpTransform = null!;
     [SerializeField] private Transform orderTransform = null!;
     [SerializeField] private ColorFlash colorFlash = null!;
@@ -76,7 +76,7 @@ public abstract class Unit : MonoBehaviour
         // UniRx Subscribe
         hp.Subscribe(x =>
         {
-            if(hpText != null) hpText.text = x.ToString();
+            UpdateHPText(x);
         }).AddTo(this);
     }
 
@@ -133,10 +133,10 @@ public abstract class Unit : MonoBehaviour
         unitAnimator.SetDirection(currentDirection);
         maxHP = maxHp;
         hp.Value = maxHp;
-        if (hpText != null) hpText.text = maxHp.ToString();
+        UpdateHPText(maxHp);
 
         order = startOrder;
-        orderText.text = (order + 1).ToString();
+        UpdateOrderText(order);
     }
 
 
@@ -149,7 +149,7 @@ public abstract class Unit : MonoBehaviour
     public void SetOrder(int order)
     {
         this.order = order;
-        if(orderText != null) orderText.text = (order + 1).ToString();
+        UpdateOrderText(order);
     }
 
     public void SetOrderText(string text)
@@ -292,7 +292,7 @@ public abstract class Unit : MonoBehaviour
         OnActionComplete();
     }
 
-    public void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
+    public virtual void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
     {
         //Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
@@ -305,7 +305,7 @@ public abstract class Unit : MonoBehaviour
         }
 
         // Force Visual Update even if inactive
-        if (hpText != null) hpText.text = hp.Value.ToString();
+        UpdateHPText(hp.Value);
 
         if(hp.Value <= 0)
         {
@@ -330,6 +330,12 @@ public abstract class Unit : MonoBehaviour
         if (this is Player)
         {
             AudioManager.Instance.SetMasterLowPassFilter(500);
+        }
+
+        // 死亡時に即座に状態変化を通知（全滅判定を即時行うため）
+        if (gridManager != null)
+        {
+             gridManager.UnitManager.NotifyUnitStateChanged(this);
         }
 
         if (gameObject.activeInHierarchy)
@@ -425,6 +431,16 @@ public abstract class Unit : MonoBehaviour
 
         spriteTransform.DOMove(originalPos + knockbackOffset, moveDuration * 0.5f).SetEase(Ease.InCubic);
         maskTransform.DOLocalMove(maskOriginalPos + knockbackOffset, moveDuration * 0.5f).SetEase(Ease.InCubic);
+    }
+
+    protected virtual void UpdateHPText(int value)
+    {
+        if (hpText != null) hpText.text = value.ToString();
+    }
+
+    protected virtual void UpdateOrderText(int value)
+    {
+        if (orderText != null) orderText.text = (value + 1).ToString();
     }
 
     private void OnDestroy()

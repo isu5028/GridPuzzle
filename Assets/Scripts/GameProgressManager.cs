@@ -588,24 +588,35 @@ public class GameProgressManager : MonoBehaviour
     #region Option Save
     public void SaveOptions()
     {
-        OptionSaveData data = new OptionSaveData();
-        data.screenMode = GameSettings.screenMode;
-        data.resolutionWidth = GameSettings.Resolution.x;
-        data.resolutionHeight = GameSettings.Resolution.y;
-        data.gameSpeed = GameSettings.GameSpeed;
-        data.language = GameSettings.Language;
-        data.bgmVolume = GameSettings.BgmVolume;
-        data.seVolume = GameSettings.SeVolume;
+        try
+        {
+            OptionSaveData data = new OptionSaveData();
+            data.screenMode = GameSettings.screenMode;
+            data.resolutionWidth = GameSettings.Resolution.x;
+            data.resolutionHeight = GameSettings.Resolution.y;
+            data.gameSpeed = GameSettings.GameSpeed;
+            data.language = GameSettings.Language;
+            data.bgmVolume = GameSettings.BgmVolume;
+            data.seVolume = GameSettings.SeVolume;
 
-        string json = JsonUtility.ToJson(data);
-        string encryptedJson = EncryptionUtils.Encrypt(json); // Use existing encryption
-        File.WriteAllText(OptionSaveFilePath, encryptedJson);
-        Debug.Log("Options Saved.");
+            string json = JsonUtility.ToJson(data);
+            string encryptedJson = EncryptionUtils.Encrypt(json); // Use existing encryption
+            File.WriteAllText(OptionSaveFilePath, encryptedJson);
+            Debug.Log("Options Saved.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("Save Options Error: " + e.Message);
+        }
     }
 
     public void LoadOptions()
     {
-        if (!File.Exists(OptionSaveFilePath)) return;
+        if (!File.Exists(OptionSaveFilePath))
+        {
+            GameSettings.ApplySettings();
+            return;
+        }
 
         try
         {

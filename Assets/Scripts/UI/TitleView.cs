@@ -86,8 +86,22 @@ public class TitleView : MonoBehaviour
         }
         else
         {
+            SetTextAsync(textComp, table, key).Forget();
+        }
+    }
+
+    private async UniTaskVoid SetTextAsync(TextMeshPro textComp, string table, string key)
+    {
+        var op = UnityEngine.Localization.Settings.LocalizationSettings.InitializationOperation;
+        if (!op.IsDone)
+        {
+            await op;
+        }
+
+        if (UnityEngine.Localization.Settings.LocalizationSettings.SelectedLocale != null)
+        {
             var text = UnityEngine.Localization.Settings.LocalizationSettings.StringDatabase.GetLocalizedString(table, key);
-            textComp.text = text;
+            if (textComp != null) textComp.text = text;
         }
     }
 }

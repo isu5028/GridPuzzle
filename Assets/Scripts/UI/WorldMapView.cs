@@ -103,7 +103,7 @@ public class WorldMapView : MonoBehaviour
     public async UniTask ShowAsync()
     {
         if (isAnimating) return;
-        //AudioManager.Instance.SetMasterHighPassFilter(400);
+        AudioManager.Instance.SetMasterHighPassFilter(400);
         popUpText.Hide();
         isAnimating = true;
         mapPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);

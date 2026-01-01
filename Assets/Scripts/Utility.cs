@@ -10,6 +10,7 @@ public enum EnemyType
     Skeleton,
     Zombie,
     Boar,
+    Crystal,
 }
 
 public enum CellType

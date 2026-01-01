@@ -155,7 +155,7 @@ public class TitleOptionView : MonoBehaviour
         Initialize();
         if (container)
         {
-            //AudioManager.Instance.SetMasterHighPassFilter(400);
+            AudioManager.Instance.SetMasterHighPassFilter(400);
             container.localPosition = hiddenPos;
             container.DOLocalMove(visiblePos, slideDuration).SetEase(Ease.OutCubic);
         }

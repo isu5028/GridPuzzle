@@ -43,6 +43,10 @@ public class Enemy : Unit
         enemyAI = GetComponent<EnemyAI>();
         enemyAI.Initialize(gridMgr, commandMgr);
 
+        // Update Text again to apply AI overrides (e.g. infinite symbol)
+        UpdateHPText(maxHp);
+        UpdateOrderText(startOrder);
+
         maxAmmo = startAmmo;
         currentAmmo.Value = startAmmo;
 
@@ -104,6 +108,17 @@ public class Enemy : Unit
     public async UniTask ExecuteTurn()
     {
         await enemyAI.ExecuteAI(this);
+    }
+
+    public override void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
+    {
+        int effectiveDamage = damage;
+        if (enemyAI != null)
+        {
+            effectiveDamage = enemyAI.ModifyDamage(damage);
+            enemyAI.OnDamageTaken(this, attackerPos);
+        }
+        base.TakeDamage(effectiveDamage, attackerPos, shakeCamera);
     }
 
     protected override void InitializeVisuals()
@@ -212,6 +227,35 @@ public class Enemy : Unit
         gameObject.SetActive(true);
         unitAnimator.SetDirection(currentDirection);
     }
+
+    protected override void UpdateHPText(int value)
+    {
+        if (enemyAI != null)
+        {
+            string customText = enemyAI.GetHPText(value);
+            if (customText != null)
+            {
+                if (hpText != null) hpText.text = customText;
+                return;
+            }
+        }
+        base.UpdateHPText(value);
+    }
+
+    protected override void UpdateOrderText(int value)
+    {
+        if (enemyAI != null)
+        {
+            string customText = enemyAI.GetOrderText(value);
+            if (customText != null)
+            {
+                if (orderText != null) orderText.text = customText;
+                return;
+            }
+        }
+        base.UpdateOrderText(value);
+    }
+
     public void PerformRangedAttack(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab)
     {
         PerformRangedAttackAsync(targetPos, targetUnit, arrowPrefab).Forget();

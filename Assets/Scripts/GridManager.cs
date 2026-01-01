@@ -38,6 +38,7 @@ public class GridManager : MonoBehaviour
     [SerializeField] private GameObject skeletonEnemyPrefab = null!;
     [SerializeField] private GameObject zombieEnemyPrefab = null!;
     [SerializeField] private GameObject boarEnemyPrefab = null!;
+    [SerializeField] private GameObject crystalEnemyPrefab = null!;
     [SerializeField] private GameObject errorEffectPrefab = null!;
 
     private CellType[,] cellData = new CellType[0, 0];
@@ -345,6 +346,8 @@ public class GridManager : MonoBehaviour
                 return zombieEnemyPrefab;
             case EnemyType.Boar:
                 return boarEnemyPrefab;
+            case EnemyType.Crystal:
+                return crystalEnemyPrefab;
             default:
                 return null!;
         }
