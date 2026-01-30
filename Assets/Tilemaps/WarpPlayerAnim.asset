@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 13b75c95f34a00d4e8c04f76b73312e6, type: 3}
+  m_Name: WarpPlayerAnim
+  m_EditorClassIdentifier: 
+  m_AnimatedSprites:
+  - {fileID: -4855842540265138365, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -7847278445084291087, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -7954113927209102152, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 8511340883210072975, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 8648656994482807003, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -2439873737084256614, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -2060507420818803098, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -8785233500045218779, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -2602301578765718463, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -7075922297467111713, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 6713351634585645029, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 5469797593103263907, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 3982787071993789751, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 7713169728918678094, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -230191870274304089, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 8351395471000358182, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -4582553584826814700, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -8052560860498140126, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: -8832116785577119953, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  - {fileID: 3132232003599564779, guid: 92c34c64b76ab0f43931e89161102398, type: 3}
+  m_MinSpeed: 10
+  m_MaxSpeed: 10
+  m_AnimationStartTime: 0
+  m_AnimationStartFrame: 0
+  m_TileColliderType: 0
+  m_TileAnimationFlags: 0
