@@ -12,24 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 54f6ccfba5f2ece4ba93a2bc58ed5d1b, type: 3}
   m_Name: World
   m_EditorClassIdentifier: 
-  rows:
-  - columns:
-    - {fileID: 11400000, guid: 9496d87e71353ab47940868d6138f9ab, type: 2}
-    - {fileID: 11400000, guid: e3a122e7b1749ae49b98874b8c45f081, type: 2}
-    - {fileID: 11400000, guid: 0f4730e1090d1d14e95f9f929cbe0c57, type: 2}
-    - {fileID: 11400000, guid: 8dacb1d9b4ba93c42ad41e50f1c18d4a, type: 2}
-  - columns:
-    - {fileID: 11400000, guid: 357bea096db24c349a5a468723e71f7b, type: 2}
-    - {fileID: 11400000, guid: 062a89c37412dec4fb5ae81fab86d67d, type: 2}
-    - {fileID: 11400000, guid: 5dfce0cba0152134c9def09138ffe758, type: 2}
-    - {fileID: 11400000, guid: e8d435a54b5908c45ae47fe8c6416ad2, type: 2}
-  - columns:
-    - {fileID: 11400000, guid: ba9d43e1551216f4b8bcc8e144ec55ef, type: 2}
-    - {fileID: 11400000, guid: 771b4535952fece4ca9d2417f57c55f0, type: 2}
-    - {fileID: 11400000, guid: 29cf6d9c25c4b5848af52593d9a92bee, type: 2}
-    - {fileID: 11400000, guid: f2a32588a4f1e1f4fb47f6bb98c2505e, type: 2}
-  - columns:
-    - {fileID: 11400000, guid: 2b6898dbcc5bdbf4cb35bc1748f18fec, type: 2}
-    - {fileID: 11400000, guid: 78dabc48ca0fc9f4fbe2a037cb9a203a, type: 2}
-    - {fileID: 11400000, guid: 4a84a097049b0db4e99125474832a273, type: 2}
-    - {fileID: 11400000, guid: 0e09cc57591e7824d894fb1b8af76248, type: 2}
+  rootStage: {fileID: 11400000, guid: 8bcf5691c951ec849976a8df1fae5fc9, type: 2}
+  allStages:
+  - {fileID: 11400000, guid: 2b6898dbcc5bdbf4cb35bc1748f18fec, type: 2}
+  - {fileID: 11400000, guid: 39ab7a5a7f67fe745b1ea9df1423ea28, type: 2}
+  - {fileID: 11400000, guid: aded8abfd9dac2b42a2a1db8920edce3, type: 2}
