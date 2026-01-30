@@ -4,6 +4,7 @@ using DG.Tweening;
 using TMPro;
 using System.Threading;
 using UniRx;
+using System.Collections.Generic;
 
 public abstract class Unit : MonoBehaviour
 {
@@ -23,6 +24,9 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] private Transform maskTransform = null!;
     [SerializeField] private Transform maskedTransform = null!;
     [SerializeField] protected UnitAnimator unitAnimator = null!;
+
+    [Header("Death Animation")]
+    [SerializeField] private Shader dissolveShader = null!;  // DitherDissolveシェーダーを設定
 
     // Public Accessor for Animator
     public UnitAnimator UnitAnimator => unitAnimator;
@@ -60,6 +64,10 @@ public abstract class Unit : MonoBehaviour
 
     private CancellationTokenSource dieCancellationTokenSource;
 
+    // 動的に生成したマテリアル（Dissolveアニメーション用）
+    private Material dissolveMaterial;  // メインスプライト用
+    private List<Material> dissolveMaterials = new List<Material>();  // HP/Order関連用
+
     public void SetHP(int value)
     {
         if (value < 0) value = 0;
@@ -89,7 +97,168 @@ public abstract class Unit : MonoBehaviour
         hpOriginalPos = hpTransform.localPosition;
         orderOriginalPos = orderTransform.localPosition;
 
+        // DitherDissolveシェーダーからマテリアルを動的に生成
+        if (dissolveShader != null)
+        {
+            // メインスプライトにdissolveMaterialを適用
+            SpriteRenderer spriteRenderer = spriteTransform.GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
+            {
+                dissolveMaterial = CreateAndApplyDissolveMaterial(spriteRenderer);
+
+                // ColorFlashにdissolveMaterialを通知（フラッシュ後に正しいマテリアルに戻るように）
+                ColorFlash colorFlashComponent = spriteTransform.GetComponent<ColorFlash>();
+                if (colorFlashComponent != null)
+                {
+                    colorFlashComponent.SetOriginalMaterial(dissolveMaterial);
+                }
+            }
+
+            // HP関連のSpriteRendererにもdissolveMaterialを適用
+            if (hpTransform != null)
+            {
+                foreach (var sr in hpTransform.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    Material mat = CreateAndApplyDissolveMaterial(sr);
+                    dissolveMaterials.Add(mat);
+                }
+            }
+
+            // Order関連のSpriteRendererにもdissolveMaterialを適用
+            if (orderTransform != null)
+            {
+                foreach (var sr in orderTransform.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    Material mat = CreateAndApplyDissolveMaterial(sr);
+                    dissolveMaterials.Add(mat);
+                }
+            }
+
+            // TextMeshProにもdissolveMaterialを適用
+            if (hpText != null)
+            {
+                Material mat = CreateAndApplyDissolveMaterialForTMP(hpText);
+                if (mat != null) dissolveMaterials.Add(mat);
+            }
+            if (orderText != null)
+            {
+                Material mat = CreateAndApplyDissolveMaterialForTMP(orderText);
+                if (mat != null) dissolveMaterials.Add(mat);
+            }
+        }
+        else
+        {
+            // dissolveShaderがnullの場合でも、既存のマテリアルにDissolveAmountがあればリセット
+            EnsureDissolveAmountReset();
+        }
+
         visualsInitialized = true;
+    }
+
+    /// <summary>
+    /// SpriteRenderer用のdissolveMaterialを作成して適用
+    /// </summary>
+    private Material CreateAndApplyDissolveMaterial(SpriteRenderer sr)
+    {
+        Material mat = new Material(dissolveShader);
+        if (sr.sprite != null)
+        {
+            mat.SetTexture("_MainTex", sr.sprite.texture);
+        }
+        mat.SetFloat("_DissolveAmount", 0f);
+        sr.material = mat;
+        return mat;
+    }
+
+    /// <summary>
+    /// 既存のマテリアルにDissolveAmountプロパティがあれば0にリセットする（dissolveShaderがnullの場合のフォールバック）
+    /// </summary>
+    private void EnsureDissolveAmountReset()
+    {
+        SpriteRenderer spriteRenderer = spriteTransform.GetComponent<SpriteRenderer>();
+        if (spriteRenderer != null && spriteRenderer.material != null)
+        {
+            if (spriteRenderer.material.HasProperty("_DissolveAmount"))
+            {
+                // インスタンスマテリアルを作成してDissolveAmountを0にリセット
+                if (dissolveMaterial == null)
+                {
+                    dissolveMaterial = spriteRenderer.material;
+                }
+                dissolveMaterial.SetFloat("_DissolveAmount", 0f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// TextMeshPro用のdissolveMaterialを作成して適用
+    /// </summary>
+    private Material CreateAndApplyDissolveMaterialForTMP(TextMeshPro tmp)
+    {
+        if (tmp == null) return null;
+        // TMPは複雑なので、fontMaterialにDissolve効果を追加するのは難しい
+        // 代わりにTMPのアルファを操作するか、親のCanvasGroupを使う方法もある
+        // ここではシンプルにnullを返し、DieAsyncでアルファ操作を行う
+        return null;
+    }
+
+    /// <summary>
+    /// DitherDissolveでフェードアウト（見えなくする）
+    /// </summary>
+    /// <param name="duration">アニメーション時間</param>
+    /// <param name="goingDown">trueなら上から下へ、falseなら下から上へスイープ</param>
+    public async UniTask FadeOutAsync(float duration = 0.3f, bool goingDown = true)
+    {
+        if (dissolveMaterial == null) return;
+
+        // スイープ方向を設定（0=BottomLeft, 1=BottomRight, 2=TopRight, 3=TopLeft）
+        // goingDown: 上から下へ → 2 (TopRight to BottomLeft)
+        // goingUp: 下から上へ → 0 (BottomLeft to TopRight)
+        float sweepDirection = goingDown ? 2f : 0f;
+        dissolveMaterial.SetFloat("_SweepDirection", sweepDirection);
+
+        await DOTween.To(() => dissolveMaterial.GetFloat("_DissolveAmount"),
+                         x => dissolveMaterial.SetFloat("_DissolveAmount", x),
+                         1f,
+                         duration)
+                     .SetEase(Ease.InQuad)
+                     .SetTarget(dissolveMaterial)
+                     .AsyncWaitForCompletion();
+    }
+
+    /// <summary>
+    /// DitherDissolveでフェードイン（見えるようにする）
+    /// </summary>
+    /// <param name="duration">アニメーション時間</param>
+    /// <param name="goingDown">trueなら上から下へ、falseなら下から上へスイープ</param>
+    public async UniTask FadeInAsync(float duration = 0.3f, bool goingDown = true)
+    {
+        if (dissolveMaterial == null) return;
+
+        // スイープ方向を設定（フェードインは逆方向からスイープ）
+        // goingDown: 下から上へ復帰 → 0 (BottomLeft to TopRight)
+        // goingUp: 上から下へ復帰 → 2 (TopRight to BottomLeft)
+        float sweepDirection = goingDown ? 0f : 2f;
+        dissolveMaterial.SetFloat("_SweepDirection", sweepDirection);
+
+        await DOTween.To(() => dissolveMaterial.GetFloat("_DissolveAmount"),
+                         x => dissolveMaterial.SetFloat("_DissolveAmount", x),
+                         0f,
+                         duration)
+                     .SetEase(Ease.OutQuad)
+                     .SetTarget(dissolveMaterial)
+                     .AsyncWaitForCompletion();
+    }
+
+    /// <summary>
+    /// DissolveAmountを即座に設定（アニメーションなし）
+    /// </summary>
+    public void SetDissolveAmount(float amount)
+    {
+        if (dissolveMaterial != null)
+        {
+            dissolveMaterial.SetFloat("_DissolveAmount", amount);
+        }
     }
 
     public virtual void ApplyDeadStateVisual()
@@ -104,10 +273,19 @@ public abstract class Unit : MonoBehaviour
         hpTransform.DOKill();
         orderTransform.DOKill();
 
-        // 死亡時の位置へ移動（DieAsyncと同じ状態にする）
-        spriteTransform.localPosition = new Vector3(spriteTransform.localPosition.x, -50.0f, spriteTransform.localPosition.z);
-        hpTransform.localPosition = new Vector3(hpOriginalPos.x, hpOriginalPos.y - 50.0f, hpOriginalPos.z);
-        orderTransform.localPosition = new Vector3(orderOriginalPos.x, orderOriginalPos.y - 50.0f, orderOriginalPos.z);
+        // DitherDissolveのDissolveAmountを1に設定（完全に消えた状態）
+        if (dissolveMaterial != null)
+        {
+            dissolveMaterial.SetFloat("_DissolveAmount", 1f);
+        }
+        foreach (var mat in dissolveMaterials)
+        {
+            if (mat != null) mat.SetFloat("_DissolveAmount", 1f);
+        }
+
+        // TextMeshProのアルファを0に
+        if (hpText != null) hpText.alpha = 0f;
+        if (orderText != null) orderText.alpha = 0f;
 
         unitAnimator.SetDeath();
     }
@@ -366,13 +544,51 @@ public abstract class Unit : MonoBehaviour
             await UniTask.Delay((int)(flashDuration * 1000), cancellationToken: token);
             await UniTask.Delay(200, cancellationToken: token);
 
-            spriteTransform.DOLocalMoveY(-50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
-            await UniTask.Delay(100, cancellationToken: token);
-            // ここでOriginalPosからの相対移動を行っているが、Revive時にOriginalPosへ戻す際に
-            // spriteTransformのpositionがゼロリセットされた後にローカル座標系がずれていないか注意
-            hpTransform.DOLocalMoveY(hpOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
-            await UniTask.Delay(50, cancellationToken: token);
-            orderTransform.DOLocalMoveY(orderOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
+            // DitherDissolveアニメーション
+            float duration = 0.5f;
+
+            // メインスプライト
+            if (dissolveMaterial != null)
+            {
+                DOTween.To(() => dissolveMaterial.GetFloat("_DissolveAmount"),
+                           x => dissolveMaterial.SetFloat("_DissolveAmount", x),
+                           1f,
+                           duration)
+                       .SetEase(Ease.InQuad)
+                       .SetTarget(dissolveMaterial)  // DOTween.Kill(dissolveMaterial)で停止できるように
+                       .SetLink(gameObject);
+            }
+
+            // HP/Order関連のスプライト
+            foreach (var mat in dissolveMaterials)
+            {
+                if (mat != null)
+                {
+                    DOTween.To(() => mat.GetFloat("_DissolveAmount"),
+                               x => mat.SetFloat("_DissolveAmount", x),
+                               1f,
+                               duration)
+                           .SetEase(Ease.InQuad)
+                           .SetTarget(mat)  // DOTween.Kill(mat)で停止できるように
+                           .SetLink(gameObject);
+                }
+            }
+
+            // TextMeshProのアルファをフェードアウト
+            if (hpText != null)
+            {
+                DOTween.To(() => hpText.alpha, x => hpText.alpha = x, 0f, duration)
+                       .SetEase(Ease.InQuad)
+                       .SetTarget(hpText)  // DOTween.Kill(hpText)で停止できるように
+                       .SetLink(gameObject);
+            }
+            if (orderText != null)
+            {
+                DOTween.To(() => orderText.alpha, x => orderText.alpha = x, 0f, duration)
+                       .SetEase(Ease.InQuad)
+                       .SetTarget(orderText)  // DOTween.Kill(orderText)で停止できるように
+                       .SetLink(gameObject);
+            }
         }
         catch (System.OperationCanceledException)
         {
@@ -405,11 +621,39 @@ public abstract class Unit : MonoBehaviour
         orderTransform.DOKill();
         maskTransform.DOKill();
 
+        // マテリアルのDOTween（DissolveAmountアニメーション）もキル
+        if (dissolveMaterial != null)
+        {
+            DOTween.Kill(dissolveMaterial);
+        }
+        foreach (var mat in dissolveMaterials)
+        {
+            if (mat != null) DOTween.Kill(mat);
+        }
+
+        // TextMeshProのDOTweenもキル
+        if (hpText != null) DOTween.Kill(hpText);
+        if (orderText != null) DOTween.Kill(orderText);
+
         spriteTransform.localPosition = Vector3.zero;
         unitAnimator.SetDirection(currentDirection);
         spriteTransform.localScale = Vector3.one;
         maskTransform.localPosition = maskOriginalPos;
         maskedTransform.localPosition = maskedOriginalPos;
+
+        // DitherDissolveのDissolveAmountを0にリセット（表示状態に戻す）
+        if (dissolveMaterial != null)
+        {
+            dissolveMaterial.SetFloat("_DissolveAmount", 0f);
+        }
+        foreach (var mat in dissolveMaterials)
+        {
+            if (mat != null) mat.SetFloat("_DissolveAmount", 0f);
+        }
+
+        // TextMeshProのアルファを1に戻す
+        if (hpText != null) hpText.alpha = 1f;
+        if (orderText != null) orderText.alpha = 1f;
 
         if (hpOriginalPos == Vector3.zero && hpTransform.localPosition != Vector3.zero)
              hpOriginalPos = hpTransform.localPosition;

@@ -22,6 +22,8 @@ public enum CellType
     Ice,
     SyncMap,
     Tutorial,
+    StairUp,    // 上の階へ移動（フロアインデックス-1）
+    StairDown,  // 下の階へ移動（フロアインデックス+1）
 }
 
 public enum Direction

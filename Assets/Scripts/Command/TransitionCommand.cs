@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Cysharp.Threading.Tasks;
 
-public class TransitionCommand : ICommand
+public class TransitionCommand : ICommand, IAsyncUndoCommand
 {
     private GridManager gridManager;
     private StageSO fromStage;

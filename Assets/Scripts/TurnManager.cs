@@ -58,7 +58,7 @@ public class TurnManager : MonoBehaviour
         }
     }
 
-    public async UniTask OnPlayerActionComplete()
+    public async UniTask OnPlayerActionComplete(bool skipEnemyTurn = false)
     {
         if (isProcessingTurn) return;
 
@@ -67,7 +67,10 @@ public class TurnManager : MonoBehaviour
 
         try
         {
-            await ExecuteEnemyTurns();
+            if (!skipEnemyTurn)
+            {
+                await ExecuteEnemyTurns();
+            }
 
             commandManager.CompleteTurn();
 
@@ -88,9 +91,9 @@ public class TurnManager : MonoBehaviour
 
     private async UniTask ExecuteEnemyTurns()
     {
-        const float minTotalSeconds = 0f;
+        // 全ての敵が行動し終えた後の最低待機時間（ターン区切りを明確にするため）
+        const float minTotalSeconds = 0.15f;
 
-        bool anyExecuted = false;
         float startAll = Time.realtimeSinceStartup;
 
         // Create a snapshot of the enemy list to allow modification (e.g. map transition removals) during iteration
@@ -98,27 +101,19 @@ public class TurnManager : MonoBehaviour
 
         foreach (var enemy in enemiesSnapshot)
         {
-            // Check if enemy is still valid and active in the current context
-            // If enemy was removed from UnitManager (e.g. moved to another map), we might still want to execute?
-            // "Active" check (gameObject.activeSelf) handles this if MoveEnemyToStage deactivates it.
-            // But if it deactivate itself, it shouldn't run?
-            // The enemy.ExecuteTurn() is awaited. If it moved, it finished its turn.
-
             if (enemy != null && !enemy.IsDead && enemy.gameObject.activeInHierarchy)
             {
-                anyExecuted = true;
                 await enemy.ExecuteTurn();
             }
         }
 
-        if (anyExecuted)
+        // 敵がいてもいなくても、ターン終了後の最低待機時間を確保
+        // これにより連続入力時に一瞬で移動することを防ぐ
+        float elapsed = Time.realtimeSinceStartup - startAll;
+        if (elapsed < minTotalSeconds)
         {
-            float elapsed = Time.realtimeSinceStartup - startAll;
-            if (elapsed < minTotalSeconds)
-            {
-                int waitMs = Mathf.CeilToInt((minTotalSeconds - elapsed) * 1000f);
-                await UniTask.Delay(waitMs);
-            }
+            int waitMs = Mathf.CeilToInt((minTotalSeconds - elapsed) * 1000f);
+            await UniTask.Delay(waitMs);
         }
     }
 

@@ -58,10 +58,10 @@ public class EnemyAIMapTraveller : EnemyAI
         // Extend bounds to include immediate neighbors (transition points)
         List<Vector2Int> path = FindPath(currentPos, playerPos);
 
-        // If no path to player, try to find a path to ANY adjacent stage exit (Flee/Search behavior)
+        // If no path to player, skip
         if (path == null)
         {
-            path = FindPathToRandomExit(currentPos);
+            return;
         }
 
         // 3. Move Execution
@@ -70,23 +70,10 @@ public class EnemyAIMapTraveller : EnemyAI
             Vector2Int nextPos = path[0];
             Direction moveDirection = GetDirectionToTarget(currentPos, nextPos);
 
-            // Check if nextPos is out of bounds (Transition)
+            // Check if nextPos is out of bounds
             if (!gridManager.IsPositionInBounds(nextPos))
             {
-                StageSO nextStage = gridManager.CurrentStageSO.GetAdjacentStage(moveDirection);
-                if (nextStage != null)
-                {
-                    // Calculate entry position on the new stage
-                    // Use GridManager's helper
-                    Vector2Int newMapPos = gridManager.CalculateEntryPosition(nextStage, moveDirection, currentPos);
-
-                    // Execute Map Transition
-                    EnemyMoveMapCommand mapCmd = new EnemyMoveMapCommand(gridManager, enemy, gridManager.CurrentStageSO, nextStage, currentPos, newMapPos, currentDirection, moveDirection);
-                    commandManager.ExecuteCommand(mapCmd);
-
-                    // Don't wait for move animation as the enemy is instantly transported/hidden.
-                    return;
-                }
+                return;
             }
 
             // Standard Move
@@ -108,43 +95,6 @@ public class EnemyAIMapTraveller : EnemyAI
     private List<Vector2Int> FindPath(Vector2Int start, Vector2Int target)
     {
         return AStar(start, target, false);
-    }
-
-    private List<Vector2Int> FindPathToRandomExit(Vector2Int start)
-    {
-        // Try not to search too hard. Just check neighbors.
-        // Actually, let's just pick a random direction that has a stage.
-        List<Direction> validExits = new List<Direction>();
-        foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
-        {
-            if (gridManager.CurrentStageSO.GetAdjacentStage(dir) != null)
-                validExits.Add(dir);
-        }
-
-        if (validExits.Count == 0) return null;
-
-        // Pick one
-        Direction exitDir = validExits[Random.Range(0, validExits.Count)];
-
-        // Target is just one step out of bounds in that direction?
-         // A* needs a reachable target.
-        // We can search for a path to the "Edge" of the map in that direction.
-
-        int width = gridManager.CurrentStageSO.Width;
-        int height = gridManager.CurrentStageSO.Height;
-
-        // Define a target on the edge
-        Vector2Int target = start;
-        switch(exitDir)
-        {
-            case Direction.Up: target = new Vector2Int(start.x, height); break; // Out of bounds
-            case Direction.Down: target = new Vector2Int(start.x, -1); break;
-            case Direction.Left: target = new Vector2Int(-1, start.y); break;
-            case Direction.Right: target = new Vector2Int(width, start.y); break;
-        }
-
-        // We use A* to get there. A* logic must allow this specific OutOfBounds target.
-        return AStar(start, target, true);
     }
 
     private List<Vector2Int> AStar(Vector2Int start, Vector2Int target, bool allowOutOfBoundsTarget)

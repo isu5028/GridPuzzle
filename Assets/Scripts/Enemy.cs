@@ -9,6 +9,7 @@ public class Enemy : Unit
     [SerializeField] private EnemyType type;
     public EnemyType Type { get { return type; } }
     private EnemyAI enemyAI = null!;
+    public EnemyAI EnemyAI => enemyAI;
 
     [SerializeField] private TextMeshPro ammoText = null!;
     [SerializeField] private Transform ammoTransform = null!;

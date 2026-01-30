@@ -18,6 +18,14 @@ public class ColorFlash : MonoBehaviour
         originalMaterial = spriteRenderer.material;
     }
 
+    /// <summary>
+    /// 外部からoriginalMaterialを設定する（UnitがdissolveMaterialを設定した後に呼び出す）
+    /// </summary>
+    public void SetOriginalMaterial(Material material)
+    {
+        originalMaterial = material;
+    }
+
     public void AnimateToColor(Color targetColor, float duration = -1f)
     {
         if (duration < 0) duration = animationDuration;

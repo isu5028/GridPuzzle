@@ -8,6 +8,7 @@ public class StageSO : ScriptableObject
     [SerializeField] private string stageName = "New Stage";
     [SerializeField] private int width = 16;
     [SerializeField] private int height = 9;
+    [SerializeField] private int floorIndex = 0;  // フロアインデックス（0が最上階、大きいほど下）
 
     [Header("Grid Layout")]
     [SerializeField] private CellType[] cellData;
@@ -19,11 +20,22 @@ public class StageSO : ScriptableObject
     [SerializeField] private List<EnemyStartData> enemyStartData = new List<EnemyStartData>();
     [SerializeField] private List<TutorialIndexData> tutorialIndexData = new List<TutorialIndexData>();
 
-    [Header("Adjacent Stages")]
+    [Header("Adjacent Stages (平面マップ用)")]
     [SerializeField] private StageSO upStage;
     [SerializeField] private StageSO downStage;
     [SerializeField] private StageSO rightStage;
     [SerializeField] private StageSO leftStage;
+
+    [Header("Stair Destinations (階層マップ用)")]
+    [SerializeField] private StageSO defaultUpStage;    // 上り階段で移動するステージ
+    [SerializeField] private StageSO defaultDownStage;  // 下り階段で移動するステージ
+
+    public StageSO DefaultUpStage => defaultUpStage;
+    public StageSO DefaultDownStage => defaultDownStage;
+
+    [Header("Stair Connections (位置ごとの階段接続)")]
+    [SerializeField] private List<StairConnectionData> stairConnections = new List<StairConnectionData>();
+    public List<StairConnectionData> StairConnections => stairConnections;
 
     public StageSO NorthStage => upStage;
     public StageSO SouthStage => downStage;
@@ -72,6 +84,7 @@ public class StageSO : ScriptableObject
     public string StageName => stageName;
     public int Width => width;
     public int Height => height;
+    public int FloorIndex => floorIndex;  // フロアインデックス（0が最上階）
     public Vector2Int PlayerStartPosition => playerStartPosition;
     public int PlayerMaxHP = 2;
     public int PlayerStartOrder = 0;
@@ -211,6 +224,27 @@ public class StageSO : ScriptableObject
         if (idx != -1) return tutorialIndexData[idx].Index;
         return 0;
     }
+
+    /// <summary>
+    /// 特定の座標の階段に接続されたステージを取得する
+    /// 設定がない場合はnullを返す
+    /// </summary>
+    public StageSO GetConnectedStage(Vector2Int pos)
+    {
+        int idx = stairConnections.FindIndex(d => d.Position == pos);
+        if (idx != -1) return stairConnections[idx].TargetStage;
+        return null;
+    }
+
+    /// <summary>
+    /// 特定の座標の階段接続データを取得する
+    /// </summary>
+    public StairConnectionData? GetStairConnectionData(Vector2Int pos)
+    {
+        int idx = stairConnections.FindIndex(d => d.Position == pos);
+        if (idx != -1) return stairConnections[idx];
+        return null;
+    }
 }
 
 [System.Serializable]
@@ -229,4 +263,12 @@ public struct TutorialIndexData
 {
     public Vector2Int Position;
     public int Index;
+}
+
+[System.Serializable]
+public struct StairConnectionData
+{
+    public Vector2Int Position;       // 階段の位置（現在のステージ）
+    public StageSO TargetStage;       // 遷移先ステージ
+    public Vector2Int TargetPosition; // 遷移先ステージでの階段位置（未設定の場合は同一座標を使用）
 }

@@ -79,9 +79,18 @@ public class UnitManager : MonoBehaviour
 
     public void SetAllEnemiesActive(bool isActive)
     {
-        foreach (var enemy in enemyObjects)
+        for (int i = enemyObjects.Count - 1; i >= 0; i--)
         {
-            if (enemy != null) enemy.gameObject.SetActive(isActive);
+            var enemy = enemyObjects[i];
+            if (enemy != null)
+            {
+                enemy.SetActive(isActive);
+            }
+            else
+            {
+                // Clean up references to destroyed objects
+                enemyObjects.RemoveAt(i);
+            }
         }
     }
 
@@ -97,7 +106,10 @@ public class UnitManager : MonoBehaviour
 
         foreach (var enemy in enemyScripts)
         {
-            if (enemy != null && !enemy.IsDead && enemy.CurrentPos == pos)
+            // Unity Object null check
+            if (enemy == null) continue;
+
+            if (!enemy.IsDead && enemy.CurrentPos == pos)
                 return enemy;
         }
 
@@ -108,7 +120,9 @@ public class UnitManager : MonoBehaviour
     {
         foreach (var enemy in enemyScripts)
         {
-            if (enemy != null && !enemy.IsDead)
+            if (enemy == null) continue;
+
+            if (!enemy.IsDead)
             {
                 return true;
             }

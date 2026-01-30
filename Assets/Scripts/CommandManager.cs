@@ -46,6 +46,15 @@ public class CommandManager : MonoBehaviour
     {
         if (pendingRecord == null) return;
 
+        // コマンドが一つもない空のターンは記録しない
+        // (Move以外のアクションなどで意図せずターン終了が呼ばれた場合や、
+        //  ステージロード直後の初期化由来の不要なターン記録を防ぐため)
+        if (currentTurnCommands.Count == 0)
+        {
+            pendingRecord = null;
+            return;
+        }
+
         pendingRecord.commands = new List<ICommand>(currentTurnCommands);
         turnRecords.Add(pendingRecord);
 
@@ -77,15 +86,28 @@ public class CommandManager : MonoBehaviour
         for(int i = record.commands.Count - 1; i >= 0; i--)
         {
             var cmd = record.commands[i];
-            if (cmd is TransitionCommand tc)
+            try
             {
-                await tc.UndoAsync();
+                if (cmd is IAsyncUndoCommand asyncCmd)
+                {
+                    await asyncCmd.UndoAsync();
+                }
+                else
+                {
+                    cmd.Undo();
+                }
             }
-            else
+            catch (UnityEngine.MissingReferenceException)
             {
-                cmd.Undo();
+                // 対象が破棄されている場合はスキップ
+                Debug.LogWarning("Skipped undo command for missing object.");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Undo Error: {e}");
             }
         }
+
         isUndoing = false;
         return true;
     }

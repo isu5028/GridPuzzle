@@ -37,6 +37,11 @@ public class Player : Unit
 
         // 座標更新
         transform.position = gridManager.GridToWorldPosition(newPos);
+
+        // アクション中のフラグをリセット（階段移動などでOnActionCompleteがスキップされた場合用）
+        isProcessingAction = false;
+        isMoving = false;
+
         BlockInputTemporarily().Forget();
     }
 
@@ -59,6 +64,7 @@ public class Player : Unit
                 !turnManager.IsOptionOpen &&
                 !gridManager.IsTransitioning &&
                 !gridManager.IsEventPlaying &&
+                !gridManager.IsStairDialogOpen &&  // 階段ダイアログ中は操作不可
                 !isMoving &&
                 !turnManager.IsMapOpen
             )
@@ -76,14 +82,14 @@ public class Player : Unit
 
         // 長押しリピート
         undoTriggered
-            .SelectMany(_ => Observable.Timer(TimeSpan.FromSeconds(0.4f), TimeSpan.FromSeconds(0.2f))
+            .SelectMany(_ => Observable.Timer(TimeSpan.FromSeconds(0.4f), TimeSpan.FromSeconds(0.15f))
                 .TakeUntil(Observable.EveryUpdate().Where(__ => !inputUndo.IsPressed()))
             )
             .ObserveOnMainThread()
             .Subscribe(_ =>
             {
                 // リピート中も最低限のガード条件だけ再確認（ターン状態など）
-                if(turnManager.IsPlayerTurn && !isProcessingAction && !gridManager.IsTransitioning)
+                if(turnManager.IsPlayerTurn && !isProcessingAction && !gridManager.IsTransitioning && !commandManager.IsUndoing)
                 {
                     turnManager.UndoTurn().Forget();
                 }
@@ -135,20 +141,7 @@ public class Player : Unit
         // グリッド外に出るかチェック
         if (!gridManager.IsPositionInBounds(targetPos))
         {
-            // 次のステージを取得
-            StageSO nextStage = gridManager.CurrentStageSO.GetAdjacentStage(newDirection);
-
-            // 次のステージが存在する場合のみ実行
-            if (nextStage != null)
-            {
-                var newPos = currentPos + Utility.GetVectorFromDirection(newDirection);
-                var moveCommand = new MoveCommand(this, currentPos, newPos, currentDirection, newDirection);
-                commandManager.ExecuteCommand(moveCommand);
-                gridManager.TryTransition(newDirection);
-                return;
-            }
-
-            return; // 移動処理はせず終了
+            return;
         }
 
         isProcessingAction = true;
@@ -161,14 +154,26 @@ public class Player : Unit
 
         if (!didMove)
         {
-            // 移動しなかった（攻撃や移動失敗）場合は何もしない
+            // 移動しなかった（攻撃や移動失敗）場合はフラグをリセットして終了
+            isProcessingAction = false;
             return;
         }
 
         // GameSpeed == 0 (Normal) のときは移動完了を待つ
+        // 高速モードではプレイヤーの移動完了を待たずに敵のターンへ進む
         if (GameSettings.GameSpeed == 0)
         {
             await UniTask.WaitUntil(() => !isMoving);
+        }
+
+        // 階段チェック（移動完了後に階段の上にいるか確認）
+        bool dialogShown = gridManager.CheckAndShowStairDialog();
+
+        if (dialogShown)
+        {
+            // ダイアログが表示された場合は、ユーザーの選択待ちになるので
+            // ここでターン終了せず、ダイアログのコールバックに任せる
+            return;
         }
 
         OnActionComplete();
@@ -177,13 +182,20 @@ public class Player : Unit
     protected override async void OnActionComplete()
     {
         turnManager.OnPlayerActionComplete().Forget();
+
+        // 敵のターンが終わるまで入力をブロック
+        await UniTask.WaitUntil(() => turnManager.IsPlayerTurn);
+
         isProcessingAction = false;
+        isMoving = false;
     }
 
-    protected override void OnMoveFailed()
+    /// <summary>
+    /// 外部（GridManagerなど）からアクション完了を強制する
+    /// </summary>
+    public void ForceActionComplete()
     {
-        // 移動失敗時はターンを消費せず、再び操作可能にする
-        isProcessingAction = false;
+        OnActionComplete();
     }
 
     protected override void OnEnable()

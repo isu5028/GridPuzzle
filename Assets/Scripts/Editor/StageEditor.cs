@@ -9,6 +9,7 @@ public class StageEditor : Editor
     private bool showGridEditor = true;
     private bool showEnemyList = true;
     private ReorderableList enemyReorderableList;
+    private ReorderableList stairConnectionsReorderableList;
 
     // エディタの状態
     private enum EditMode
@@ -19,7 +20,10 @@ public class StageEditor : Editor
         Player,     // プレイヤー位置
         Enemy,      // 敵の配置
         EraseUnit,  // Unit削除
-        Tutorial    // チュートリアル配置
+        Tutorial,   // チュートリアル配置
+        StairUp,    // 上階段配置
+        StairDown,  // 下階段配置
+        StairLink   // 階段リンク設定（追加）
     }
 
     private EditMode currentMode = EditMode.Wall;
@@ -42,8 +46,11 @@ public class StageEditor : Editor
     private readonly Color enemyColor = new Color(0.8f, 0.2f, 0.2f);
     private readonly Color syncMapColor = new Color(0.0f, 1.0f, 1.0f, 0.5f); // シアン半透明
     private readonly Color tutorialColor = new Color(1f, 0.64f, 0f, 0.5f); // オレンジ半透明
+    private readonly Color stairUpColor = new Color(0.3f, 0.5f, 0.9f, 0.7f); // 青（上へ）
+    private readonly Color stairDownColor = new Color(0.9f, 0.4f, 0.3f, 0.7f); // 赤（下へ）
     private readonly Color gridLineColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
-    private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // 黄色半透明
+    private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // マゼンタ半透明
+    private readonly Color stairLinkColor = new Color(0.5f, 0.0f, 1.0f, 0.7f); // 紫（リンク）
 
     private void OnEnable()
     {
@@ -54,6 +61,12 @@ public class StageEditor : Editor
     }
 
     private void SetupReorderableList()
+    {
+        SetupEnemyReorderableList();
+        SetupStairConnectionsReorderableList();
+    }
+
+    private void SetupEnemyReorderableList()
     {
         // StageSO のフィールド名に合わせる
         SerializedProperty enemyListProp = serializedObject.FindProperty("enemyStartData");
@@ -75,15 +88,14 @@ public class StageEditor : Editor
             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "位置");
             xPos += 85;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "種類");
+            // ... (rest is same)
             xPos += 85;
-            EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "方向");
+             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "方向");
             xPos += 85;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "HP");
             xPos += 45;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "弾数");
             xPos += 45;
-            //EditorGUI.LabelField(new Rect(xPos, rect.y, 60, rect.height), "行動順");
-            //xPos += 65;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 50, rect.height), "削除");
         };
 
@@ -127,10 +139,6 @@ public class StageEditor : Editor
             }
             xPos += 45;
 
-            // 行動順は読み取り専用でインデックスを表示
-            //EditorGUI.LabelField(new Rect(xPos, rect.y, 60, height), $"{index}");
-            //xPos += 65;
-
             if (GUI.Button(new Rect(xPos, rect.y, 50, height), "削除"))
             {
                 enemyReorderableList.serializedProperty.DeleteArrayElementAtIndex(index);
@@ -154,6 +162,46 @@ public class StageEditor : Editor
             stage.UpdateEnemyActionIndices();
             serializedObject.Update();
             EditorUtility.SetDirty(stage);
+        };
+    }
+
+    private void SetupStairConnectionsReorderableList()
+    {
+        SerializedProperty connectionsProp = serializedObject.FindProperty("stairConnections");
+
+        stairConnectionsReorderableList = new ReorderableList(
+            serializedObject,
+            connectionsProp,
+            draggable: true,
+            displayHeader: true,
+            displayAddButton: true,
+            displayRemoveButton: true
+        );
+
+        stairConnectionsReorderableList.drawHeaderCallback = (Rect rect) =>
+        {
+            EditorGUI.LabelField(rect, "階段接続設定 (座標 -> 遷移先ステージ)");
+        };
+
+        stairConnectionsReorderableList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
+        {
+            SerializedProperty element = connectionsProp.GetArrayElementAtIndex(index);
+            rect.y += 2;
+
+            float xPos = rect.x;
+            float height = EditorGUIUtility.singleLineHeight;
+
+            // Position
+            float posWidth = 100;
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 40, height), "Pos:");
+            xPos += 40;
+            EditorGUI.PropertyField(new Rect(xPos, rect.y, posWidth, height), element.FindPropertyRelative("Position"), GUIContent.none);
+            xPos += posWidth + 10;
+
+            // Target Stage
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 60, height), "Target:");
+            xPos += 60;
+            EditorGUI.PropertyField(new Rect(xPos, rect.y, rect.width - xPos, height), element.FindPropertyRelative("TargetStage"), GUIContent.none);
         };
     }
 
@@ -190,6 +238,7 @@ public class StageEditor : Editor
         SerializedProperty stageNameProp = serializedObject.FindProperty("stageName");
         SerializedProperty widthProp = serializedObject.FindProperty("width");
         SerializedProperty heightProp = serializedObject.FindProperty("height");
+        SerializedProperty floorIndexProp = serializedObject.FindProperty("floorIndex");
         SerializedProperty syncMapOffsetProp = serializedObject.FindProperty("syncMapOffset");
 
         EditorGUI.BeginChangeCheck();
@@ -200,6 +249,7 @@ public class StageEditor : Editor
         EditorGUILayout.PropertyField(heightProp, new GUIContent("高さ"));
         EditorGUILayout.EndHorizontal();
 
+        EditorGUILayout.PropertyField(floorIndexProp, new GUIContent("フロア番号", "0=1F, 1=B1F, 2=B2F... (大きいほど地下)"));
         EditorGUILayout.PropertyField(syncMapOffsetProp, new GUIContent("SyncMap Offset"));
 
         if (EditorGUI.EndChangeCheck())
@@ -208,12 +258,41 @@ public class StageEditor : Editor
             stage.InitializeWallData();
         }
 
-        EditorGUILayout.LabelField($"グリッドサイズ: {stage.Width} × {stage.Height}");
+        // フロア表示名を表示
+        string floorDisplay = stage.FloorIndex == 0 ? "1F" : $"B{stage.FloorIndex}F";
+        EditorGUILayout.LabelField($"グリッドサイズ: {stage.Width} × {stage.Height} | フロア: {floorDisplay}");
+
+        EditorGUILayout.Space(10);
+
+        // --- 階層マップ設定 ---
+        EditorGUILayout.LabelField("階層マップ設定 (上下階接続)", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
+
+        SerializedProperty defaultUpProp = serializedObject.FindProperty("defaultUpStage");
+        SerializedProperty defaultDownProp = serializedObject.FindProperty("defaultDownStage");
+
+        EditorGUILayout.PropertyField(defaultUpProp, new GUIContent("上の階 (StairUp)"));
+        EditorGUILayout.PropertyField(defaultDownProp, new GUIContent("下の階 (StairDown)"));
 
         EditorGUILayout.Space(5);
 
-        // 隣接ステージ設定
-        EditorGUILayout.LabelField("隣接ステージ", EditorStyles.boldLabel);
+        // 階段接続リストの描画
+        if (stairConnectionsReorderableList != null)
+        {
+            stairConnectionsReorderableList.DoLayoutList();
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("Stair Connections List not initialized", MessageType.Warning);
+        }
+
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(5);
+
+        // --- 平面マップ設定 (Legacy/Optional) ---
+        EditorGUILayout.LabelField("平面マップ設定 (隣接ステージ)", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
 
         SerializedProperty upStageProp = serializedObject.FindProperty("upStage");
         SerializedProperty downStageProp = serializedObject.FindProperty("downStage");
@@ -224,6 +303,8 @@ public class StageEditor : Editor
         EditorGUILayout.PropertyField(downStageProp, new GUIContent("South"));
         EditorGUILayout.PropertyField(rightStageProp, new GUIContent("East"));
         EditorGUILayout.PropertyField(leftStageProp, new GUIContent("West"));
+
+        EditorGUILayout.EndVertical();
     }
 
     private void DrawEditModeSelector()
@@ -252,6 +333,12 @@ public class StageEditor : Editor
 
         if (GUILayout.Toggle(currentMode == EditMode.Tutorial, "Tutorial", "Button"))
             currentMode = EditMode.Tutorial;
+
+        if (GUILayout.Toggle(currentMode == EditMode.StairUp, "階段↑", "Button"))
+            currentMode = EditMode.StairUp;
+
+        if (GUILayout.Toggle(currentMode == EditMode.StairDown, "階段↓", "Button"))
+            currentMode = EditMode.StairDown;
 
         EditorGUILayout.EndHorizontal();
 
@@ -310,6 +397,9 @@ public class StageEditor : Editor
             case EditMode.Enemy: modeText = $"{currentEnemyType}敵を配置"; break;
             case EditMode.EraseUnit: modeText = "プレイヤーまたは敵をクリックして削除"; break;
             case EditMode.Tutorial: modeText = "チュートリアルセル(Index)を配置"; break;
+            case EditMode.StairUp: modeText = "上階段を配置（上の階へ移動）"; break;
+            case EditMode.StairDown: modeText = "下階段を配置（下の階へ移動）"; break;
+            case EditMode.StairLink: modeText = "階段をクリックして接続設定（StairConnections）を追加・選択"; break;
         }
 
         EditorGUILayout.HelpBox(modeText, MessageType.Info);
@@ -368,6 +458,8 @@ public class StageEditor : Editor
                 if (cellType == CellType.Wall) cellColor = wallColor;
                 else if (cellType == CellType.SyncMap) cellColor = syncMapColor;
                 else if (cellType == CellType.Tutorial) cellColor = tutorialColor;
+                else if (cellType == CellType.StairUp) cellColor = stairUpColor;
+                else if (cellType == CellType.StairDown) cellColor = stairDownColor;
 
                 EditorGUI.DrawRect(cellRect, cellColor);
 
@@ -602,6 +694,64 @@ public class StageEditor : Editor
                 stage.SetCellTypeAt(x, y, CellType.Tutorial);
                 stage.SetTutorialData(new Vector2Int(x, y), currentTutorialIndex);
                 break;
+
+            case EditMode.StairUp:
+                // 上階段セルを配置
+                stage.SetCellTypeAt(x, y, CellType.StairUp);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.StairDown:
+                // 下階段セルを配置
+                stage.SetCellTypeAt(x, y, CellType.StairDown);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.StairLink:
+                CellType type = stage.GetWallAt(x, y);
+                if (type == CellType.StairUp || type == CellType.StairDown)
+                {
+                    // 既にリストにあるかチェック
+                    Vector2Int pos = new Vector2Int(x, y);
+                    bool exists = false;
+                    for (int i = 0; i < stage.StairConnections.Count; i++)
+                    {
+                        if (stage.StairConnections[i].Position == pos)
+                        {
+                            exists = true;
+                            // 選択状態にする（reorderable listのインデックスを設定）
+                            if (stairConnectionsReorderableList != null)
+                            {
+                                stairConnectionsReorderableList.index = i;
+                            }
+                            break;
+                        }
+                    }
+
+                    if (!exists)
+                    {
+                        // リストに追加
+                        var connectionsProp = serializedObject.FindProperty("stairConnections");
+                        connectionsProp.InsertArrayElementAtIndex(connectionsProp.arraySize);
+                        var element = connectionsProp.GetArrayElementAtIndex(connectionsProp.arraySize - 1);
+                        element.FindPropertyRelative("Position").vector2IntValue = pos;
+                        element.FindPropertyRelative("TargetStage").objectReferenceValue = null;
+
+                        serializedObject.ApplyModifiedProperties();
+
+                        // 追加した要素を選択
+                        if (stairConnectionsReorderableList != null)
+                        {
+                            stairConnectionsReorderableList.index = connectionsProp.arraySize - 1;
+                        }
+                        Debug.Log($"Added stair connection for {pos}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning("階段ではない場所です。階段をクリックして設定を追加してください。");
+                }
+                break;
         }
 
         EditorUtility.SetDirty(stage);
@@ -615,13 +765,17 @@ public class StageEditor : Editor
 
         EditorGUILayout.BeginHorizontal();
         DrawColorBox(wallColor);
-        EditorGUILayout.LabelField("壁", GUILayout.Width(100));
+        EditorGUILayout.LabelField("壁", GUILayout.Width(60));
         DrawColorBox(floorColor);
-        EditorGUILayout.LabelField("床", GUILayout.Width(100));
+        EditorGUILayout.LabelField("床", GUILayout.Width(60));
         DrawColorBox(syncMapColor);
-        EditorGUILayout.LabelField("SyncMap", GUILayout.Width(100));
+        EditorGUILayout.LabelField("SyncMap", GUILayout.Width(70));
         DrawColorBox(tutorialColor);
-        EditorGUILayout.LabelField("Tutorial", GUILayout.Width(100));
+        EditorGUILayout.LabelField("Tutorial", GUILayout.Width(70));
+        DrawColorBox(stairUpColor);
+        EditorGUILayout.LabelField("階段↑", GUILayout.Width(60));
+        DrawColorBox(stairDownColor);
+        EditorGUILayout.LabelField("階段↓", GUILayout.Width(60));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();

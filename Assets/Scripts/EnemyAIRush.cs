@@ -111,86 +111,25 @@ public class EnemyAIRush : EnemyAI
             if (enemyStage == null) break; // Should not happen
 
             // Check what is at nextPos
-            // 1. Out of Bounds -> Transition
+            // 1. Out of Bounds
             if (nextPos.x < 0 || nextPos.x >= enemyStage.Width || nextPos.y < 0 || nextPos.y >= enemyStage.Height)
             {
-                Debug.Log("Out of bounds");
-                 StageSO nextStage = enemyStage.GetAdjacentStage(dir);
-                 if (nextStage != null)
-                 {
-                     // Calculate entry
-                     Vector2Int entryPos = gridManager.CalculateEntryPosition(nextStage, dir, currentPos);
+                // マップ端に到達 -> 停止
+                commandManager.ExecuteCommand(new RushAttackCommand(enemy, gridManager));
 
-                     // Check for Cross-Stage Enemy Collision
-                     Enemy targetEnemy = gridManager.GetEnemyAt(nextStage, entryPos);
-                     if (targetEnemy != null)
-                     {
-                         Debug.Log($"[EnemyRush] Found target enemy {targetEnemy.name} at {entryPos} in stage {nextStage.name}. Moving to collision.");
+                if (enemy.gameObject.activeInHierarchy)
+                {
+                    if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
 
-                         // 1. Move to the target's position (Into the next stage)
-                         // Note: This creates a temporary overlap which is resolved by the attack/collision logic or game rules.
-                         EnemyMoveMapCommand mapCmdTargetEnemy = new EnemyMoveMapCommand(gridManager, enemy, enemyStage, nextStage, currentPos, entryPos, dir, dir);
-                         commandManager.ExecuteCommand(mapCmdTargetEnemy);
+                    enemy.OrderSpriteAnimation.PlayAnimation();
+                    // Large Shake
+                    CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
 
-                         // 2. Execute Attack (Now both are in nextStage at entryPos)
-                         // We use RushAttackCommand because we are technically "at" the target now.
-                         // Or use CrossStageAttackCommand if we consider it a transition hit?
-                         // RushAttackCommand handles same-stage recoil.
-                         // But RushAttackCommand expects target at different pos? Or same?
-                         // It attacks `targetUnit.CurrentPos`. If equal to `enemy.CurrentPos` (which is entryPos), it's self-target?
-                         // No, `GetUnitAtPosition` finds all units.
-                         // We can pass `entryPos`.
+                    await UniTask.WaitUntil(() => !enemy.IsMoving);
+                }
 
-                         // Note: Visual animation might look like they are inside each other.
-                         // The user requested "Adjacent stage... same position... stop".
-
-                         commandManager.ExecuteCommand(new RushAttackCommand(enemy, targetEnemy.CurrentPos, gridManager));
-                         // Large Shake on Unit Hit
-                         CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
-
-                         if (enemy.gameObject.activeInHierarchy)
-                         {
-                             await UniTask.WaitUntil(() => !enemy.IsMoving && (targetEnemy == null || !targetEnemy.IsBusy));
-                         }
-
-                         return;
-                     }
-                    Debug.Log("targetEnemy Null");
-
-                    // Move Command
-                    EnemyMoveMapCommand mapCmd = new EnemyMoveMapCommand(gridManager, enemy, enemyStage, nextStage, currentPos, entryPos, dir, dir);
-                     commandManager.ExecuteCommand(mapCmd);
-
-                     // Continue rush in the NEW stage
-                     // Since the enemy object might be deactivated, we just continue the loop.
-                     // The loop condition/context relies on `enemyStage` which we update.
-                     // IMPORTANT: We must update `enemy.CurrentPos` (done by Command/WarpTo) but also our local `enemyStage` ref?
-                     // MoveEnemyToStage updates the internal lists.
-                     // Next loop iteration will get updated stage.
-                     continue;
-                 }
-                 else
-                 {
-                     // End of world -> Stop at edge
-                     // Impact logic similar to Wall Collision
-
-                     // Recoil Damage (No target) - Execute regardless of visibility
-                     commandManager.ExecuteCommand(new RushAttackCommand(enemy, gridManager));
-
-                     if (enemy.gameObject.activeInHierarchy)
-                     {
-                         if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
-
-                         enemy.OrderSpriteAnimation.PlayAnimation();
-                         // Large Shake
-                         CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
-
-                         await UniTask.WaitUntil(() => !enemy.IsMoving);
-                     }
-
-                     isMoving = false;
-                     break;
-                 }
+                isMoving = false;
+                break;
             }
 
             // 2. Wall

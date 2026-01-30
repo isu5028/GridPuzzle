@@ -150,6 +150,7 @@ public class AudioManager : MonoBehaviour
         superposition,
         rush,
         wipeout,
+        cursor,
     }
 
     public enum BGMType

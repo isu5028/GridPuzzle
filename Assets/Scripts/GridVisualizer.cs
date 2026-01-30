@@ -14,6 +14,8 @@ public class GridVisualizer : MonoBehaviour
     [SerializeField] private TileBase playerWarpTile = null!;
     [SerializeField] private TileBase playerWarpTileIdle = null!;
     [SerializeField] private TileBase enemyWarpTile = null!;
+    [SerializeField] private TileBase stairUpTile = null!;    // 上階段タイル
+    [SerializeField] private TileBase stairDownTile = null!;  // 下階段タイル
     [SerializeField] private GameObject warpChangeEffect = null!;
     [SerializeField] private GameObject tileSyncMapPrefab = null!;
     [SerializeField] private List<GameObject> tutorialPrefabs = new List<GameObject>();
@@ -130,6 +132,14 @@ public class GridVisualizer : MonoBehaviour
                 {
                     InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), stage.SyncMapOffset, isClearedCheck);
                 }
+                break;
+            case CellType.StairUp:
+                // 上階段タイル（設定されていなければ床タイルで代用）
+                targetMap.SetTile(pos, stairUpTile != null ? stairUpTile : floorTile);
+                break;
+            case CellType.StairDown:
+                // 下階段タイル（設定されていなければ床タイルで代用）
+                targetMap.SetTile(pos, stairDownTile != null ? stairDownTile : floorTile);
                 break;
             default:
                 targetMap.SetTile(pos, null);
@@ -380,6 +390,14 @@ public class GridVisualizer : MonoBehaviour
                             InstantiateSyncMapPrefab(targetMap, pos, new Vector2Int(x, y), stage.SyncMapOffset, isClearedCheck);
                         }
                         break;
+                    case CellType.StairUp:
+                        // 上階段タイル（設定されていなければ床タイルで代用）
+                        targetMap.SetTile(pos, stairUpTile != null ? stairUpTile : floorTile);
+                        break;
+                    case CellType.StairDown:
+                        // 下階段タイル（設定されていなければ床タイルで代用）
+                        targetMap.SetTile(pos, stairDownTile != null ? stairDownTile : floorTile);
+                        break;
                     default:
                         targetMap.SetTile(pos, null);
                         break;
@@ -396,5 +414,57 @@ public class GridVisualizer : MonoBehaviour
     public void ResetGridParentPosition()
     {
         gridParent.position = Vector3.zero;
+    }
+
+    /// <summary>
+    /// 階段用の遷移タイルマップを設定（垂直方向）
+    /// </summary>
+    /// <param name="stage">移動先ステージ</param>
+    /// <param name="goingDown">trueなら下の階へ（下から上へスライド）、falseなら上の階へ（上から下へスライド）</param>
+    /// <param name="currentPlayerPos">現在のプレイヤー位置（階段の位置）</param>
+    /// <param name="targetPlayerPos">移動先のプレイヤー位置</param>
+    public void SetupStairTransitionTilemap(StageSO stage, bool goingDown, Vector2Int currentPlayerPos, Vector2Int targetPlayerPos, bool nextStageHasEnemy, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
+    {
+        ClearTransitionTiles();
+
+        // 座標の差分を計算（現在位置と遷移先位置を合わせるためのオフセット）
+        // 現在(5,3)にいて、遷移先で(2,1)に出現するなら、次のステージを (5-2, 3-1) = (3, 2) だけずらす
+        Vector2Int posDiff = currentPlayerPos - targetPlayerPos;
+        float xPosOffset = posDiff.x * cellSize;
+        float yPosOffset = posDiff.y * cellSize;
+
+        // 下の階へ行く場合：新しいステージは画面上から入ってくる（現在ステージは下へ移動）
+        // 上の階へ行く場合：新しいステージは画面下から入ってくる（現在ステージは上へ移動）
+        float yTransitionOffset = goingDown ? tilemapOffset.y * 2 : -tilemapOffset.y * 2;
+        transitionTilemap.transform.position = new Vector3(xPosOffset, yTransitionOffset + yPosOffset, 0);
+
+        // Transition用のTilemapを埋める
+        int w = stage.Width;
+        int h = stage.Height;
+
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                CellType type = stage.GetWallAt(x, y);
+                // 破壊された壁は床として扱う
+                if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                {
+                    type = CellType.Floor;
+                }
+                SetTileAt(transitionTilemap, x, y, type, nextStageHasEnemy, stage, isClearedCheck);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 階段遷移のアニメーション用移動量を取得
+    /// </summary>
+    public Vector3 GetStairTransitionOffset(bool goingDown)
+    {
+        // 下の階へ行く場合：gridParentを下に移動（現在のステージが下へ消える、新しいステージが上から入る）
+        // 上の階へ行く場合：gridParentを上に移動（現在のステージが上へ消える、新しいステージが下から入る）
+        float yOffset = goingDown ? -tilemapOffset.y * 2 : tilemapOffset.y * 2;
+        return new Vector3(0, yOffset, 0);
     }
 }
