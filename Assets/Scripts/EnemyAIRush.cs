@@ -220,6 +220,19 @@ public class EnemyAIRush : EnemyAI
                 // To be safe against stack overflow in recursive scenarios or simple infinite loops:
                 await UniTask.Yield();
             }
+
+            // 階段遷移チェック（アクティブな場合のみ）
+            if (enemy.gameObject.activeInHierarchy)
+            {
+                var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, dir);
+                if (transition != null)
+                {
+                    if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                    await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, dir);
+                    isMoving = false;
+                    break;
+                }
+            }
         }
     }
 

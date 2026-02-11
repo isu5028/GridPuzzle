@@ -79,7 +79,6 @@ public class GridManager : MonoBehaviour
     private const float TransitionDuration = 0.2f;
     private const int TransitionDelayMs = 250;
 
-    private bool previousWarpState = true; // true: enemyWarpTile, false: playerWarpTile
     private Vector2Int currentResetMapPos;
 
     [SerializeField] private ShowWipeOut showWipeOut = null!;
@@ -122,7 +121,7 @@ public class GridManager : MonoBehaviour
 
         // UnitManagerのイベント購読
         unitManager.OnUnitStateChanged
-             .Subscribe(_ => UpdateWarpTiles())
+             .Subscribe(_ => OnEnemyStateChanged())
              .AddTo(this);
 
         // debug
@@ -248,12 +247,10 @@ public class GridManager : MonoBehaviour
 
     public async UniTask SwitchStageAsync(StageSO nextstage, Direction entryDirection)
     {
-        // 次のステージに敵がいるかどうかをチェック（TransitionTilemapのWarp表示用）
-        bool nextStageHasEnemy = CheckIfStageHasEnemy(nextstage);
-
+        // 次のステージの遷移準備
         HashSet<Vector2Int> destroyed = destroyedWalls.ContainsKey(nextstage) ? destroyedWalls[nextstage] : null;
 
-        gridVisualizer.SetupTransitionTilemap(nextstage, entryDirection, nextStageHasEnemy, destroyed, GameProgressManager.Instance.IsPositionCleared);
+        gridVisualizer.SetupTransitionTilemap(nextstage, entryDirection, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
         var dirVector = Utility.GetVectorFromDirection(entryDirection);
         Vector3 transitionOffset = (Vector3)(dirVector * gridVisualizer.TilemapOffset * 2);
@@ -318,26 +315,399 @@ public class GridManager : MonoBehaviour
 
     public void WarpToStage(StageSO stage)
     {
+        WarpToStageAsync(stage).Forget();
+    }
+
+    /// <summary>
+    /// ステージの初期位置にワープする（アニメーション付き）
+    /// </summary>
+    public async UniTask WarpToStageAsync(StageSO stage)
+    {
+        if (stage == null) return;
+
+        isTransitioning = true;
+
+        // 現在のステージと同じ場合はアニメーションなしでリロード
+        if (stage == currentStageSO)
+        {
+            Vector2Int targetPos = stage.PlayerStartPosition;
+
+            CleanupAllEnemies();
+            destroyedWalls.Clear();
+            GameProgressManager.Instance.ResetStageCleared();
+
+            if (unitManager.Player != null)
+            {
+                unitManager.Player.Revive();
+                unitManager.Player.SetHP(unitManager.Player.MaxHP);
+            }
+
+            currentStageSO = stage;
+            initialStageSO = stage;
+            commandManager.Warped();
+            currentResetMapPos = stage.MapPosition;
+
+            gridVisualizer.ResetGridParentPosition();
+            LoadStage(stage, true, targetPos);
+
+            if (unitManager.Player != null)
+            {
+                unitManager.Player.WarpToNewStage(targetPos, stage.PlayerStartDirection);
+            }
+
+            SaveGame(GameProgressManager.SaveType.Auto);
+            SyncWorldMapStatus();
+
+            isTransitioning = false;
+            return;
+        }
+
+        // 現在のステージ情報を取得
+        Vector2Int currentMapPos = currentStageSO != null ? currentStageSO.MapPosition : new Vector2Int(1, 0);
+        Vector2Int targetMapPos = stage.MapPosition;
+
+        // 移動方向を決定
+        WarpDirection warpDir = DetermineWarpDirection(currentMapPos, targetMapPos);
+
+        // ワープ先位置
+        Vector2Int targetPos2 = stage.PlayerStartPosition;
+
+        // ===== 1. プレイヤーをフェードアウト =====
+        if (unitManager.Player != null)
+        {
+            bool goingDown = (warpDir == WarpDirection.Down);
+            await unitManager.Player.FadeOutAsync(0.15f, goingDown);
+        }
+
+        // ===== 2. 画面遷移の準備 =====
         CleanupAllEnemies();
-        destroyedWalls.Clear(); // Return walls to normal on warp
+        destroyedWalls.Clear();
         GameProgressManager.Instance.ResetStageCleared();
+
         if (unitManager.Player != null)
         {
             unitManager.Player.Revive();
             unitManager.Player.SetHP(unitManager.Player.MaxHP);
         }
 
+        // 過渡先の準備
+        HashSet<Vector2Int> destroyed = destroyedWalls.ContainsKey(stage) ? destroyedWalls[stage] : null;
+
+        // ワープ遷移用タイルマップの準備
+        gridVisualizer.SetupWarpTransitionTilemap(stage, warpDir, targetPos2, destroyed, GameProgressManager.Instance.IsPositionCleared);
+
+        // 遷移先ステージの敵を準備
+        Vector3 transitionOffset = gridVisualizer.GetWarpTransitionOffset(warpDir);
+        PrepareEnemiesForTransition(stage, transitionOffset);
+
+        // 現在のステージの敵を非表示に
+        unitManager.SetAllEnemiesActive(false);
+
+        // プレイヤーも移動アニメーションに追従させる
+        if (unitManager.Player != null)
+        {
+            unitManager.Player.gameObject.transform.SetParent(gridVisualizer.GridParent);
+        }
+
+        // ===== 3. ステージ遷移アニメーション =====
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.warp);
+        gridVisualizer.MoveGridParent(transitionOffset, TransitionDuration);
+        await UniTask.Delay(TransitionDelayMs);
+
+        // ===== 4. ステージをロード =====
         currentStageSO = stage;
         initialStageSO = stage;
         commandManager.Warped();
+        currentResetMapPos = stage.MapPosition;
 
-        currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
+        // プレイヤーの親を戻す
+        if (unitManager.Player != null)
+        {
+            unitManager.Player.gameObject.transform.SetParent(unitManager.transform);
+        }
 
-        currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
+        // ステージロード
+        LoadStage(stage, true, targetPos2);
 
-        LoadStage(stage, true, stage.PlayerStartPosition);
-        // ワープ完了後にオートセーブ
+        // ===== 5. プレイヤーをフェードイン =====
+        if (unitManager.Player != null)
+        {
+            bool goingDown = (warpDir == WarpDirection.Down);
+            await unitManager.Player.FadeInAsync(0.2f, goingDown);
+        }
+
         SaveGame(GameProgressManager.SaveType.Auto);
+        SyncWorldMapStatus();
+
+        isTransitioning = false;
+    }
+
+    /// <summary>
+    /// ステージの上り階段の位置にワープする（アニメーションなし）
+    /// </summary>
+    public void WarpToStageAtStairUp(StageSO stage)
+    {
+        WarpToStageAtStairUpAsync(stage).Forget();
+    }
+
+    /// <summary>
+    /// ステージの上り階段の位置にワープする（アニメーション付き）
+    /// </summary>
+    public async UniTask WarpToStageAtStairUpAsync(StageSO stage)
+    {
+        if (stage == null) return;
+
+        isTransitioning = true;
+
+        // 上り階段の位置を探す
+        Vector2Int stairUpPos = FindStairUpPosition(stage);
+
+        // 現在のステージと同じ場合はアニメーションなしでリロード
+        if (stage == currentStageSO)
+        {
+            CleanupAllEnemies();
+            destroyedWalls.Clear();
+            GameProgressManager.Instance.ResetStageCleared();
+
+            if (unitManager.Player != null)
+            {
+                unitManager.Player.Revive();
+                unitManager.Player.SetHP(unitManager.Player.MaxHP);
+            }
+
+            currentStageSO = stage;
+            initialStageSO = stage;
+            commandManager.Warped();
+            currentResetMapPos = stage.MapPosition;
+
+            gridVisualizer.ResetGridParentPosition();
+            LoadStage(stage, false, stairUpPos, stage.PlayerStartDirection);
+
+            if (unitManager.Player != null)
+            {
+                unitManager.Player.WarpToNewStage(stairUpPos, stage.PlayerStartDirection);
+            }
+
+            SaveGame(GameProgressManager.SaveType.Auto);
+            SyncWorldMapStatus();
+
+            isTransitioning = false;
+            return;
+        }
+
+        // 現在のステージ情報を取得
+        Vector2Int currentMapPos = currentStageSO != null ? currentStageSO.MapPosition : new Vector2Int(1, 0);
+        Vector2Int targetMapPos = stage.MapPosition;
+
+        // 移動方向を決定
+        WarpDirection warpDir = DetermineWarpDirection(currentMapPos, targetMapPos);
+
+        // ===== 1. プレイヤーをフェードアウト =====
+        if (unitManager.Player != null)
+        {
+            bool goingDown = (warpDir == WarpDirection.Down);
+            await unitManager.Player.FadeOutAsync(0.15f, goingDown);
+        }
+
+        // ===== 2. 画面遷移の準備 =====
+        CleanupAllEnemies();
+        destroyedWalls.Clear();
+        GameProgressManager.Instance.ResetStageCleared();
+
+        if (unitManager.Player != null)
+        {
+            unitManager.Player.Revive();
+            unitManager.Player.SetHP(unitManager.Player.MaxHP);
+        }
+
+        // 過渡先の準備
+        HashSet<Vector2Int> destroyed = destroyedWalls.ContainsKey(stage) ? destroyedWalls[stage] : null;
+
+        // ワープ遷移用タイルマップの準備
+        gridVisualizer.SetupWarpTransitionTilemap(stage, warpDir, stairUpPos, destroyed, GameProgressManager.Instance.IsPositionCleared);
+
+        // 遷移先ステージの敵を準備
+        Vector3 transitionOffset = gridVisualizer.GetWarpTransitionOffset(warpDir);
+        PrepareEnemiesForTransition(stage, transitionOffset);
+
+        // 現在のステージの敵を非表示に
+        unitManager.SetAllEnemiesActive(false);
+
+        // プレイヤーも移動アニメーションに追従させる
+        if (unitManager.Player != null)
+        {
+            unitManager.Player.gameObject.transform.SetParent(gridVisualizer.GridParent);
+        }
+
+        // ===== 3. ステージ遷移アニメーション =====
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.warp);
+        gridVisualizer.MoveGridParent(transitionOffset, TransitionDuration);
+        await UniTask.Delay(TransitionDelayMs);
+
+        // ===== 4. ステージをロード =====
+        currentStageSO = stage;
+        initialStageSO = stage;
+        commandManager.Warped();
+        currentResetMapPos = stage.MapPosition;
+
+        // プレイヤーの親を戻す
+        if (unitManager.Player != null)
+        {
+            unitManager.Player.gameObject.transform.SetParent(unitManager.transform);
+        }
+
+        // ステージロード
+        LoadStage(stage, false, stairUpPos, stage.PlayerStartDirection);
+
+        // ===== 5. プレイヤーをフェードイン =====
+        if (unitManager.Player != null)
+        {
+            bool goingDown = (warpDir == WarpDirection.Down);
+            await unitManager.Player.FadeInAsync(0.2f, goingDown);
+        }
+
+        SaveGame(GameProgressManager.SaveType.Auto);
+        SyncWorldMapStatus();
+
+        isTransitioning = false;
+    }
+
+    public enum WarpDirection
+    {
+        Up,
+        Down,
+        Left,
+        Right,
+        UpLeft,
+        UpRight,
+        DownLeft,
+        DownRight,
+        Same
+    }
+
+    private WarpDirection DetermineWarpDirection(Vector2Int from, Vector2Int to)
+    {
+        int dx = to.x - from.x;  // 正: 右, 負: 左
+        int dy = to.y - from.y;  // 正: 下(深い階), 負: 上(浅い階)
+
+        // 斜め方向
+        if (dy > 0 && dx < 0) return WarpDirection.DownLeft;   // 下の階・左
+        if (dy > 0 && dx > 0) return WarpDirection.DownRight;  // 下の階・右
+        if (dy < 0 && dx < 0) return WarpDirection.UpLeft;     // 上の階・左
+        if (dy < 0 && dx > 0) return WarpDirection.UpRight;    // 上の階・右
+
+        // 垂直方向のみ
+        if (dy > 0) return WarpDirection.Down;
+        if (dy < 0) return WarpDirection.Up;
+
+        // 水平方向のみ
+        if (dx > 0) return WarpDirection.Right;
+        if (dx < 0) return WarpDirection.Left;
+
+        return WarpDirection.Same;
+    }
+
+    /// <summary>
+    /// 階段移動用のワープ方向を決定
+    /// </summary>
+    private WarpDirection DetermineStairWarpDirection(StageSO fromStage, StageSO toStage, bool goingDown)
+    {
+        if (fromStage == null || toStage == null)
+        {
+            return goingDown ? WarpDirection.Down : WarpDirection.Up;
+        }
+
+        // 階段の列（StairColumn）を使用して水平方向を決定
+        int fromColumn = fromStage.StairColumn;
+        int toColumn = toStage.StairColumn;
+
+        // ハブ（中央列=1）からの移動の場合
+        if (fromStage.MapPosition.y == 0)
+        {
+            // ハブ→ダンジョン
+            if (toColumn == 0) return WarpDirection.DownLeft;   // 左の階段
+            if (toColumn == 2) return WarpDirection.DownRight;  // 右の階段
+            return WarpDirection.Down;  // 中央の階段
+        }
+
+        // ダンジョン→ハブの場合
+        if (toStage.MapPosition.y == 0)
+        {
+            if (fromColumn == 0) return WarpDirection.UpRight;  // 左列からハブへ
+            if (fromColumn == 2) return WarpDirection.UpLeft;   // 右列からハブへ
+            return WarpDirection.Up;  // 中央列からハブへ
+        }
+
+        // 同じ列内での移動（通常の階段移動）
+        if (fromColumn == toColumn)
+        {
+            return goingDown ? WarpDirection.Down : WarpDirection.Up;
+        }
+
+        // 異なる列への移動（通常はないが念のため）
+        int dx = toColumn - fromColumn;
+        if (goingDown)
+        {
+            if (dx < 0) return WarpDirection.DownLeft;
+            if (dx > 0) return WarpDirection.DownRight;
+            return WarpDirection.Down;
+        }
+        else
+        {
+            if (dx < 0) return WarpDirection.UpLeft;
+            if (dx > 0) return WarpDirection.UpRight;
+            return WarpDirection.Up;
+        }
+    }
+
+    private Vector2Int FindStairUpPosition(StageSO stage)
+    {
+        if (stage == null) return stage.PlayerStartPosition;
+
+        // ステージ内でStairUpセルを探す
+        for (int y = 0; y < stage.Height; y++)
+        {
+            for (int x = 0; x < stage.Width; x++)
+            {
+                if (GetCellTypeAt(stage, new Vector2Int(x, y)) == CellType.StairUp)
+                {
+                    return new Vector2Int(x, y);
+                }
+            }
+        }
+
+        // 見つからなければ初期位置
+        return stage.PlayerStartPosition;
+    }
+
+    /// <summary>
+    /// Undo履歴をクリアする
+    /// </summary>
+    public void ClearUndoHistory()
+    {
+        commandManager.Warped();
+    }
+
+    /// <summary>
+    /// 全ステージの敵をリセット（初期位置に戻す）
+    /// </summary>
+    public void ResetAllEnemies()
+    {
+        CleanupAllEnemies();
+        loadedStageEnemyData.Clear();
+        pendingStageEnemies.Clear();
+    }
+
+    /// <summary>
+    /// プレイヤーのHPを最大まで回復する
+    /// </summary>
+    public void RestorePlayerHP()
+    {
+        if (unitManager.Player != null)
+        {
+            unitManager.Player.Revive();
+            unitManager.Player.SetHP(unitManager.Player.MaxHP);
+        }
     }
 
     /// <summary>
@@ -397,6 +767,18 @@ public class GridManager : MonoBehaviour
 
         int targetFloorIndex = targetStage.FloorIndex;
         Debug.Log($"[Stair] {cellType}: Floor {currentStageSO.FloorIndex} -> {targetFloorIndex} ({targetStage.StageName})");
+
+        // 到着先に敵がいる場合、プレイヤーの向きに押し出し可能かチェック
+        // プレイヤーは同じ座標に出現するので、playerPosをチェック
+        Direction playerDir = unitManager.Player.CurrentDirection;
+        if (IsPositionOccupiedInStage(targetStage, playerPos))
+        {
+            if (!CanPushChainInDirection(targetStage, playerPos, playerDir))
+            {
+                Debug.Log($"[Stair] Cannot take stairs: enemy at destination cannot be pushed");
+                return false;
+            }
+        }
 
         // 確認ダイアログを表示
         ShowStairConfirmationDialog(cellType, targetStage);
@@ -464,9 +846,24 @@ public class GridManager : MonoBehaviour
         // 次のステージでも同じ座標に出現するので、オフセットは0
         Vector2Int targetPlayerPos = currentPlayerPos;
 
-        // 次のステージに敵がいるかチェック（フェードアウト前に準備）
-        bool nextStageHasEnemy = CheckIfStageHasEnemy(targetStage);
+        // 階段のワープ方向を決定
+        WarpDirection stairWarpDir = DetermineStairWarpDirection(currentStageSO, targetStage, goingDown);
+
+        // 次のステージの遷移準備
         HashSet<Vector2Int> destroyed = destroyedWalls.ContainsKey(targetStage) ? destroyedWalls[targetStage] : null;
+
+        // チェイン押し出し処理をPrepareEnemiesForTransitionの前に実行
+        // （PrepareEnemiesForTransition内のEnsureStageEnemiesLoadedがloadedStageEnemyDataを消費するため）
+        List<(Vector2Int from, Vector2Int to)> pushMoves = null;
+        if (IsPositionOccupiedInStage(targetStage, targetPlayerPos))
+        {
+            var pushInfo = GetChainPushInfo(targetStage, targetPlayerPos, currentDirection);
+            if (pushInfo != null && pushInfo.Value.canPush)
+            {
+                pushMoves = pushInfo.Value.pushMoves;
+                PushChainInStageData(targetStage, pushMoves);
+            }
+        }
 
         // ===== 1. プレイヤーをフェードアウト（短め）=====
         if (unitManager.Player != null)
@@ -474,11 +871,11 @@ public class GridManager : MonoBehaviour
             await unitManager.Player.FadeOutAsync(0.15f, goingDown);
         }
 
-        // 階段遷移用のトランジション準備（同じ座標でアラインメント）
-        gridVisualizer.SetupStairTransitionTilemap(targetStage, goingDown, currentPlayerPos, targetPlayerPos, nextStageHasEnemy, destroyed, GameProgressManager.Instance.IsPositionCleared);
+        // 階段遷移用のトランジション準備（ワープ方向を使用）
+        gridVisualizer.SetupStairTransitionTilemapWithDirection(targetStage, stairWarpDir, currentPlayerPos, targetPlayerPos, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
         // 遷移先ステージの敵を準備
-        Vector3 transitionOffset = gridVisualizer.GetStairTransitionOffset(goingDown);
+        Vector3 transitionOffset = gridVisualizer.GetWarpTransitionOffset(stairWarpDir);
         PrepareEnemiesForTransition(targetStage, transitionOffset);
 
         // 現在のステージの敵を非表示に
@@ -499,7 +896,7 @@ public class GridManager : MonoBehaviour
 
         // プレイヤーの親を元に戻す（コマンド内でやるか、ここでやるか。コマンド内で一貫させる）
 
-        var cmd = new PlayerStairTransitionCommand(this, currentStageSO, targetStage, currentPlayerPos, currentDirection, targetPlayerPos, currentDirection);
+        var cmd = new PlayerStairTransitionCommand(this, currentStageSO, targetStage, currentPlayerPos, currentDirection, targetPlayerPos, currentDirection, pushMoves);
         commandManager.ExecuteCommand(cmd);
 
         // ===== 3. プレイヤーをフェードイン（短め）=====
@@ -507,6 +904,17 @@ public class GridManager : MonoBehaviour
         {
             await unitManager.Player.FadeInAsync(0.2f, goingDown);
         }
+
+        // 階段を降りた場合、対応するマップセルを解放
+        if (goingDown && targetStage != null)
+        {
+            int column = targetStage.StairColumn;
+            int depth = targetStage.MapPosition.y;
+            GameProgressManager.Instance.UnlockCellByStairDescent(column, depth);
+        }
+
+        // マップ状態を即座に更新
+        SyncWorldMapStatus();
 
         // オートセーブ（コマンド実行後にセーブされているはずだが、念のためタイミングはExecute内推奨）
 
@@ -527,8 +935,12 @@ public class GridManager : MonoBehaviour
         private Vector2Int targetPos;
         private Direction targetDir;
 
+        // チェイン押し出し情報（TakeStairAsyncで事前に実行済み、Undo用に保持）
+        private List<(Vector2Int from, Vector2Int to)> pushMoves;
+
         public PlayerStairTransitionCommand(GridManager gm, StageSO source, StageSO target,
-            Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir)
+            Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir,
+            List<(Vector2Int from, Vector2Int to)> pushMoves = null)
         {
             this.gm = gm;
             this.sourceStage = source;
@@ -537,10 +949,14 @@ public class GridManager : MonoBehaviour
             this.sourceDir = sDir;
             this.targetPos = tPos;
             this.targetDir = tDir;
+            this.pushMoves = pushMoves;
         }
 
         public void Execute()
         {
+            // 押し出しはTakeStairAsyncでPrepareEnemiesForTransitionの前に既に実行済み
+            // ここでは二重実行しない
+
             // 移動処理（ターゲット位置へ）
             PerformTransition(targetStage, targetPos, targetDir);
 
@@ -556,6 +972,12 @@ public class GridManager : MonoBehaviour
         public async UniTask UndoAsync()
         {
             PerformTransition(sourceStage, sourcePos, sourceDir);
+
+            // チェイン押し出しを元に戻す
+            if (pushMoves != null && pushMoves.Count > 0)
+            {
+                gm.UndoPushChainInStageData(targetStage, pushMoves);
+            }
         }
 
         private void PerformTransition(StageSO stage, Vector2Int p, Direction d)
@@ -575,6 +997,686 @@ public class GridManager : MonoBehaviour
             gm.LoadStage(stage, false, p, d, false);
         }
     }
+
+    #region Enemy Stair Transition
+    /// <summary>
+    /// 敵が階段マスに到達した際に、階段経由でステージ移動できるかチェックする
+    /// </summary>
+    public (StageSO targetStage, Vector2Int targetPos)? GetEnemyStairDestination(Enemy enemy, Vector2Int stairPos, Direction approachDirection)
+    {
+        if (currentStageSO == null) return null;
+
+        CellType cellType = GetCellTypeAt(currentStageSO, stairPos);
+        if (cellType != CellType.StairUp && cellType != CellType.StairDown)
+        {
+            return null;
+        }
+
+        StageSO targetStage = null;
+        Vector2Int targetStairPos = Vector2Int.zero;
+
+        StairConnectionData? connectionData = currentStageSO.GetStairConnectionData(stairPos);
+        if (connectionData != null)
+        {
+            targetStage = connectionData.Value.TargetStage;
+            targetStairPos = connectionData.Value.TargetPosition;
+            if (targetStairPos == Vector2Int.zero && connectionData.Value.Position != Vector2Int.zero)
+            {
+                targetStairPos = stairPos;
+            }
+        }
+        else
+        {
+            if (cellType == CellType.StairUp)
+            {
+                targetStage = currentStageSO.DefaultUpStage;
+                targetStairPos = stairPos;
+            }
+            else if (cellType == CellType.StairDown)
+            {
+                targetStage = currentStageSO.DefaultDownStage;
+                targetStairPos = stairPos;
+            }
+
+            if (targetStage == null && worldMapSO != null)
+            {
+                int currentFloor = currentStageSO.FloorIndex;
+                int targetFloor = cellType == CellType.StairUp ? currentFloor - 1 : currentFloor + 1;
+                targetStage = worldMapSO.GetStageByFloorIndex(targetFloor);
+                targetStairPos = stairPos;
+            }
+        }
+
+        if (targetStage == null)
+        {
+            return null;
+        }
+
+        // 敵は階段マス自体に留まる
+        Vector2Int targetPos = targetStairPos;
+
+        if (!IsWalkableAt(targetStage, targetPos))
+        {
+            return null;
+        }
+
+        // 階段位置に敵がいる場合、到着方向に押し出し可能かチェック
+        if (IsPositionOccupiedInStage(targetStage, targetPos))
+        {
+            if (!CanPushChainInDirection(targetStage, targetPos, approachDirection))
+            {
+                return null;
+            }
+        }
+
+        return (targetStage, targetPos);
+    }
+
+    private bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos)
+    {
+        if (stage == currentStageSO)
+        {
+            return unitManager.GetUnitAtPosition(pos) != null;
+        }
+
+        bool hasStageEnemies = stageEnemiesMap.ContainsKey(stage);
+
+        if (hasStageEnemies)
+        {
+            // stageEnemiesMapが存在する場合、インスタンスが権威あるソース
+            foreach (var enemy in stageEnemiesMap[stage])
+            {
+                if (enemy != null && !enemy.IsDead && enemy.CurrentPos == pos)
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Pending敵をチェック（階段移動で到着してまだstageEnemiesMapに入っていない敵）
+        if (pendingStageEnemies.TryGetValue(stage, out var pendingList))
+        {
+            foreach (var enemy in pendingList)
+            {
+                if (enemy != null && !enemy.IsDead && enemy.CurrentPos == pos)
+                {
+                    return true;
+                }
+            }
+        }
+
+        if (hasStageEnemies)
+        {
+            // stageEnemiesMapがある場合、loadedStageEnemyDataは追加データ（階段遷移で来た敵）のみチェック
+            // 初期配置の敵はstageEnemiesMapに既にインスタンス化されているので、データからは除外
+            if (loadedStageEnemyData.TryGetValue(stage, out var dataList))
+            {
+                foreach (var data in dataList)
+                {
+                    // index == -1 は階段遷移で追加された敵（初期配置のindexは0以上）
+                    if (!data.isDead && data.index == -1 && data.gridX == pos.x && data.gridY == pos.y)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        else if (loadedStageEnemyData.TryGetValue(stage, out var enemyDataList))
+        {
+            // stageEnemiesMapがない場合、loadedStageEnemyDataを全てチェック
+            foreach (var data in enemyDataList)
+            {
+                if (!data.isDead && data.gridX == pos.x && data.gridY == pos.y)
+                {
+                    return true;
+                }
+            }
+        }
+        else if (stage.EnemyStartData != null)
+        {
+            // どのデータソースもない場合のみ、初期配置データをフォールバックとしてチェック
+            foreach (var startData in stage.EnemyStartData)
+            {
+                if (startData.Position == pos) return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 指定位置の占有ユニットをチェイン（連鎖）で指定方向に押し出し可能かチェック
+    /// pushDir方向に連続して並ぶ全てのユニットを1マスずつ押し出す
+    /// </summary>
+    public bool CanPushChainInDirection(StageSO stage, Vector2Int pos, Direction pushDir)
+    {
+        if (!IsPositionOccupiedInStage(stage, pos)) return false;
+        Vector2Int dirVec = Utility.GetVectorFromDirection(pushDir);
+        Vector2Int current = pos;
+        // チェインの末端（空きマス）を探す
+        while (IsPositionOccupiedInStage(stage, current))
+        {
+            current += dirVec;
+        }
+        // 末端が歩行可能であれば全員押し出せる
+        return IsWalkableAt(stage, current);
+    }
+
+    /// <summary>
+    /// チェイン（連鎖）押し出し情報を返す
+    /// posから pushDir方向に連続する全ユニットを1マスずつ押し出す
+    /// pushMovesは最も遠いユニットから順に格納（位置衝突回避のため）
+    /// </summary>
+    public (bool canPush, List<(Vector2Int from, Vector2Int to)> pushMoves)? GetChainPushInfo(StageSO stage, Vector2Int pos, Direction pushDir)
+    {
+        if (!IsPositionOccupiedInStage(stage, pos)) return null;
+
+        Vector2Int dirVec = Utility.GetVectorFromDirection(pushDir);
+        List<Vector2Int> chain = new List<Vector2Int>();
+        Vector2Int current = pos;
+
+        // チェインを収集
+        while (IsPositionOccupiedInStage(stage, current))
+        {
+            chain.Add(current);
+            current += dirVec;
+        }
+
+        // 末端が歩行可能かチェック
+        bool canPush = IsWalkableAt(stage, current);
+
+        // 押し出しペアを構築（最も遠いユニットから順に）
+        var pushMoves = new List<(Vector2Int from, Vector2Int to)>();
+        for (int i = chain.Count - 1; i >= 0; i--)
+        {
+            pushMoves.Add((chain[i], chain[i] + dirVec));
+        }
+
+        return (canPush, pushMoves);
+    }
+
+    /// <summary>
+    /// 指定ステージ・位置にいる敵の向いている方向を取得
+    /// </summary>
+    private Direction? GetOccupantDirectionInStage(StageSO stage, Vector2Int pos)
+    {
+        // アクティブステージのユニット
+        if (stage == currentStageSO)
+        {
+            Unit unit = unitManager.GetUnitAtPosition(pos);
+            if (unit != null && unit is Enemy enemy && !enemy.IsDead)
+            {
+                return enemy.CurrentDirection;
+            }
+        }
+
+        // ロード済み敵データ
+        if (loadedStageEnemyData.TryGetValue(stage, out var dataList))
+        {
+            foreach (var data in dataList)
+            {
+                if (!data.isDead && data.gridX == pos.x && data.gridY == pos.y)
+                {
+                    return (Direction)data.direction;
+                }
+            }
+        }
+        else if (stage.EnemyStartData != null)
+        {
+            foreach (var startData in stage.EnemyStartData)
+            {
+                if (startData.Position == pos)
+                {
+                    return startData.Direction;
+                }
+            }
+        }
+
+        // Pending敵
+        if (pendingStageEnemies.TryGetValue(stage, out var pendingList))
+        {
+            foreach (var enemy in pendingList)
+            {
+                if (enemy != null && !enemy.IsDead && enemy.CurrentPos == pos)
+                {
+                    return enemy.CurrentDirection;
+                }
+            }
+        }
+
+        // ステージ敵マップ（非アクティブ）
+        if (stageEnemiesMap.TryGetValue(stage, out var enemyList))
+        {
+            foreach (var enemy in enemyList)
+            {
+                if (enemy != null && !enemy.IsDead && enemy.CurrentPos == pos)
+                {
+                    return enemy.CurrentDirection;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// loadedStageEnemyDataが未作成の場合、EnemyStartDataから初期化する
+    /// </summary>
+    private void EnsureLoadedStageEnemyDataInitialized(StageSO stage)
+    {
+        if (!loadedStageEnemyData.ContainsKey(stage))
+        {
+            loadedStageEnemyData[stage] = new List<EnemySaveData>();
+            if (!stageEnemiesMap.ContainsKey(stage) && stage.EnemyStartData != null)
+            {
+                int idx = 0;
+                foreach (var esd in stage.EnemyStartData)
+                {
+                    loadedStageEnemyData[stage].Add(new EnemySaveData
+                    {
+                        gridX = esd.Position.x,
+                        gridY = esd.Position.y,
+                        direction = (int)esd.Direction,
+                        isDead = false,
+                        currentHP = esd.MaxHP,
+                        maxHP = esd.MaxHP,
+                        enemyType = (int)esd.EnemyType,
+                        order = esd.SetActionOrder,
+                        index = idx++,
+                        ammo = esd.Ammo
+                    });
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 1体の敵の位置を更新する（全データソース対象）
+    /// </summary>
+    private void PushSingleOccupantInStageData(StageSO stage, Vector2Int fromPos, Vector2Int toPos)
+    {
+        bool foundInData = false, foundInPending = false, foundInMap = false;
+
+        // loadedStageEnemyData内のデータを更新
+        if (loadedStageEnemyData.TryGetValue(stage, out var dataList))
+        {
+            for (int i = 0; i < dataList.Count; i++)
+            {
+                var data = dataList[i];
+                if (!data.isDead && data.gridX == fromPos.x && data.gridY == fromPos.y)
+                {
+                    data.gridX = toPos.x;
+                    data.gridY = toPos.y;
+                    dataList[i] = data;
+                    foundInData = true;
+                    break;
+                }
+            }
+        }
+
+        // Pending敵のインスタンスも更新
+        if (pendingStageEnemies.TryGetValue(stage, out var pendingList))
+        {
+            foreach (var enemy in pendingList)
+            {
+                if (enemy != null && !enemy.IsDead && enemy.CurrentPos == fromPos)
+                {
+                    enemy.WarpTo(toPos, enemy.CurrentDirection);
+                    foundInPending = true;
+                    break;
+                }
+            }
+        }
+
+        // stageEnemiesMap内のインスタンスも更新
+        if (stageEnemiesMap.TryGetValue(stage, out var enemyList))
+        {
+            foreach (var enemy in enemyList)
+            {
+                if (enemy != null && !enemy.IsDead && enemy.CurrentPos == fromPos)
+                {
+                    enemy.WarpTo(toPos, enemy.CurrentDirection);
+                    foundInMap = true;
+                    break;
+                }
+            }
+        }
+
+        Debug.Log($"[PushSingle] {fromPos}->{toPos} foundInData={foundInData} foundInPending={foundInPending} foundInMap={foundInMap}");
+    }
+
+    /// <summary>
+    /// チェイン（連鎖）押し出しを実行する
+    /// pushMovesは最も遠いユニットから順に格納されている前提
+    /// </summary>
+    private void PushChainInStageData(StageSO stage, List<(Vector2Int from, Vector2Int to)> pushMoves)
+    {
+        Debug.Log($"[PushChain] Stage={stage.name}, moves={pushMoves.Count}, hasLoaded={loadedStageEnemyData.ContainsKey(stage)}, hasMap={stageEnemiesMap.ContainsKey(stage)}, hasPending={pendingStageEnemies.ContainsKey(stage)}");
+        // 初回訪問時（どのデータソースにも存在しない）のみ初期化
+        if (!loadedStageEnemyData.ContainsKey(stage) && !stageEnemiesMap.ContainsKey(stage) && !pendingStageEnemies.ContainsKey(stage))
+        {
+            EnsureLoadedStageEnemyDataInitialized(stage);
+            Debug.Log($"[PushChain] Initialized loadedStageEnemyData from EnemyStartData, count={loadedStageEnemyData[stage].Count}");
+        }
+        foreach (var (from, to) in pushMoves)
+        {
+            Debug.Log($"[PushChain] Push from {from} to {to}");
+            PushSingleOccupantInStageData(stage, from, to);
+        }
+    }
+
+    /// <summary>
+    /// チェイン押し出しを元に戻す（Undo用）
+    /// pushMovesの逆順で、from/toを入れ替えて実行する
+    /// 既存のデータソースのみ更新し、新規データは作成しない
+    /// </summary>
+    private void UndoPushChainInStageData(StageSO stage, List<(Vector2Int from, Vector2Int to)> pushMoves)
+    {
+        Debug.Log($"[UndoPushChain] Stage={stage.name}, moves={pushMoves.Count}, hasLoaded={loadedStageEnemyData.ContainsKey(stage)}, hasMap={stageEnemiesMap.ContainsKey(stage)}, hasPending={pendingStageEnemies.ContainsKey(stage)}");
+        // Undo時は初期化しない（既存のデータソースのみ更新）
+        // 逆順で元に戻す（最も近いユニットから順に戻す）
+        for (int i = pushMoves.Count - 1; i >= 0; i--)
+        {
+            var (from, to) = pushMoves[i];
+            Debug.Log($"[UndoPushChain] Undo: move from {to} back to {from}");
+            PushSingleOccupantInStageData(stage, to, from);
+        }
+
+        // stageEnemiesMapが存在する場合、loadedStageEnemyDataの初期配置データは
+        // stageEnemiesMapと重複するゴーストデータなので削除する
+        if (stageEnemiesMap.ContainsKey(stage) && loadedStageEnemyData.TryGetValue(stage, out var dataList))
+        {
+            int before = dataList.Count;
+            // index >= 0 の初期配置データを除去（index == -1 は階段遷移の追加データなので残す）
+            dataList.RemoveAll(d => d.index >= 0);
+            Debug.Log($"[UndoPushChain] Cleaned loadedStageEnemyData: {before} -> {dataList.Count}");
+            if (dataList.Count == 0)
+            {
+                loadedStageEnemyData.Remove(stage);
+                Debug.Log($"[UndoPushChain] Removed empty loadedStageEnemyData for {stage.name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 敵を階段経由で別ステージに移動させる
+    /// </summary>
+    public async UniTask MoveEnemyToStage(Enemy enemy, StageSO targetStage, Vector2Int targetPos, Direction direction)
+    {
+        if (enemy == null || targetStage == null) return;
+
+        AudioManager.Instance.PlaySE(AudioManager.SEType.warp);
+
+        bool goingDown = false;
+        if (currentStageSO != null)
+        {
+            CellType cell = GetCellTypeAtLogic(currentStageSO, enemy.CurrentPos);
+            if (cell == CellType.StairDown) goingDown = true;
+        }
+
+        await enemy.FadeOutAsync(0.15f, goingDown);
+
+        var cmd = new EnemyStairTransitionCommand(this, enemy, currentStageSO, targetStage, targetPos, direction);
+        commandManager.ExecuteCommand(cmd);
+    }
+
+    private class EnemyStairTransitionCommand : ICommand, IAsyncUndoCommand
+    {
+        private GridManager gm;
+        private Enemy targetEnemy;
+        private StageSO sourceStage;
+        private StageSO targetStage;
+        private EnemySaveData movedData;
+        private EnemySaveData restoreData;
+        private bool isExecuted = false;
+
+        // チェイン押し出し情報
+        private List<(Vector2Int from, Vector2Int to)> chainPushMoves;
+
+        public EnemyStairTransitionCommand(GridManager gm, Enemy enemy, StageSO source, StageSO target, Vector2Int targetPos, Direction dir)
+        {
+            this.gm = gm;
+            this.targetEnemy = enemy;
+            this.sourceStage = source ?? gm.currentStageSO;
+            this.targetStage = target;
+
+            this.movedData = new EnemySaveData
+            {
+                gridX = targetPos.x,
+                gridY = targetPos.y,
+                direction = (int)dir,
+                isDead = false,
+                currentHP = enemy.HP.Value,
+                aiState = enemy.EnemyAI != null ? enemy.EnemyAI.GetState() : 0,
+                enemyType = (int)enemy.Type,
+                order = enemy.Order,
+                maxHP = enemy.MaxHP,
+                index = -1,
+                ammo = enemy.CurrentAmmo.Value
+            };
+
+            this.restoreData = new EnemySaveData
+            {
+                gridX = enemy.CurrentPos.x,
+                gridY = enemy.CurrentPos.y,
+                direction = (int)enemy.CurrentDirection,
+                isDead = false,
+                currentHP = enemy.HP.Value,
+                aiState = enemy.EnemyAI != null ? enemy.EnemyAI.GetState() : 0,
+                enemyType = (int)enemy.Type,
+                order = enemy.Order,
+                maxHP = enemy.MaxHP,
+                index = -1,
+                ammo = enemy.CurrentAmmo.Value
+            };
+
+            // チェイン押し出し情報を事前計算（到着ユニットの方向で押し出す）
+            var pushInfo = gm.GetChainPushInfo(target, targetPos, dir);
+            if (pushInfo != null && pushInfo.Value.canPush)
+            {
+                chainPushMoves = pushInfo.Value.pushMoves;
+            }
+        }
+
+        public void Execute()
+        {
+            if (targetEnemy != null)
+            {
+                if (gm.stageEnemiesMap.ContainsKey(sourceStage))
+                {
+                    gm.stageEnemiesMap[sourceStage].Remove(targetEnemy);
+                }
+
+                gm.unitManager.RemoveEnemy(targetEnemy);
+
+                targetEnemy.WarpTo(new Vector2Int(movedData.gridX, movedData.gridY), (Direction)movedData.direction);
+                targetEnemy.gameObject.SetActive(false);
+                targetEnemy.transform.SetParent(gm.transform);
+
+                // ※ pendingへの追加はchainPushの後に行う（pushが新到着ユニットを巻き込まないようにするため）
+            }
+
+            if (!gm.loadedStageEnemyData.ContainsKey(targetStage))
+            {
+                gm.loadedStageEnemyData[targetStage] = new List<EnemySaveData>();
+
+                if (!gm.stageEnemiesMap.ContainsKey(targetStage))
+                {
+                    if (targetStage.EnemyStartData != null)
+                    {
+                        int idx = 0;
+                        foreach (var esd in targetStage.EnemyStartData)
+                        {
+                            gm.loadedStageEnemyData[targetStage].Add(new EnemySaveData
+                            {
+                                gridX = esd.Position.x,
+                                gridY = esd.Position.y,
+                                direction = (int)esd.Direction,
+                                isDead = false,
+                                currentHP = esd.MaxHP,
+                                maxHP = esd.MaxHP,
+                                enemyType = (int)esd.EnemyType,
+                                order = esd.SetActionOrder,
+                                index = idx++,
+                                ammo = esd.Ammo
+                            });
+                        }
+                    }
+                }
+            }
+
+            // チェイン押し出し処理（既存の敵のみ対象、新到着ユニットはまだpending/dataに追加していない）
+            if (chainPushMoves != null && chainPushMoves.Count > 0)
+            {
+                gm.PushChainInStageData(targetStage, chainPushMoves);
+            }
+
+            // 押し出し後にpendingへ追加（pushに巻き込まれないことを保証）
+            if (targetEnemy != null)
+            {
+                gm.AddPendingEnemy(targetStage, targetEnemy);
+            }
+
+            // 押し出し後にデータ追加（新到着ユニットはstair位置に配置）
+            // 移動先ステージの全敵の最大Orderを算出（全データソース対象）
+            int maxOrder = 0;
+
+            // loadedStageEnemyData
+            if (gm.loadedStageEnemyData.TryGetValue(targetStage, out var targetList))
+            {
+                foreach (var d in targetList)
+                {
+                    if (!d.isDead && d.order > maxOrder) maxOrder = d.order;
+                }
+            }
+
+            // stageEnemiesMap（実体化済み敵）
+            if (gm.stageEnemiesMap.TryGetValue(targetStage, out var stageEnemies))
+            {
+                foreach (var e in stageEnemies)
+                {
+                    if (e != null && !e.IsDead && e.Order > maxOrder) maxOrder = e.Order;
+                }
+            }
+
+            // pendingStageEnemies（遷移待ち敵）
+            if (gm.pendingStageEnemies.TryGetValue(targetStage, out var pendingEnemies))
+            {
+                foreach (var e in pendingEnemies)
+                {
+                    if (e != null && !e.IsDead && e != targetEnemy && e.Order > maxOrder) maxOrder = e.Order;
+                }
+            }
+
+            var newData = movedData;
+            newData.order = maxOrder + 1;
+            movedData = newData;
+
+            // 敵インスタンスのOrderも更新
+            if (targetEnemy != null)
+            {
+                targetEnemy.SetOrder(movedData.order);
+            }
+
+            gm.loadedStageEnemyData[targetStage].Add(movedData);
+            isExecuted = true;
+        }
+
+        public void Undo()
+        {
+            UndoAsync().Forget();
+        }
+
+        public async UniTask UndoAsync()
+        {
+            if (!isExecuted) return;
+
+            // 1. ターゲットステージからデータを削除
+            if (gm.loadedStageEnemyData.ContainsKey(targetStage))
+            {
+                var list = gm.loadedStageEnemyData[targetStage];
+                int removeIdx = -1;
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    var d = list[i];
+                    if (d.gridX == movedData.gridX && d.gridY == movedData.gridY && d.enemyType == movedData.enemyType)
+                    {
+                        removeIdx = i;
+                        break;
+                    }
+                }
+                if (removeIdx >= 0)
+                {
+                    list.RemoveAt(removeIdx);
+                }
+            }
+
+            // Pendingリストからも削除
+            if (gm.pendingStageEnemies.ContainsKey(targetStage))
+            {
+                gm.pendingStageEnemies[targetStage].Remove(targetEnemy);
+            }
+
+            // ターゲットステージの敵リストからも削除（プレイヤーがそのステージに移動していた場合）
+            if (gm.stageEnemiesMap.ContainsKey(targetStage) && gm.stageEnemiesMap[targetStage].Contains(targetEnemy))
+            {
+                gm.stageEnemiesMap[targetStage].Remove(targetEnemy);
+            }
+
+            // 2. 敵を元のステージへ復帰
+            if (targetEnemy != null)
+            {
+                targetEnemy.SetHP(restoreData.currentHP);
+                targetEnemy.SetOrder(restoreData.order);
+                if (targetEnemy.CurrentAmmo != null) targetEnemy.SetAmmo(restoreData.ammo);
+                if (targetEnemy.EnemyAI != null) targetEnemy.EnemyAI.SetState(restoreData.aiState);
+
+                if (gm.currentStageSO == sourceStage)
+                {
+                    // プレイヤーがソースステージにいる: 敵を即座に復元
+                    targetEnemy.WarpTo(new Vector2Int(restoreData.gridX, restoreData.gridY), (Direction)restoreData.direction);
+                    targetEnemy.transform.SetParent(gm.gridVisualizer.GridParent);
+                    targetEnemy.gameObject.SetActive(true);
+
+                    targetEnemy.SetDissolveAmount(1f);
+                    await targetEnemy.FadeInAsync(0.15f, false);
+
+                    gm.unitManager.AddEnemy(targetEnemy);
+                    if (!gm.stageEnemiesMap.ContainsKey(sourceStage))
+                    {
+                        gm.stageEnemiesMap[sourceStage] = new List<Enemy>();
+                    }
+                    if (!gm.stageEnemiesMap[sourceStage].Contains(targetEnemy))
+                    {
+                        gm.stageEnemiesMap[sourceStage].Add(targetEnemy);
+                    }
+                    gm.unitManager.SortEnemiesByOrder();
+                }
+                else
+                {
+                    // プレイヤーが別のステージにいる: Pendingに入れてデータを復元
+                    targetEnemy.WarpTo(new Vector2Int(restoreData.gridX, restoreData.gridY), (Direction)restoreData.direction);
+                    targetEnemy.gameObject.SetActive(false);
+                    targetEnemy.transform.SetParent(gm.transform);
+
+                    gm.AddPendingEnemy(sourceStage, targetEnemy);
+
+                    if (!gm.loadedStageEnemyData.ContainsKey(sourceStage))
+                    {
+                        gm.loadedStageEnemyData[sourceStage] = new List<EnemySaveData>();
+                    }
+                    gm.loadedStageEnemyData[sourceStage].Add(restoreData);
+                }
+            }
+
+            // チェイン押し出しを元に戻す
+            if (chainPushMoves != null && chainPushMoves.Count > 0)
+            {
+                gm.UndoPushChainInStageData(targetStage, chainPushMoves);
+            }
+        }
+    }
+    #endregion
 
     private bool IsWalkableType(CellType cellType)
     {
@@ -879,6 +1981,10 @@ public class GridManager : MonoBehaviour
             // Update visual position to match logical position (in case it moved while inactive/background)
             enemy.WarpTo(enemy.CurrentPos, enemy.CurrentDirection);
 
+            // DissolveAmountをリセット（階段移動後にフェードアウト状態のままになっている場合に対応）
+            // 0 = 見える, 1 = 見えない
+            enemy.SetDissolveAmount(0f);
+
             // ロード直後の「死んでいるけどActiveでありたい」要件を満たすため、SetActive(true)した上で見た目を調整
             if (enemy.IsDead)
             {
@@ -962,7 +2068,7 @@ public class GridManager : MonoBehaviour
         }
 
         gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
-        UpdateWarpTiles(true);
+        OnEnemyStateChanged(true);
     }
 
     public CellType GetCellTypeAt(StageSO stage, Vector2Int pos)
@@ -1004,7 +2110,7 @@ public class GridManager : MonoBehaviour
                     // Visualizer update (Might need a method to update single tile, but Refresh is safe)
                     // Optimization: Add UpdateTile(x, y, type) to Visualizer later if needed.
                     gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
-                    UpdateWarpTiles();
+                    OnEnemyStateChanged();
                 }
             }
 
@@ -1075,7 +2181,7 @@ public class GridManager : MonoBehaviour
                          // Re-read default
                          cellData[pos.x, pos.y] = stage.GetWallAt(pos.x, pos.y);
                          gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
-                         UpdateWarpTiles();
+                         OnEnemyStateChanged();
                      }
                 }
             }
@@ -1122,16 +2228,16 @@ public class GridManager : MonoBehaviour
         GameProgressManager.Instance.UpdateStageStatus(coords, isCurrent, isCleared, worldMapSO);
     }
 
-    private void UpdateWarpTiles(bool quiet = false)
+    private bool previousEnemyAliveState = true;
+
+    private void OnEnemyStateChanged(bool quiet = false)
     {
         bool hasAliveEnemy = unitManager.HasAliveEnemy();
 
-        bool currentWarpState = hasAliveEnemy;
-        bool stateChanged = previousWarpState != currentWarpState;
+        bool currentState = hasAliveEnemy;
+        bool stateChanged = previousEnemyAliveState != currentState;
 
         SyncWorldMapStatus();
-
-        gridVisualizer.UpdateWarpTiles(width, height, cellData, hasAliveEnemy, isTransitioning, stateChanged);
 
         if (!quiet && stateChanged)
         {
@@ -1142,17 +2248,35 @@ public class GridManager : MonoBehaviour
             gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0.5f, true);
         }
 
-        previousWarpState = currentWarpState;
+        previousEnemyAliveState = currentState;
     }
 
     private void SyncWorldMapStatus()
     {
-        if (worldMapSO == null || currentStageSO == null) return;
+        if (currentStageSO == null) return;
+
+        bool isCleared = !unitManager.HasAliveEnemy();
+
+        // 階層マップでクリア状態をマーク（永続的）
+        if (isCleared)
+        {
+            Vector2Int mapPos = currentStageSO.MapPosition;
+            bool wasAlreadyCleared = GameProgressManager.Instance.IsHierarchicalCellCleared(mapPos);
+            GameProgressManager.Instance.MarkHierarchicalCellAsCleared(mapPos);
+
+            // 初めてクリアした場合はオートセーブ
+            if (!wasAlreadyCleared)
+            {
+                SaveGame(GameProgressManager.SaveType.Auto);
+                Debug.Log($"Auto-saved: Stage at {mapPos} cleared for the first time");
+            }
+        }
+
+        // 旧マップシステム（互換性のため）
+        if (worldMapSO == null) return;
 
         Vector2Int coords = worldMapSO.GetStageCoordinates(currentStageSO);
         if (coords.x == -1) return;
-
-        bool isCleared = !unitManager.HasAliveEnemy();
 
         bool isNewAreaUnlocked = GameProgressManager.Instance.UpdateStageStatus(coords, true, isCleared, worldMapSO);
 
@@ -1163,7 +2287,7 @@ public class GridManager : MonoBehaviour
     // まだ完全移行できていない部分のために残すか、ラッパーとして残す
     public void UpdateWarpTilesPublic()
     {
-        UpdateWarpTiles();
+        OnEnemyStateChanged();
     }
 
     private void GeneratePlayer(StageSO stage, Vector2Int pos, Direction dir)
@@ -1341,11 +2465,9 @@ public class GridManager : MonoBehaviour
         // 1. まずloadedStageEnemyData（未訪問だがロード済みのデータ）をそのまま追加
         foreach (var kvp in loadedStageEnemyData)
         {
-            Vector2Int coords = worldMapSO.GetStageCoordinates(kvp.Key);
-            if (coords.x != -1)
-            {
-                allStagesEnemies.Add(new StageEnemyData { stageX = coords.x, stageY = coords.y, enemies = kvp.Value });
-            }
+            // 階層マップのMapPositionを使用
+            Vector2Int coords = kvp.Key.MapPosition;
+            allStagesEnemies.Add(new StageEnemyData { stageX = coords.x, stageY = coords.y, enemies = kvp.Value });
         }
 
         // 2. 次にstageEnemiesMap（訪問済み・実体化済み）を追加。重複がある場合はこちらを優先（上書き）
@@ -1354,13 +2476,8 @@ public class GridManager : MonoBehaviour
             StageSO stage = kvp.Key;
             List<Enemy> enemies = kvp.Value;
 
-            // 現在のステージの場合は、UnitManagerの最新リストを使う必要があるかもしれないが、
-            // UnitManager.Enemiesの実体はstageEnemiesMap[currentStage]と同じ参照リストのはず。
-            // 念のためcurrentStageの場合はUnitManagerから取得するか、参照が同じならそのまま使う。
-            // Debug確認: stageEnemiesMap[current] == unitManager.Enemies は true になる設計。
-
-            Vector2Int coords = worldMapSO.GetStageCoordinates(stage);
-            if (coords.x == -1) continue;
+            // 階層マップのMapPositionを使用
+            Vector2Int coords = stage.MapPosition;
 
             // 既存リストから削除（もしloadedにあれば）
             allStagesEnemies.RemoveAll(d => d.stageX == coords.x && d.stageY == coords.y);
@@ -1393,18 +2510,16 @@ public class GridManager : MonoBehaviour
         List<StageWallData> allStagesWalls = new List<StageWallData>();
         foreach (var kvp in destroyedWalls)
         {
-            Vector2Int coords = worldMapSO.GetStageCoordinates(kvp.Key);
-            if (coords.x != -1)
+            // 階層マップのMapPositionを使用
+            Vector2Int coords = kvp.Key.MapPosition;
+            List<Vector2IntData> walls = new List<Vector2IntData>();
+            foreach (var wallPos in kvp.Value)
             {
-                List<Vector2IntData> walls = new List<Vector2IntData>();
-                foreach (var wallPos in kvp.Value)
-                {
-                    walls.Add(new Vector2IntData(wallPos));
-                }
-                allStagesWalls.Add(new StageWallData { stageX = coords.x, stageY = coords.y, destroyedWalls = walls });
+                walls.Add(new Vector2IntData(wallPos));
             }
+            allStagesWalls.Add(new StageWallData { stageX = coords.x, stageY = coords.y, destroyedWalls = walls });
         }
-        Debug.Log($"[GridManager] Saving: Captured {allStagesWalls.Count} stages with destroyed walls.");
+        Debug.Log($"[GridManager] Saving: Captured {allStagesEnemies.Count} stages with enemies, {allStagesWalls.Count} stages with destroyed walls.");
 
         GameProgressManager.Instance.SaveProgress(
             unitManager.Player.CurrentPos,
@@ -1432,7 +2547,9 @@ public class GridManager : MonoBehaviour
             {
                 foreach (var wallData in GameProgressManager.Instance.SavedAllStagesWalls)
                 {
-                    StageSO stage = worldMapSO.GetStageAt(wallData.stageX, wallData.stageY);
+                    // MapPositionからステージを検索
+                    Vector2Int mapPos = new Vector2Int(wallData.stageX, wallData.stageY);
+                    StageSO stage = worldMapSO.GetStageByMapPosition(mapPos);
                     if (stage != null)
                     {
                         HashSet<Vector2Int> walls = new HashSet<Vector2Int>();
@@ -1449,21 +2566,25 @@ public class GridManager : MonoBehaviour
             {
                 foreach (var stageData in GameProgressManager.Instance.SavedAllStagesEnemies)
                 {
-                    StageSO stage = worldMapSO.GetStageAt(stageData.stageX, stageData.stageY);
+                    // MapPositionからステージを検索
+                    Vector2Int mapPos = new Vector2Int(stageData.stageX, stageData.stageY);
+                    StageSO stage = worldMapSO.GetStageByMapPosition(mapPos);
                     if (stage != null)
                     {
                         loadedStageEnemyData[stage] = stageData.enemies;
                     }
                 }
             }
+            Debug.Log($"[GridManager] Loaded: Restored enemy data for {loadedStageEnemyData.Count} stages.");
 
             // Load Initial Stage (Current Stage) based on saved map pos
-            Vector2Int mapPos = GameProgressManager.Instance.GetCurrentMapPosition();
-            StageSO savedStage = worldMapSO.GetStageAt(mapPos.x, mapPos.y);
+            Vector2Int currentMapPos = GameProgressManager.Instance.GetCurrentMapPosition();
+            StageSO savedStage = worldMapSO.GetStageByMapPosition(currentMapPos);
 
             if (savedStage != null)
             {
                 currentStageSO = savedStage;
+                initialStageSO = savedStage;
                 currentResetMapPos = GameProgressManager.Instance.SavedResetMapPos;
 
                 Vector2Int startPos = GameProgressManager.Instance.SavedPlayerGridPos;
@@ -1473,8 +2594,6 @@ public class GridManager : MonoBehaviour
                 // Load Stage (This will spawn player and enemies)
                 LoadStage(currentStageSO, false, startPos, startDir);
 
-                // direction is already set by LoadStage -> GeneratePlayer/WarpToNewStage using startDir
-                // unitManager.Player.SetDirection(startDir); // Redundant now but harmless
                 unitManager.Player.SetHP(playerHP);
 
                 commandManager.Warped(); // Clear undo stack

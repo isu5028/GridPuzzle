@@ -39,6 +39,14 @@ public class EnemyAIChaserRanged : EnemyAI
             MoveCommand moveCommand = new MoveCommand(enemy, currentPos, nextPos, currentDirection, moveDir);
             commandManager.ExecuteCommand(moveCommand);
             if(GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+
+            // 階段遷移チェック
+            var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, moveDir);
+            if (transition != null)
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, moveDir);
+            }
         }
         else
         {

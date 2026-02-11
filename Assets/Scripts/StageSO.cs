@@ -10,6 +10,15 @@ public class StageSO : ScriptableObject
     [SerializeField] private int height = 9;
     [SerializeField] private int floorIndex = 0;  // フロアインデックス（0が最上階、大きいほど下）
 
+    [Header("Hierarchical Map Position")]
+    [Tooltip("階層マップでの位置 (x=列0-2, y=行0-6、0=ハブ)")]
+    [SerializeField] private Vector2Int mapPosition = new Vector2Int(1, 0);
+    public Vector2Int MapPosition => mapPosition;
+
+    [Tooltip("このステージに接続する階段の列 (0=左, 1=中央, 2=右)")]
+    [SerializeField] private int stairColumn = 1;
+    public int StairColumn => stairColumn;
+
     [Header("Grid Layout")]
     [SerializeField] private CellType[] cellData;
     [SerializeField] private Vector2Int syncMapOffset = Vector2Int.zero;
@@ -129,13 +138,13 @@ public class StageSO : ScriptableObject
     {
         playerStartPosition = position;
 
-        // プレイヤーの初期位置をWarpタイルに設定
+        // プレイヤーの初期位置をFloorタイルに設定
         if (cellData != null)
         {
             int index = position.y * width + position.x;
             if (index >= 0 && index < cellData.Length)
             {
-                cellData[index] = CellType.Warp;
+                cellData[index] = CellType.Floor;
             }
         }
     }
@@ -182,14 +191,14 @@ public class StageSO : ScriptableObject
             cellData = newData;
         }
 
-        // プレイヤーの初期位置をWarpタイルに設定
+        // プレイヤーの初期位置をFloorタイルに設定
         if (cellData != null && playerStartPosition.x >= 0 && playerStartPosition.x < width &&
             playerStartPosition.y >= 0 && playerStartPosition.y < height)
         {
             int index = playerStartPosition.y * width + playerStartPosition.x;
             if (index >= 0 && index < cellData.Length)
             {
-                cellData[index] = CellType.Warp;
+                cellData[index] = CellType.Floor;
             }
         }
 

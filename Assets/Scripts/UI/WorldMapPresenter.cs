@@ -97,8 +97,23 @@ public class WorldMapPresenter : MonoBehaviour
 
         // 開くときに最新データで更新
         view.RefreshMap(model.GetAllMapData());
-        // カーソルを現在位置へ
-        cursorPosition = model.GetCurrentPlayerPosition();
+
+        // カーソルを現在のステージの位置へ
+        StageSO currentStage = gridManager.CurrentStageSO;
+        if (currentStage != null)
+        {
+            cursorPosition = currentStage.MapPosition;
+        }
+        else
+        {
+            cursorPosition = new Vector2Int(1, 0); // ハブ
+        }
+
+        // 現在位置が無効な場合はハブへ
+        if (!model.IsValidPosition(cursorPosition))
+        {
+            cursorPosition = new Vector2Int(1, 0); // ハブ
+        }
         view.UpdateCursorPosition(cursorPosition);
 
         AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
@@ -160,64 +175,86 @@ public class WorldMapPresenter : MonoBehaviour
 
     private void ApplyMove(Direction direction)
     {
-        int dx = 0;
-        int dy = 0;
+        Vector2Int nextPos = cursorPosition;
 
         switch (direction)
         {
-            case Direction.Right: dx = 1; break;
-            case Direction.Left: dx = -1; break;
-            case Direction.Up: dy = 1; break;
-            case Direction.Down: dy = -1; break;
+            case Direction.Right:
+                nextPos = new Vector2Int(cursorPosition.x + 1, cursorPosition.y);
+                break;
+            case Direction.Left:
+                nextPos = new Vector2Int(cursorPosition.x - 1, cursorPosition.y);
+                break;
+            case Direction.Up:
+                nextPos = new Vector2Int(cursorPosition.x, cursorPosition.y - 1);
+                // row=0がハブなので、上に行くとrow減少
+                break;
+            case Direction.Down:
+                nextPos = new Vector2Int(cursorPosition.x, cursorPosition.y + 1);
+                break;
         }
 
-        // X方向トライ
-        if (dx != 0)
+        // ハブ（row=0）からの移動特殊処理
+        if (cursorPosition.y == 0)
         {
-            int width = model.MapWidth;
-            Vector2Int nextPos = new Vector2Int((cursorPosition.x + dx + width) % width, cursorPosition.y);
-            // ★Modelに問い合わせる（Unknownチェックなど）
-            if (model.IsTraversable(nextPos))
+            // ハブから下へ: 各列のB1Fへ移動可能（解放されていれば）
+            if (direction == Direction.Down)
             {
-                cursorPosition = nextPos;
-                AudioManager.Instance?.PlaySE(AudioManager.SEType.move);
+                // 左・中央・右のどれかに移動
+                // デフォルトは中央の列
+                nextPos = new Vector2Int(1, 1);
+            }
+            else if (direction == Direction.Left)
+            {
+                nextPos = new Vector2Int(0, 1);
+            }
+            else if (direction == Direction.Right)
+            {
+                nextPos = new Vector2Int(2, 1);
             }
         }
-
-        // Y方向トライ
-        if (dy != 0)
+        // ダンジョンからハブへの移動
+        else if (cursorPosition.y == 1 && direction == Direction.Up)
         {
-            int height = model.MapHeight;
-            // X移動後の座標を基準にするか、XY独立か。現在のロジックではX移動後のcursorPositionを使っているのでそれに従う
-            Vector2Int nextPos = new Vector2Int(cursorPosition.x, (cursorPosition.y + dy + height) % height);
-            // ★Modelに問い合わせる
-            if (model.IsTraversable(nextPos))
-            {
-                cursorPosition = nextPos;
-                if (dx == 0) AudioManager.Instance?.PlaySE(AudioManager.SEType.move);
-            }
+            nextPos = new Vector2Int(1, 0); // ハブへ
         }
 
-        // Viewへ反映
-        view.UpdateCursorPosition(cursorPosition);
+        // 有効な位置かチェック
+        if (model.IsValidPosition(nextPos) && view.IsValidPosition(nextPos))
+        {
+            cursorPosition = nextPos;
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.move);
+            view.UpdateCursorPosition(cursorPosition);
+        }
     }
 
     private void HandleSelection()
     {
         if (selectAction.triggered)
         {
-            // Unknownでなければ選択可能
-            if (model.GetCellType(cursorPosition) != WorldMapCellType.Unknown)
+            // ハブの場合
+            if (model.IsHubPosition(cursorPosition))
+            {
+                StageSO hubStage = model.GetStageAt(cursorPosition);
+                if (hubStage != null)
+                {
+                    AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
+                    WarpToStageWithReset(hubStage);
+                    CloseMapAndResumeAsync().Forget();
+                }
+                return;
+            }
+
+            // ダンジョンセルの場合
+            var cellType = model.GetCellType(cursorPosition);
+            if (cellType != WorldMapCellType.Unknown && model.IsTraversable(cursorPosition))
             {
                 StageSO targetStage = model.GetStageAt(cursorPosition);
 
                 if (targetStage != null)
                 {
-                    //Debug.Log($"Warping to: {targetStage.name}");
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
-
-                    gridManager.WarpToStage(targetStage);
-
+                    WarpToStageWithReset(targetStage);
                     CloseMapAndResumeAsync().Forget();
                 }
             }
@@ -225,6 +262,32 @@ public class WorldMapPresenter : MonoBehaviour
             {
                 AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
             }
+        }
+    }
+
+    /// <summary>
+    /// ステージにワープし、全敵をリセット、プレイヤーHP回復、Undo履歴削除
+    /// </summary>
+    private void WarpToStageWithReset(StageSO targetStage)
+    {
+        // Undo履歴をクリア
+        gridManager.ClearUndoHistory();
+
+        // 全ステージの敵をリセット
+        gridManager.ResetAllEnemies();
+
+        // プレイヤーHP回復
+        gridManager.RestorePlayerHP();
+
+        // ハブの場合は初期位置、ダンジョンの場合は上り階段の位置にワープ
+        if (model.IsHubPosition(cursorPosition))
+        {
+            gridManager.WarpToStage(targetStage);
+        }
+        else
+        {
+            // 上り階段の位置を取得してワープ
+            gridManager.WarpToStageAtStairUp(targetStage);
         }
     }
 

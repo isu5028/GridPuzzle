@@ -29,6 +29,10 @@ public class SaveData
     public List<Vector2IntData> clearedList = new List<Vector2IntData>();
     public List<Vector2IntData> visitedList = new List<Vector2IntData>();
 
+    // --- 階層マップ情報 ---
+    public List<Vector2IntData> hierarchicalUnlockedCells = new List<Vector2IntData>();
+    public List<Vector2IntData> hierarchicalClearedCells = new List<Vector2IntData>();
+
     // --- ステージ内のプレイヤー情報 ---
     public int playerGridX;
     public int playerGridY;

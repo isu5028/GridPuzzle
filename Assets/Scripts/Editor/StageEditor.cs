@@ -264,6 +264,39 @@ public class StageEditor : Editor
 
         EditorGUILayout.Space(10);
 
+        // --- ワールドマップ位置設定 ---
+        EditorGUILayout.LabelField("ワールドマップ位置設定", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
+
+        SerializedProperty mapPositionProp = serializedObject.FindProperty("mapPosition");
+        SerializedProperty stairColumnProp = serializedObject.FindProperty("stairColumn");
+
+        EditorGUILayout.PropertyField(mapPositionProp, new GUIContent("マップ位置", "階層マップでの位置 (X=列0-2, Y=行0-6、0=ハブ)"));
+
+        // StairColumnをドロップダウンで選択
+        string[] columnOptions = { "0 - 左の階段", "1 - 中央の階段", "2 - 右の階段" };
+        int currentColumn = stairColumnProp.intValue;
+        currentColumn = Mathf.Clamp(currentColumn, 0, 2);
+        int newColumn = EditorGUILayout.Popup(new GUIContent("階段列", "このステージに接続する階段の列"), currentColumn, columnOptions);
+        if (newColumn != stairColumnProp.intValue)
+        {
+            stairColumnProp.intValue = newColumn;
+        }
+
+        // ヘルプボックスで説明
+        EditorGUILayout.HelpBox(
+            "マップ位置の設定:\n" +
+            "• ハブ: (1, 0)\n" +
+            "• 左列B1F: (0, 1), 左列B2F: (0, 2)...\n" +
+            "• 中央列B1F: (1, 1), 中央列B2F: (1, 2)...\n" +
+            "• 右列B1F: (2, 1), 右列B2F: (2, 2)...",
+            MessageType.Info
+        );
+
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(10);
+
         // --- 階層マップ設定 ---
         EditorGUILayout.LabelField("階層マップ設定 (上下階接続)", EditorStyles.boldLabel);
         EditorGUILayout.BeginVertical("Box");

@@ -39,6 +39,23 @@ public class WorldMapSO : ScriptableObject
         return allStages ?? new List<StageSO>();
     }
 
+    /// <summary>
+    /// MapPositionからステージを検索
+    /// </summary>
+    public StageSO GetStageByMapPosition(Vector2Int mapPos)
+    {
+        if (allStages == null) return null;
+
+        foreach (var stage in allStages)
+        {
+            if (stage != null && stage.MapPosition == mapPos)
+            {
+                return stage;
+            }
+        }
+        return null;
+    }
+
     // 以前のグリッドベースの機能は廃止（互換性のためにnullを返す）
     public StageSO GetStageAt(int x, int y) => null;
     public Vector2Int GetStageCoordinates(StageSO stage) => new Vector2Int(-1, -1);

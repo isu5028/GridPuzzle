@@ -84,6 +84,9 @@ public class GameProgressManager : MonoBehaviour
         SetCellType(0, 0, WorldMapCellType.CurrentUnCleared);
         visitedPositions.Add(new Vector2Int(0, 0));
         currentMapPosition = Vector2Int.zero;
+
+        // 階層マップも初期化
+        InitHierarchicalMap();
     }
 
     public void ResetStageCleared()
@@ -113,6 +116,9 @@ public class GameProgressManager : MonoBehaviour
         visitedPositions.Clear();
         InitializeMapData();
         currentMapPosition = Vector2Int.zero;
+
+        // 階層マップも初期化
+        InitHierarchicalMap();
     }
 
     public bool UpdateStageStatus(Vector2Int position, bool isCurrent, bool isCleared, WorldMapSO worldMap = null)
@@ -392,6 +398,82 @@ public class GameProgressManager : MonoBehaviour
         currentMapPosition = Vector2Int.zero;
     }
 
+    #region Hierarchical Map
+    // 階層マップで解放されたセル
+    private HashSet<Vector2Int> hierarchicalUnlockedCells = new HashSet<Vector2Int>();
+    // 階層マップでクリア済みのセル（永続的）
+    private HashSet<Vector2Int> hierarchicalClearedCells = new HashSet<Vector2Int>();
+
+    [System.Serializable]
+    public class HierarchicalMapData
+    {
+        public List<Vector2Int> unlockedCells = new List<Vector2Int>();
+        public List<Vector2Int> clearedCells = new List<Vector2Int>();
+    }
+
+    public HierarchicalMapData GetHierarchicalMapData()
+    {
+        var data = new HierarchicalMapData();
+        data.unlockedCells.AddRange(hierarchicalUnlockedCells);
+        data.clearedCells.AddRange(hierarchicalClearedCells);
+        return data;
+    }
+
+    public void UnlockHierarchicalCell(Vector2Int pos)
+    {
+        if (!hierarchicalUnlockedCells.Contains(pos))
+        {
+            hierarchicalUnlockedCells.Add(pos);
+            // 訪問済みとしても登録
+            visitedPositions.Add(pos);
+        }
+    }
+
+    /// <summary>
+    /// ステージをクリア済みとしてマークする（永続的）
+    /// </summary>
+    public void MarkHierarchicalCellAsCleared(Vector2Int pos)
+    {
+        if (!hierarchicalClearedCells.Contains(pos))
+        {
+            hierarchicalClearedCells.Add(pos);
+            Debug.Log($"Stage at {pos} marked as cleared permanently");
+        }
+        // 解放もする
+        UnlockHierarchicalCell(pos);
+    }
+
+    /// <summary>
+    /// ステージがクリア済みかどうかを確認する
+    /// </summary>
+    public bool IsHierarchicalCellCleared(Vector2Int pos)
+    {
+        return hierarchicalClearedCells.Contains(pos);
+    }
+
+    public void InitHierarchicalMap()
+    {
+        hierarchicalUnlockedCells.Clear();
+        hierarchicalClearedCells.Clear();
+        // ハブは常に解放
+        hierarchicalUnlockedCells.Add(new Vector2Int(1, 0));
+    }
+
+    /// <summary>
+    /// 階段を降りた際に対応するセルを解放する
+    /// </summary>
+    /// <param name="column">階段の列（0, 1, 2）</param>
+    /// <param name="depth">降りた深さ（1-6）</param>
+    public void UnlockCellByStairDescent(int column, int depth)
+    {
+        if (column < 0 || column > 2) return;
+        if (depth < 1 || depth > 6) return;
+
+        Vector2Int cellPos = new Vector2Int(column, depth);
+        UnlockHierarchicalCell(cellPos);
+    }
+    #endregion
+
     #region save
     public void DeleteSaveFile(SaveType saveType)
     {
@@ -442,6 +524,16 @@ public class GameProgressManager : MonoBehaviour
         data.resetMapX = resetMapPos.x;
         data.resetMapY = resetMapPos.y;
         data.playerHP = playerHP;
+
+        // 5. 階層マップ情報
+        foreach (var pos in hierarchicalUnlockedCells)
+        {
+            data.hierarchicalUnlockedCells.Add(new Vector2IntData(pos));
+        }
+        foreach (var pos in hierarchicalClearedCells)
+        {
+            data.hierarchicalClearedCells.Add(new Vector2IntData(pos));
+        }
 
         // GameSettingsの内容を保存
         // オプションはGameProgressManager.SaveOptions()で個別保存するためここでは保存しない
@@ -517,6 +609,32 @@ public class GameProgressManager : MonoBehaviour
 
             foreach (var item in data.clearedList) clearedPositions.Add(item.ToVector2Int());
             foreach (var item in data.visitedList) visitedPositions.Add(item.ToVector2Int());
+
+            // 階層マップ情報の復元
+            hierarchicalUnlockedCells.Clear();
+            hierarchicalClearedCells.Clear();
+
+            if (data.hierarchicalUnlockedCells != null)
+            {
+                foreach (var item in data.hierarchicalUnlockedCells)
+                {
+                    hierarchicalUnlockedCells.Add(item.ToVector2Int());
+                }
+            }
+
+            if (data.hierarchicalClearedCells != null)
+            {
+                foreach (var item in data.hierarchicalClearedCells)
+                {
+                    hierarchicalClearedCells.Add(item.ToVector2Int());
+                }
+            }
+
+            // ハブは常に解放
+            if (!hierarchicalUnlockedCells.Contains(new Vector2Int(1, 0)))
+            {
+                hierarchicalUnlockedCells.Add(new Vector2Int(1, 0));
+            }
 
             RebuildMapData();
         }
