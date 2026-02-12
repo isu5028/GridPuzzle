@@ -144,4 +144,16 @@ public static class Utility
         j = (j % length + length) % length;
         return arr[j];
     }
+
+    public static Direction GetOppositeDirection(Direction direction)
+    {
+        switch (direction)
+        {
+            case Direction.Right: return Direction.Left;
+            case Direction.Down: return Direction.Up;
+            case Direction.Left: return Direction.Right;
+            case Direction.Up: return Direction.Down;
+            default: return Direction.Right;
+        }
+    }
 }

@@ -305,15 +305,23 @@ public class GridVisualizer : MonoBehaviour
         int w = stage.Width;
         int h = stage.Height;
 
-        for (int y = 0; y < h; y++)
+        for (int y = -1; y <= h; y++)
         {
-            for (int x = 0; x < w; x++)
+            for (int x = -1; x <= w; x++)
             {
-                CellType type = stage.GetWallAt(x, y);
-                // 破壊された壁は床として扱う
-                if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                CellType type;
+                if (x >= 0 && x < w && y >= 0 && y < h)
                 {
-                    type = CellType.Floor;
+                    type = stage.GetWallAt(x, y);
+                    // 破壊された壁は床として扱う
+                    if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                    {
+                        type = CellType.Floor;
+                    }
+                }
+                else
+                {
+                    type = CellType.Wall;
                 }
                 SetTileAt(transitionTilemap, x, y, type, stage, isClearedCheck);
             }
@@ -322,14 +330,23 @@ public class GridVisualizer : MonoBehaviour
 
     private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData, StageSO stage, Func<Vector2Int, bool> isClearedCheck)
     {
-        for (int y = 0; y < height; y++)
+        for (int y = -1; y <= height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = -1; x <= width; x++)
             {
                 // 初期描画時はWarpの生存判定をどうするか？
                 // 呼び出し元で制御してもらうため、ここではFloor扱いにしておくか、あるいはnullにしておく
                 // 既存ロジックでは FillTilemap で WarpはFloorにしていた
-                CellType type = cellData[x, y];
+                CellType type;
+                if (x >= 0 && x < width && y >= 0 && y < height)
+                {
+                    type = cellData[x, y];
+                }
+                else
+                {
+                    type = CellType.Wall;
+                }
+
                 var pos = GetTilePosFromGridPos(x, y);
 
                 switch (type)
@@ -380,6 +397,7 @@ public class GridVisualizer : MonoBehaviour
 
     public void ResetGridParentPosition()
     {
+        gridParent.DOKill();
         gridParent.position = Vector3.zero;
     }
 
@@ -409,15 +427,23 @@ public class GridVisualizer : MonoBehaviour
         int w = stage.Width;
         int h = stage.Height;
 
-        for (int y = 0; y < h; y++)
+        for (int y = -1; y <= h; y++)
         {
-            for (int x = 0; x < w; x++)
+            for (int x = -1; x <= w; x++)
             {
-                CellType type = stage.GetWallAt(x, y);
-                // 破壊された壁は床として扱う
-                if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                CellType type;
+                if (x >= 0 && x < w && y >= 0 && y < h)
                 {
-                    type = CellType.Floor;
+                    type = stage.GetWallAt(x, y);
+                    // 破壊された壁は床として扱う
+                    if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                    {
+                        type = CellType.Floor;
+                    }
+                }
+                else
+                {
+                    type = CellType.Wall;
                 }
                 SetTileAt(transitionTilemap, x, y, type, stage, isClearedCheck);
             }
@@ -438,7 +464,7 @@ public class GridVisualizer : MonoBehaviour
     /// <summary>
     /// 階段用の遷移タイルマップを設定（ワープ方向を使用して斜め対応）
     /// </summary>
-    public void SetupStairTransitionTilemapWithDirection(StageSO stage, GridManager.WarpDirection warpDir, Vector2Int currentPlayerPos, Vector2Int targetPlayerPos, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
+    public void SetupStairTransitionTilemapWithDirection(StageSO stage, GridCalculation.WarpDirection warpDir, Vector2Int currentPlayerPos, Vector2Int targetPlayerPos, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
     {
         ClearTransitionTiles();
 
@@ -457,15 +483,23 @@ public class GridVisualizer : MonoBehaviour
         int w = stage.Width;
         int h = stage.Height;
 
-        for (int y = 0; y < h; y++)
+        for (int y = -1; y <= h; y++)
         {
-            for (int x = 0; x < w; x++)
+            for (int x = -1; x <= w; x++)
             {
-                CellType type = stage.GetWallAt(x, y);
-                // 破壊された壁は床として扱う
-                if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                CellType type;
+                if (x >= 0 && x < w && y >= 0 && y < h)
                 {
-                    type = CellType.Floor;
+                    type = stage.GetWallAt(x, y);
+                    // 破壊された壁は床として扱う
+                    if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                    {
+                        type = CellType.Floor;
+                    }
+                }
+                else
+                {
+                    type = CellType.Wall;
                 }
                 SetTileAt(transitionTilemap, x, y, type, stage, isClearedCheck);
             }
@@ -475,7 +509,7 @@ public class GridVisualizer : MonoBehaviour
     /// <summary>
     /// ワープ遷移用のタイルマップを設定
     /// </summary>
-    public void SetupWarpTransitionTilemap(StageSO stage, GridManager.WarpDirection warpDir, Vector2Int targetPlayerPos, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
+    public void SetupWarpTransitionTilemap(StageSO stage, GridCalculation.WarpDirection warpDir, Vector2Int targetPlayerPos, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
     {
         ClearTransitionTiles();
 
@@ -492,36 +526,44 @@ public class GridVisualizer : MonoBehaviour
         int w = stage.Width;
         int h = stage.Height;
 
-        for (int y = 0; y < h; y++)
+        for (int y = -1; y <= h; y++)
         {
-            for (int x = 0; x < w; x++)
+            for (int x = -1; x <= w; x++)
             {
-                CellType type = stage.GetWallAt(x, y);
-                // 破壊された壁は床として扱う
-                if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                CellType type;
+                if (x >= 0 && x < w && y >= 0 && y < h)
                 {
-                    type = CellType.Floor;
+                    type = stage.GetWallAt(x, y);
+                    // 破壊された壁は床として扱う
+                    if (type == CellType.Wall && destroyedWalls != null && destroyedWalls.Contains(new Vector2Int(x, y)))
+                    {
+                        type = CellType.Floor;
+                    }
+                }
+                else
+                {
+                    type = CellType.Wall;
                 }
                 SetTileAt(transitionTilemap, x, y, type, stage, isClearedCheck);
             }
         }
     }
 
-    private Vector3 GetWarpTransitionInitialOffset(GridManager.WarpDirection warpDir)
+    private Vector3 GetWarpTransitionInitialOffset(GridCalculation.WarpDirection warpDir)
     {
         float xOffset = tilemapOffset.x * 2;
         float yOffset = tilemapOffset.y * 2;
 
         return warpDir switch
         {
-            GridManager.WarpDirection.Down => new Vector3(0, yOffset, 0),           // 上から入ってくる
-            GridManager.WarpDirection.Up => new Vector3(0, -yOffset, 0),            // 下から入ってくる
-            GridManager.WarpDirection.Right => new Vector3(-xOffset, 0, 0),         // 左から入ってくる
-            GridManager.WarpDirection.Left => new Vector3(xOffset, 0, 0),           // 右から入ってくる
-            GridManager.WarpDirection.DownLeft => new Vector3(xOffset, yOffset, 0),   // 右上から入ってくる
-            GridManager.WarpDirection.DownRight => new Vector3(-xOffset, yOffset, 0), // 左上から入ってくる
-            GridManager.WarpDirection.UpLeft => new Vector3(xOffset, -yOffset, 0),    // 右下から入ってくる
-            GridManager.WarpDirection.UpRight => new Vector3(-xOffset, -yOffset, 0),  // 左下から入ってくる
+            GridCalculation.WarpDirection.Down => new Vector3(0, yOffset, 0),           // 上から入ってくる
+            GridCalculation.WarpDirection.Up => new Vector3(0, -yOffset, 0),            // 下から入ってくる
+            GridCalculation.WarpDirection.Right => new Vector3(-xOffset, 0, 0),         // 左から入ってくる
+            GridCalculation.WarpDirection.Left => new Vector3(xOffset, 0, 0),           // 右から入ってくる
+            GridCalculation.WarpDirection.DownLeft => new Vector3(xOffset, yOffset, 0),   // 右上から入ってくる
+            GridCalculation.WarpDirection.DownRight => new Vector3(-xOffset, yOffset, 0), // 左上から入ってくる
+            GridCalculation.WarpDirection.UpLeft => new Vector3(xOffset, -yOffset, 0),    // 右下から入ってくる
+            GridCalculation.WarpDirection.UpRight => new Vector3(-xOffset, -yOffset, 0),  // 左下から入ってくる
             _ => new Vector3(0, yOffset, 0)  // デフォルトは下へ
         };
     }
@@ -529,21 +571,21 @@ public class GridVisualizer : MonoBehaviour
     /// <summary>
     /// ワープ遷移のアニメーション用移動量を取得
     /// </summary>
-    public Vector3 GetWarpTransitionOffset(GridManager.WarpDirection warpDir)
+    public Vector3 GetWarpTransitionOffset(GridCalculation.WarpDirection warpDir)
     {
         float xOffset = tilemapOffset.x * 2;
         float yOffset = tilemapOffset.y * 2;
 
         return warpDir switch
         {
-            GridManager.WarpDirection.Down => new Vector3(0, -yOffset, 0),           // 下へ移動
-            GridManager.WarpDirection.Up => new Vector3(0, yOffset, 0),              // 上へ移動
-            GridManager.WarpDirection.Right => new Vector3(xOffset, 0, 0),           // 右へ移動
-            GridManager.WarpDirection.Left => new Vector3(-xOffset, 0, 0),           // 左へ移動
-            GridManager.WarpDirection.DownLeft => new Vector3(-xOffset, -yOffset, 0),  // 左下へ移動
-            GridManager.WarpDirection.DownRight => new Vector3(xOffset, -yOffset, 0),  // 右下へ移動
-            GridManager.WarpDirection.UpLeft => new Vector3(-xOffset, yOffset, 0),     // 左上へ移動
-            GridManager.WarpDirection.UpRight => new Vector3(xOffset, yOffset, 0),     // 右上へ移動
+            GridCalculation.WarpDirection.Down => new Vector3(0, -yOffset, 0),           // 下へ移動
+            GridCalculation.WarpDirection.Up => new Vector3(0, yOffset, 0),              // 上へ移動
+            GridCalculation.WarpDirection.Right => new Vector3(xOffset, 0, 0),           // 右へ移動
+            GridCalculation.WarpDirection.Left => new Vector3(-xOffset, 0, 0),           // 左へ移動
+            GridCalculation.WarpDirection.DownLeft => new Vector3(-xOffset, -yOffset, 0),  // 左下へ移動
+            GridCalculation.WarpDirection.DownRight => new Vector3(xOffset, -yOffset, 0),  // 右下へ移動
+            GridCalculation.WarpDirection.UpLeft => new Vector3(-xOffset, yOffset, 0),     // 左上へ移動
+            GridCalculation.WarpDirection.UpRight => new Vector3(xOffset, yOffset, 0),     // 右上へ移動
             _ => new Vector3(0, -yOffset, 0)  // デフォルトは下へ
         };
     }

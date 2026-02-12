@@ -15,5 +15,10 @@ MonoBehaviour:
   rootStage: {fileID: 11400000, guid: 8bcf5691c951ec849976a8df1fae5fc9, type: 2}
   allStages:
   - {fileID: 11400000, guid: 2b6898dbcc5bdbf4cb35bc1748f18fec, type: 2}
+  - {fileID: 11400000, guid: ba9d43e1551216f4b8bcc8e144ec55ef, type: 2}
+  - {fileID: 11400000, guid: 357bea096db24c349a5a468723e71f7b, type: 2}
+  - {fileID: 11400000, guid: 9496d87e71353ab47940868d6138f9ab, type: 2}
+  - {fileID: 11400000, guid: 0d5550ce5f05f9d448f3c0010f964cc2, type: 2}
   - {fileID: 11400000, guid: 39ab7a5a7f67fe745b1ea9df1423ea28, type: 2}
   - {fileID: 11400000, guid: aded8abfd9dac2b42a2a1db8920edce3, type: 2}
+  - {fileID: 11400000, guid: 8bcf5691c951ec849976a8df1fae5fc9, type: 2}

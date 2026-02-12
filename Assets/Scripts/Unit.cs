@@ -377,7 +377,7 @@ public abstract class Unit : MonoBehaviour
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
-        transform.DOLocalMove(gridManager.GridToWorldPosition(position), moveDuration).SetEase(Ease.OutCubic).OnComplete(() => isMoving = false) ;
+        transform.DOMove(gridManager.GridToWorldPosition(position), moveDuration).SetEase(Ease.OutCubic).OnComplete(() => isMoving = false) ;
         unitAnimator.SetDirection(direction);
         currentPos = position;
         currentDirection = direction;

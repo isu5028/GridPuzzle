@@ -12,6 +12,7 @@ public class Player : Unit
     private InputAction inputAttack = null!;
     private InputAction inputStay = null!;
     private InputAction inputUndo = null!;
+    private InputAction inputRedo = null!;
     private InputAction inputReset = null!;
 
     private bool isProcessingAction = false;
@@ -26,6 +27,7 @@ public class Player : Unit
         inputAttack = InputSystem.actions.FindAction("Attack");
         inputStay = InputSystem.actions.FindAction("Stay");
         inputUndo = InputSystem.actions.FindAction("Undo");
+        inputRedo = InputSystem.actions.FindAction("Redo");
         inputReset = InputSystem.actions.FindAction("Reset");
     }
 
@@ -92,6 +94,31 @@ public class Player : Unit
                 if(turnManager.IsPlayerTurn && !isProcessingAction && !gridManager.IsTransitioning && !commandManager.IsUndoing)
                 {
                     turnManager.UndoTurn().Forget();
+                }
+            })
+            .AddTo(this);
+
+        // --- Redo処理 ---
+        // 死亡していてもRedoは可能にする
+
+        var redoTriggered = canInputStream.Where(_ => inputRedo.triggered);
+
+        // 単発
+        redoTriggered
+            .Subscribe(_ => turnManager.RedoTurn().Forget())
+            .AddTo(this);
+
+        // 長押しリピート
+        redoTriggered
+            .SelectMany(_ => Observable.Timer(TimeSpan.FromSeconds(0.4f), TimeSpan.FromSeconds(0.15f))
+                .TakeUntil(Observable.EveryUpdate().Where(__ => !inputRedo.IsPressed()))
+            )
+            .ObserveOnMainThread()
+            .Subscribe(_ =>
+            {
+                if(turnManager.IsPlayerTurn && !isProcessingAction && !gridManager.IsTransitioning && !commandManager.IsRedoing)
+                {
+                    turnManager.RedoTurn().Forget();
                 }
             })
             .AddTo(this);

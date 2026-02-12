@@ -239,8 +239,7 @@ public class WorldMapPresenter : MonoBehaviour
                 if (hubStage != null)
                 {
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
-                    WarpToStageWithReset(hubStage);
-                    CloseMapAndResumeAsync().Forget();
+                    WarpToStageWithResetAsync(hubStage, true).Forget();
                 }
                 return;
             }
@@ -254,8 +253,7 @@ public class WorldMapPresenter : MonoBehaviour
                 if (targetStage != null)
                 {
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
-                    WarpToStageWithReset(targetStage);
-                    CloseMapAndResumeAsync().Forget();
+                    WarpToStageWithResetAsync(targetStage, false).Forget();
                 }
             }
             else
@@ -266,41 +264,38 @@ public class WorldMapPresenter : MonoBehaviour
     }
 
     /// <summary>
-    /// ステージにワープし、全敵をリセット、プレイヤーHP回復、Undo履歴削除
+    /// マップを閉じてからアニメーション付きでステージにワープ
+    /// プレイヤーHP回復、Undo履歴削除。敵の位置はリセットせず保持する
     /// </summary>
-    private void WarpToStageWithReset(StageSO targetStage)
+    private async UniTaskVoid WarpToStageWithResetAsync(StageSO targetStage, bool isHub)
     {
-        // Undo履歴をクリア
-        gridManager.ClearUndoHistory();
+        // まずマップを閉じつつワープ準備
+        isAnimating = true;
+        isForceOpen = false;
+        turnManager.SetMapState(false);
 
-        // 全ステージの敵をリセット
-        gridManager.ResetAllEnemies();
-
-        // プレイヤーHP回復
-        gridManager.RestorePlayerHP();
-
-        // ハブの場合は初期位置、ダンジョンの場合は上り階段の位置にワープ
-        if (model.IsHubPosition(cursorPosition))
+        // ワープ先の位置を決定
+        Vector2Int targetPos;
+        Direction targetDir;
+        if (isHub)
         {
-            gridManager.WarpToStage(targetStage);
+            targetPos = targetStage.PlayerStartPosition;
+            targetDir = targetStage.PlayerStartDirection;
         }
         else
         {
-            // 上り階段の位置を取得してワープ
-            gridManager.WarpToStageAtStairUp(targetStage);
+            // 上り階段の位置を取得
+            targetPos = GridCalculation.FindStairUpPosition(targetStage);
+            targetDir = targetStage.PlayerStartDirection;
         }
-    }
 
-    private async UniTaskVoid CloseMapAndResumeAsync()
-    {
-        // マップを閉じる
-        isAnimating = true;
-
-        await view.HideAsync();
+        // MapViewフェードアウトとステージ移動アニメーションを並行実行（HP回復もコマンド内で処理）
+        await UniTask.WhenAll(
+            view.HideAsync(),
+            gridManager.WarpWithAnimationAsync(targetStage, targetPos, targetDir, restoreHP: true)
+        );
 
         isMapOpen = false;
-        isForceOpen = false;
-        turnManager.SetMapState(false);
         isAnimating = false;
     }
 }

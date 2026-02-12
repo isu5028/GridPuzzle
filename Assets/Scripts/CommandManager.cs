@@ -12,10 +12,13 @@ public class CommandManager : MonoBehaviour
         public List<ICommand> commands = new List<ICommand>();
     }
     private List<TurnRecord> turnRecords = new List<TurnRecord>();
+    private List<TurnRecord> redoRecords = new List<TurnRecord>();
     private List<ICommand> currentTurnCommands = new List<ICommand>();
     private TurnRecord pendingRecord = null;
     private bool isUndoing = false;
     public bool IsUndoing => isUndoing;
+    private bool isRedoing = false;
+    public bool IsRedoing => isRedoing;
 
 
     // 初期化処理用
@@ -60,6 +63,13 @@ public class CommandManager : MonoBehaviour
 
         currentTurnCommands.Clear();
         pendingRecord = null;
+
+        // 新しいアクションが実行されたらRedoスタックをクリア
+        // （Redo中の CompleteTurn ではクリアしない）
+        if (!isRedoing)
+        {
+            redoRecords.Clear();
+        }
 
         // 古いターンを削除
         if (turnRecords.Count > maxStoredTurns)
@@ -108,7 +118,52 @@ public class CommandManager : MonoBehaviour
             }
         }
 
+        // Undoしたレコードをredoスタックに退避
+        redoRecords.Add(record);
+
         isUndoing = false;
+        return true;
+    }
+
+    public async UniTask<bool> RedoTurn(Player player, List<Enemy> enemies)
+    {
+        if (redoRecords.Count == 0)
+        {
+            Debug.Log("Redoできるターンがありません");
+            return false;
+        }
+
+        AudioManager.Instance.PlaySE(AudioManager.SEType.reset);
+        isRedoing = true;
+
+        TurnRecord record = redoRecords[redoRecords.Count - 1];
+        redoRecords.RemoveAt(redoRecords.Count - 1);
+        Debug.Log("Redoing turn with " + record.commands.Count + " commands.");
+
+        // CaptureTurnStart 相当の処理
+        pendingRecord = new TurnRecord();
+
+        for (int i = 0; i < record.commands.Count; i++)
+        {
+            var cmd = record.commands[i];
+            try
+            {
+                ExecuteCommand(cmd);
+            }
+            catch (UnityEngine.MissingReferenceException)
+            {
+                Debug.LogWarning("Skipped redo command for missing object.");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Redo Error: {e}");
+            }
+        }
+
+        // CompleteTurn 相当の処理（isRedoing中なのでredoRecordsはクリアされない）
+        CompleteTurn();
+
+        isRedoing = false;
         return true;
     }
 
@@ -118,6 +173,7 @@ public class CommandManager : MonoBehaviour
 
         // ターン履歴をクリア
         turnRecords.Clear();
+        redoRecords.Clear();
         currentTurnCommands.Clear();
         pendingRecord = null;
     }
@@ -126,9 +182,11 @@ public class CommandManager : MonoBehaviour
     {
         // 現在のターン履歴をクリア
         turnRecords.Clear();
+        redoRecords.Clear();
         currentTurnCommands.Clear();
         pendingRecord = null;
     }
 
     public bool CanUndo() => turnRecords.Count > 0;
+    public bool CanRedo() => redoRecords.Count > 0;
 }

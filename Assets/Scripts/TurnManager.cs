@@ -130,6 +130,18 @@ public class TurnManager : MonoBehaviour
         }
     }
 
+    public async UniTask RedoTurn()
+    {
+        if (!isPlayerTurn || isProcessingTurn) return;
+        bool executedRedo = await commandManager.RedoTurn(unitManager.Player, unitManager.Enemies);
+
+        if (executedRedo)
+        {
+            unitManager.NotifyUnitStateChanged();
+            undoFeedback.PlayFeedback();
+        }
+    }
+
     public void ResetTurn()
     {
         if (!isPlayerTurn || isProcessingTurn) return;
