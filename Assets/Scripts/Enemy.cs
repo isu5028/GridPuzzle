@@ -20,6 +20,17 @@ public class Enemy : Unit
     protected ReactiveProperty<int> currentAmmo = new ReactiveProperty<int>(-1);
     public IReadOnlyReactiveProperty<int> CurrentAmmo => currentAmmo;
 
+    public string EnemyID { get; set; }
+
+    public void UpdateDefeatedIcon()
+    {
+        if (defeatedIconTransform != null)
+        {
+            bool isDefeated = GameProgressManager.Instance.IsEnemyDefeated(EnemyID);
+            defeatedIconTransform.gameObject.SetActive(isDefeated);
+        }
+    }
+
     public override void Initialize(GridManager gridMgr,
                            TurnManager turnMgr,
                            CommandManager commandMgr,
@@ -73,6 +84,8 @@ public class Enemy : Unit
                 if (ammoSpriteAnimation != null) ammoSpriteAnimation.PlayAnimation();
             }).AddTo(this);
         }
+
+        UpdateDefeatedIcon();
     }
 
     public void SetAmmo(int value)
@@ -119,6 +132,18 @@ public class Enemy : Unit
             effectiveDamage = enemyAI.ModifyDamage(damage);
             enemyAI.OnDamageTaken(this, attackerPos);
         }
+
+        bool willDie = HP.Value - effectiveDamage <= 0;
+
+        if (!isDead && willDie)
+        {
+            if (!string.IsNullOrEmpty(EnemyID) && !GameProgressManager.Instance.IsEnemyDefeated(EnemyID))
+            {
+                GameProgressManager.Instance.MarkEnemyDefeated(EnemyID);
+                UpdateDefeatedIcon(); // Icon updates before potential destruction
+            }
+        }
+
         base.TakeDamage(effectiveDamage, attackerPos, shakeCamera);
     }
 
@@ -175,6 +200,7 @@ public class Enemy : Unit
     public override void Revive()
     {
         base.Revive();
+
         if (ammoTransform != null)
         {
             ammoTransform.DOKill();
@@ -188,6 +214,8 @@ public class Enemy : Unit
         {
             ammoSpriteAnimation.transform.localScale = Vector3.one; // Reset scale if stuck
         }
+
+        UpdateDefeatedIcon();
     }
 
     protected override void OnEnable()

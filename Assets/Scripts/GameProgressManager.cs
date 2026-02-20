@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System.IO;
+using UniRx;
 
 public class GameProgressManager : MonoBehaviour
 {
@@ -30,6 +31,7 @@ public class GameProgressManager : MonoBehaviour
     private Vector2Int currentMapPosition;
     private HashSet<Vector2Int> clearedPositions = new HashSet<Vector2Int>();
     private HashSet<Vector2Int> visitedPositions = new HashSet<Vector2Int>();
+    public HashSet<Vector2Int> VisitedPositions => visitedPositions;
     private int mapHeight = 8;
     private int mapWidth = 12;
     private string ManualSaveFilePath => Application.persistentDataPath + "/manualsavefile.json";
@@ -49,6 +51,10 @@ public class GameProgressManager : MonoBehaviour
     }
     public Vector2Int SavedPlayerGridPos { get; private set; } = Vector2Int.zero;
     public Direction SavedPlayerDirection { get; private set; } = Direction.Right;
+
+    // コインと倒した敵の情報
+    public ReactiveProperty<int> Coins { get; private set; } = new ReactiveProperty<int>(0);
+    private HashSet<string> defeatedEnemies = new HashSet<string>();
 
     // セーブデータが存在したかどうかのフラグ
     public bool HasLoadedData { get; private set; } = false;
@@ -116,6 +122,9 @@ public class GameProgressManager : MonoBehaviour
         visitedPositions.Clear();
         InitializeMapData();
         currentMapPosition = Vector2Int.zero;
+
+        Coins.Value = 0;
+        defeatedEnemies.Clear();
 
         // 階層マップも初期化
         InitHierarchicalMap();
@@ -396,6 +405,42 @@ public class GameProgressManager : MonoBehaviour
         visitedPositions.Clear();
         InitializeMapData();
         currentMapPosition = Vector2Int.zero;
+
+        Coins.Value = 0;
+        defeatedEnemies.Clear();
+    }
+
+    public bool IsEnemyDefeated(string enemyId)
+    {
+        if (string.IsNullOrEmpty(enemyId)) return false;
+        return defeatedEnemies.Contains(enemyId);
+    }
+
+    public void MarkEnemyDefeated(string enemyId)
+    {
+        if (string.IsNullOrEmpty(enemyId)) return;
+        if (!defeatedEnemies.Contains(enemyId))
+        {
+            defeatedEnemies.Add(enemyId);
+            Coins.Value++;
+        }
+    }
+
+    public bool IsStageFullyDefeated(StageSO stage)
+    {
+        if (stage == null || stage.EnemyStartData == null || stage.EnemyStartData.Count == 0) return true;
+
+        for (int i = 0; i < stage.EnemyStartData.Count; i++)
+        {
+            string expectedId = $"{stage.name}_{i}";
+            if (!IsEnemyDefeated(expectedId))
+            {
+                Debug.Log($"Stage {stage.name} NOT fully defeated: missing {expectedId}. defeatedEnemies Count: {defeatedEnemies.Count}");
+                return false;
+            }
+        }
+        Debug.Log($"Stage {stage.name} IS fully defeated! All {stage.EnemyStartData.Count} enemies killed.");
+        return true;
     }
 
     #region Hierarchical Map
@@ -466,7 +511,7 @@ public class GameProgressManager : MonoBehaviour
     /// <param name="depth">降りた深さ（1-6）</param>
     public void UnlockCellByStairDescent(int column, int depth)
     {
-        if (column < 0 || column > 2) return;
+        if (column < 0 || column > 8) return; // Expanded for 3 layers of 3 columns
         if (depth < 1 || depth > 6) return;
 
         Vector2Int cellPos = new Vector2Int(column, depth);
@@ -524,6 +569,10 @@ public class GameProgressManager : MonoBehaviour
         data.resetMapX = resetMapPos.x;
         data.resetMapY = resetMapPos.y;
         data.playerHP = playerHP;
+
+        // コイン情報などを保存
+        data.coins = Coins.Value;
+        data.defeatedEnemies = new List<string>(defeatedEnemies);
 
         // 5. 階層マップ情報
         foreach (var pos in hierarchicalUnlockedCells)
@@ -593,6 +642,13 @@ public class GameProgressManager : MonoBehaviour
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
             SavedPlayerHP = data.playerHP;
+
+            Coins.Value = data.coins;
+            defeatedEnemies.Clear();
+            if (data.defeatedEnemies != null)
+            {
+                foreach (var id in data.defeatedEnemies) defeatedEnemies.Add(id);
+            }
 
             // GameSettingsの復元
             // オプションはLoadOptions()で管理するため、ここでは復元しない

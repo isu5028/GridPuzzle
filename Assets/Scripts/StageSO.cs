@@ -5,19 +5,13 @@ using UnityEngine;
 public class StageSO : ScriptableObject
 {
     [Header("Stage Settings")]
-    [SerializeField] private string stageName = "New Stage";
     [SerializeField] private int width = 16;
     [SerializeField] private int height = 9;
-    [SerializeField] private int floorIndex = 0;  // フロアインデックス（0が最上階、大きいほど下）
 
     [Header("Hierarchical Map Position")]
-    [Tooltip("階層マップでの位置 (x=列0-2, y=行0-6、0=ハブ)")]
+    [Tooltip("階層マップでの位置 (x=列0-8, y=行0-6、0=ハブ)")]
     [SerializeField] private Vector2Int mapPosition = new Vector2Int(1, 0);
     public Vector2Int MapPosition => mapPosition;
-
-    [Tooltip("このステージに接続する階段の列 (0=左, 1=中央, 2=右)")]
-    [SerializeField] private int stairColumn = 1;
-    public int StairColumn => stairColumn;
 
     [Header("Grid Layout")]
     [SerializeField] private CellType[] cellData;
@@ -90,10 +84,14 @@ public class StageSO : ScriptableObject
     }
 
     // Properties
-    public string StageName => stageName;
+    public string StageName => this.name; // Use Asset Name
     public int Width => width;
     public int Height => height;
-    public int FloorIndex => floorIndex;  // フロアインデックス（0が最上階）
+
+    // Derived from MapPosition
+    public int FloorIndex => mapPosition.y;  // Y is Floor/Depth
+    public int StairColumn => mapPosition.x; // X is Column
+
     public Vector2Int PlayerStartPosition => playerStartPosition;
     public int PlayerMaxHP = 2;
     public int PlayerStartOrder = 0;
@@ -236,22 +234,73 @@ public class StageSO : ScriptableObject
 
     /// <summary>
     /// 特定の座標の階段に接続されたステージを取得する
-    /// 設定がない場合はnullを返す
+    /// 設定がない場合はDefaultのUp/Downステージを使用する
     /// </summary>
     public StageSO GetConnectedStage(Vector2Int pos)
     {
+        // 1. Explicit connection in list (overrides default)
         int idx = stairConnections.FindIndex(d => d.Position == pos);
-        if (idx != -1) return stairConnections[idx].TargetStage;
-        return null;
+        if (idx != -1 && stairConnections[idx].TargetStage != null)
+        {
+            return stairConnections[idx].TargetStage;
+        }
+
+        // 2. Default connections based on tile type
+        CellType cell = GetWallAt(pos.x, pos.y);
+        if (cell == CellType.StairUp)
+        {
+            return defaultUpStage;
+        }
+        else if (cell == CellType.StairDown)
+        {
+            return defaultDownStage;
+        }
+
+        return null; // Not a stair or no connection
     }
 
     /// <summary>
     /// 特定の座標の階段接続データを取得する
+    /// 明示的な設定がない場合、デフォルト設定から仮想的なデータを作成して返す
     /// </summary>
     public StairConnectionData? GetStairConnectionData(Vector2Int pos)
     {
+        // 1. Explicit
         int idx = stairConnections.FindIndex(d => d.Position == pos);
         if (idx != -1) return stairConnections[idx];
+
+        // 2. Implicit (Default)
+        StageSO target = GetConnectedStage(pos);
+        if (target != null)
+        {
+            // Create a virtual connection data
+            // Target position is assumed to be "the corresponding stair in the target stage"
+            // However, StairTraversalSystem usually handles finding the matching stair.
+            // Here we just return the target stage. TargetPosition can be -1,-1 to imply "auto-find".
+            return new StairConnectionData
+            {
+                Position = pos,
+                TargetStage = target,
+                TargetPosition = new Vector2Int(-1, -1)
+            };
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// ステージ内の上り階段の位置を取得する（見つからない場合はnull）
+    /// </summary>
+    public Vector2Int? GetStairUpPosition()
+    {
+        if (cellData == null) return null;
+        for (int i = 0; i < cellData.Length; i++)
+        {
+            if (cellData[i] == CellType.StairUp)
+            {
+                return new Vector2Int(i % width, i / width);
+            }
+        }
         return null;
     }
 }

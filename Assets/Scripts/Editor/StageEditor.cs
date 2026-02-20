@@ -235,21 +235,20 @@ public class StageEditor : Editor
     {
         EditorGUILayout.LabelField("ステージ情報", EditorStyles.boldLabel);
 
-        SerializedProperty stageNameProp = serializedObject.FindProperty("stageName");
+        // Name is now derived from Asset Name
+        EditorGUILayout.LabelField("ステージ名", stage.name);
+
         SerializedProperty widthProp = serializedObject.FindProperty("width");
         SerializedProperty heightProp = serializedObject.FindProperty("height");
-        SerializedProperty floorIndexProp = serializedObject.FindProperty("floorIndex");
         SerializedProperty syncMapOffsetProp = serializedObject.FindProperty("syncMapOffset");
 
         EditorGUI.BeginChangeCheck();
-        EditorGUILayout.PropertyField(stageNameProp, new GUIContent("ステージ名"));
 
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.PropertyField(widthProp, new GUIContent("幅"));
         EditorGUILayout.PropertyField(heightProp, new GUIContent("高さ"));
         EditorGUILayout.EndHorizontal();
 
-        EditorGUILayout.PropertyField(floorIndexProp, new GUIContent("フロア番号", "0=1F, 1=B1F, 2=B2F... (大きいほど地下)"));
         EditorGUILayout.PropertyField(syncMapOffsetProp, new GUIContent("SyncMap Offset"));
 
         if (EditorGUI.EndChangeCheck())
@@ -258,7 +257,7 @@ public class StageEditor : Editor
             stage.InitializeWallData();
         }
 
-        // フロア表示名を表示
+        // Display Derived Info
         string floorDisplay = stage.FloorIndex == 0 ? "1F" : $"B{stage.FloorIndex}F";
         EditorGUILayout.LabelField($"グリッドサイズ: {stage.Width} × {stage.Height} | フロア: {floorDisplay}");
 
@@ -269,27 +268,35 @@ public class StageEditor : Editor
         EditorGUILayout.BeginVertical("Box");
 
         SerializedProperty mapPositionProp = serializedObject.FindProperty("mapPosition");
-        SerializedProperty stairColumnProp = serializedObject.FindProperty("stairColumn");
 
-        EditorGUILayout.PropertyField(mapPositionProp, new GUIContent("マップ位置", "階層マップでの位置 (X=列0-2, Y=行0-6、0=ハブ)"));
+        // Show raw MapPosition but interpreted
+        EditorGUILayout.PropertyField(mapPositionProp, new GUIContent("マップ位置 (MapPosition)", "X=Column(0-8), Y=Floor(0-6)"));
 
-        // StairColumnをドロップダウンで選択
-        string[] columnOptions = { "0 - 左の階段", "1 - 中央の階段", "2 - 右の階段" };
-        int currentColumn = stairColumnProp.intValue;
-        currentColumn = Mathf.Clamp(currentColumn, 0, 2);
-        int newColumn = EditorGUILayout.Popup(new GUIContent("階段列", "このステージに接続する階段の列"), currentColumn, columnOptions);
-        if (newColumn != stairColumnProp.intValue)
+        // StairColumn Interpretation (Column 0-8)
+        // We allow changing Column via a friendly dropdown that updates MapPosition.X
+        string[] columnOptions = {
+            "0 - 奥の左 (Back Left)", "1 - 奥の中央 (Back Center)", "2 - 奥の右 (Back Right)",
+            "3 - 中の左 (Mid Left)", "4 - 中の中央 (Mid Center)", "5 - 中の右 (Mid Right)",
+            "6 - 手前の左 (Front Left)", "7 - 手前の中央 (Front Center)", "8 - 手前の右 (Front Right)"
+        };
+
+        int currentX = mapPositionProp.vector2IntValue.x;
+        int currentY = mapPositionProp.vector2IntValue.y;
+
+        int newX = EditorGUILayout.Popup(new GUIContent("階段列 (Layer/Column)", "マップ位置のX座標に対応"), Mathf.Clamp(currentX, 0, 8), columnOptions);
+
+        // Floor Selection via IntField that updates MapPosition.Y
+        int newY = EditorGUILayout.IntField(new GUIContent("深さ (Floor/Depth)", "マップ位置のY座標に対応 (0=Hub)"), currentY);
+
+        if (newX != currentX || newY != currentY)
         {
-            stairColumnProp.intValue = newColumn;
+            mapPositionProp.vector2IntValue = new Vector2Int(newX, newY);
         }
 
-        // ヘルプボックスで説明
+        // HelpBox
+        string layerName = newX <= 2 ? "Back (奥)" : (newX <= 5 ? "Mid (中)" : "Front (手前)");
         EditorGUILayout.HelpBox(
-            "マップ位置の設定:\n" +
-            "• ハブ: (1, 0)\n" +
-            "• 左列B1F: (0, 1), 左列B2F: (0, 2)...\n" +
-            "• 中央列B1F: (1, 1), 中央列B2F: (1, 2)...\n" +
-            "• 右列B1F: (2, 1), 右列B2F: (2, 2)...",
+            $"Current Setting:\nLayer: {layerName}\nFloor: {(newY==0?"Hub":$"B{newY}F")}\n\nAdjusting these values updates MapPosition.",
             MessageType.Info
         );
 
@@ -304,12 +311,16 @@ public class StageEditor : Editor
         SerializedProperty defaultUpProp = serializedObject.FindProperty("defaultUpStage");
         SerializedProperty defaultDownProp = serializedObject.FindProperty("defaultDownStage");
 
-        EditorGUILayout.PropertyField(defaultUpProp, new GUIContent("上の階 (StairUp)"));
-        EditorGUILayout.PropertyField(defaultDownProp, new GUIContent("下の階 (StairDown)"));
+        EditorGUILayout.PropertyField(defaultUpProp, new GUIContent("上の階 (Default StairUp)", "上り階段のデフォルト移動先"));
+        EditorGUILayout.PropertyField(defaultDownProp, new GUIContent("下の階 (Default StairDown)", "下り階段のデフォルト移動先"));
+
+        EditorGUILayout.HelpBox("※通常ステージでは、配置された階段(StairUp/Down)は自動的に上記のデフォルト設定に接続されます。\n" +
+                                "明示的な接続先が必要な場合(Hubなど)のみ、以下のリストに追加してください。", MessageType.Info);
 
         EditorGUILayout.Space(5);
 
         // 階段接続リストの描画
+        EditorGUILayout.LabelField("特殊接続 / HUB設定 (Overrides)", EditorStyles.boldLabel);
         if (stairConnectionsReorderableList != null)
         {
             stairConnectionsReorderableList.DoLayoutList();

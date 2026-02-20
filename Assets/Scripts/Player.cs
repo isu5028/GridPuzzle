@@ -165,10 +165,24 @@ public class Player : Unit
         Vector2Int directionVector = Utility.GetVectorFromDirection(newDirection);
         Vector2Int targetPos = currentPos + directionVector;
 
-        // グリッド外に出るかチェック
+        // グリッド外に出るかチェック（ただし破壊された境界壁＝通行可能なら許可）
         if (!gridManager.IsPositionInBounds(targetPos))
         {
-            return;
+            if (gridManager.IsWalkableAt(gridManager.CurrentStageSO, targetPos))
+            {
+                // 境界外へ移動可能な場合（壁が壊れている場合）
+                // 通常の移動アニメーション（TryMoveAsync）を行わず、即座にステージ遷移を開始し、
+                // ステージスライドに合わせてプレイヤーを移動させる（シームレスな移動）
+                isProcessingAction = true;
+                bool started = gridManager.CheckAndPerformBoundaryTransition(this, targetPos);
+                if (!started) isProcessingAction = false;
+                return;
+            }
+            else
+            {
+                // 通行不可（通常の壁）
+                return;
+            }
         }
 
         isProcessingAction = true;
@@ -192,6 +206,10 @@ public class Player : Unit
         {
             await UniTask.WaitUntil(() => !isMoving);
         }
+
+        // 境界遷移チェック（移動完了後に外周座標にいるか確認）
+        bool transitionStarted = gridManager.CheckAndPerformBoundaryTransition(this);
+        if (transitionStarted) return;
 
         // 階段チェック（移動完了後に階段の上にいるか確認）
         bool dialogShown = gridManager.CheckAndShowStairDialog();

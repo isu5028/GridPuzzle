@@ -64,6 +64,14 @@ public class EnemyAIChaser : EnemyAI
         }
         else
         {
+            // 経路探索失敗時、足元が階段ならワープを試行
+            var transition = gridManager.GetEnemyStairDestination(enemy, currentPos, currentDirection);
+            if (transition != null)
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, currentDirection);
+                return;
+            }
             // 移動できない場合（経路がない、囲まれているなど）は待機または空振り
             // プレイヤーの方を向いて威嚇（攻撃モーション）
             Direction attackDirection = GetDirectionToTarget(currentPos, playerPos);

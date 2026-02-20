@@ -96,13 +96,28 @@ public class StageEnemySystem : IStageEnemySystem
             List<EnemySaveData> saveDataList = gm.LoadedStageEnemyData[stage];
             List<Enemy> pending = gm.PendingStageEnemies.ContainsKey(stage) ? gm.PendingStageEnemies[stage] : null;
 
-            List<Enemy> newEnemies = GenerateEnemiesFromSaveData(stage, saveDataList, pending);
+            // Combine current and pending as candidates for recycling
+            List<Enemy> candidates = new List<Enemy>(currentEnemies);
+            if (pending != null) candidates.AddRange(pending);
 
+            // Generate (recycling from candidates)
+            List<Enemy> newEnemies = GenerateEnemiesFromSaveData(stage, saveDataList, candidates);
+
+            // Rebuild current enemies list to match Save Data exactly
+            currentEnemies.Clear();
             currentEnemies.AddRange(newEnemies);
             foreach(var e in newEnemies) e.gameObject.SetActive(false);
 
-            if (pending != null) pending.Clear();
+            // Cleanup candidates that were NOT recycled (meaning they are not in Save Data)
+            foreach (var cand in candidates)
+            {
+                if (cand != null && !newEnemies.Contains(cand))
+                {
+                    Object.Destroy(cand.gameObject);
+                }
+            }
 
+            if (pending != null) pending.Clear();
             gm.LoadedStageEnemyData.Remove(stage);
         }
     }
@@ -160,7 +175,7 @@ public class StageEnemySystem : IStageEnemySystem
                 if(data.isDead) recycled.ForceKillSilent();
                 else recycled.ReviveSilent();
 
-                recycled.transform.SetParent(gm.Visualizer.transform);
+                recycled.transform.SetParent(gm.Visualizer.GridParent);
                 continue;
             }
 
@@ -194,6 +209,7 @@ public class StageEnemySystem : IStageEnemySystem
 
                 var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse, data.ammo);
 
+                newEnemy.EnemyID = string.IsNullOrEmpty(data.enemyID) ? $"{stage.name}_{data.index}" : data.enemyID;
                 newEnemy.SetHP(data.currentHP);
                 newEnemy.SetAIState(data.aiState);
                 if(data.isDead) newEnemy.ForceKillSilent();
@@ -214,6 +230,11 @@ public class StageEnemySystem : IStageEnemySystem
     // 今回はインターフェースに追加せず、publicメソッドとして定義する。
     public void PrepareEnemiesForStage(StageSO stage)
     {
+        // Robustness: Ensure enemies from ALL other stages are deactivated.
+        // This prevents "Ghost" enemies (e.g. from Undo operations or crossed boundaries)
+        // from remaining visible if they were active but not tracked by UnitManager.
+        DeactivateAllEnemiesExcept(stage);
+
         EnsureStageEnemiesLoaded(stage);
 
         List<Enemy> enemies = gm.StageEnemiesMap[stage];
@@ -224,6 +245,7 @@ public class StageEnemySystem : IStageEnemySystem
             enemy.gameObject.SetActive(true);
             enemy.WarpTo(enemy.CurrentPos, enemy.CurrentDirection);
             enemy.SetDissolveAmount(0f);
+            enemy.UpdateDefeatedIcon();
 
             if (enemy.IsDead)
             {
@@ -232,6 +254,25 @@ public class StageEnemySystem : IStageEnemySystem
         }
 
         gm.UnitManager.SortEnemiesByOrder();
+    }
+
+    /// <summary>
+    /// 指定したステージ以外の全ての敵を非アクティブにする
+    /// </summary>
+    private void DeactivateAllEnemiesExcept(StageSO targetStage)
+    {
+        foreach (var kvp in gm.StageEnemiesMap)
+        {
+            if (kvp.Key == targetStage) continue;
+
+            foreach (var enemy in kvp.Value)
+            {
+                if (enemy != null && enemy.gameObject.activeSelf)
+                {
+                    enemy.gameObject.SetActive(false);
+                }
+            }
+        }
     }
 
     private List<Enemy> GenerateEnemies(StageSO stage)
@@ -247,6 +288,7 @@ public class StageEnemySystem : IStageEnemySystem
 
             var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder, enemyData.Ammo);
             enemyScript.name = $"Enemy_{enemyData.EnemyType}_{count}";
+            enemyScript.EnemyID = $"{stage.name}_{count}";
             count++;
 
             enemyScript.SetDirection(enemyData.Direction);

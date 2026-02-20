@@ -8,7 +8,7 @@ public class WorldMapModel
     private WorldMapSO worldMapSO;
 
     // レイアウト定数
-    public const int DUNGEON_COLUMNS = 3;
+    public const int DUNGEON_COLUMNS = 9; // 3 layers * 3 columns
     public const int DUNGEON_ROWS = 6;
     public const int TOTAL_ROWS = DUNGEON_ROWS + 1; // ハブ含む
 
@@ -41,9 +41,13 @@ public class WorldMapModel
             }
         }
 
-        // ハブ（中央列: col=1, row=0）は常にアクセス可能
-        mapData[1, 0] = WorldMapCellType.Cleared;
-        unlockedCells.Add(new Vector2Int(1, 0));
+        // ハブ（Back: 1,0 / Mid: 4,0 / Front: 7,0）は即時アクセス可能
+        List<Vector2Int> hubs = new List<Vector2Int> { new Vector2Int(1, 0), new Vector2Int(4, 0), new Vector2Int(7, 0) };
+        foreach(var h in hubs)
+        {
+            mapData[h.x, h.y] = WorldMapCellType.Cleared;
+            unlockedCells.Add(h);
+        }
 
         // WorldMapSOからステージ情報を読み込む
         LoadStageMapping();
@@ -164,12 +168,12 @@ public class WorldMapModel
 
     public bool IsValidPosition(Vector2Int pos)
     {
-        // ハブ: col=1, row=0
+        // ハブ: row=0, cols = 1 (Back), 4 (Mid), 7 (Front)
         if (pos.y == 0)
         {
-            return pos.x == 1;
+            return pos.x == 1 || pos.x == 4 || pos.x == 7;
         }
-        // ダンジョン: col=0-2, row=1-6
+        // ダンジョン: col=0-8, row=1-6 is handled by < DUNGEON_COLUMNS
         return pos.x >= 0 && pos.x < DUNGEON_COLUMNS && pos.y >= 1 && pos.y <= DUNGEON_ROWS;
     }
 
@@ -178,7 +182,7 @@ public class WorldMapModel
         if (!IsValidPosition(pos)) return false;
 
         // ハブは常にアクセス可能
-        if (pos.y == 0 && pos.x == 1) return true;
+        if (IsHubPosition(pos)) return true;
 
         // 最新のデータを取得
         var progressData = GameProgressManager.Instance.GetHierarchicalMapData();
@@ -196,7 +200,7 @@ public class WorldMapModel
 
     public bool IsHubPosition(Vector2Int pos)
     {
-        return pos.x == 1 && pos.y == 0;
+        return pos.y == 0 && (pos.x == 1 || pos.x == 4 || pos.x == 7);
     }
 
     /// <summary>

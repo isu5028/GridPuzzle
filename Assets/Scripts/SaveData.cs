@@ -23,6 +23,9 @@ public class SaveData
     public int resetMapX;
     public int resetMapY;
     public string saveTime; // 保存日時
+    public int coins; // 所持コイン数
+    public List<string> defeatedEnemies = new List<string>(); // 倒した敵のIDリスト
+
     // --- ワールドマップ情報 ---
     public int currentMapX; // ワールドマップ上のX
     public int currentMapY; // ワールドマップ上のY
@@ -83,4 +86,5 @@ public class EnemySaveData
     public int maxHP;
     public int index;
     public int ammo; // Added for Ranged Enemy Ammo persistence
+    public string enemyID; // 一意のID
 }

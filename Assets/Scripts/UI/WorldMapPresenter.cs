@@ -55,8 +55,58 @@ public class WorldMapPresenter : MonoBehaviour
 
         if (!isMapOpen || isAnimating) return;
 
+        HandleMapLayerSwitch();
         HandleCursorMove();
         HandleSelection();
+    }
+
+    private void HandleMapLayerSwitch()
+    {
+        // "MapFront": 手前へ (Layer Index Increase: Back(0-2) -> Mid(3-5) -> Front(6-8))
+        // "MapBack": 奥へ (Layer Index Decrease)
+        // Note: Column mapping: Back=0-2, Mid=3-5, Front=6-8.
+        // Moving "Front" means adding +3 to column index.
+        // Moving "Back" means subtracting 3.
+
+        bool mapFront = InputSystem.actions.FindAction("MapFront").triggered;
+        bool mapBack = InputSystem.actions.FindAction("MapBack").triggered;
+
+        if (mapFront)
+        {
+            SwitchLayer(1);
+        }
+        else if (mapBack)
+        {
+            SwitchLayer(-1);
+        }
+    }
+
+    private void SwitchLayer(int direction)
+    {
+        Debug.Log("SwitchLayer: " + direction);
+        // direction: +1 (To Front), -1 (To Back)
+        int currentLayer = GetLayerFromColumn(cursorPosition.x);
+        int targetLayer = currentLayer + direction;
+
+        if (targetLayer < 0 || targetLayer > 2) return; // Out of bounds
+
+        int offset = direction * 3;
+        Vector2Int newPos = new Vector2Int(cursorPosition.x + offset, cursorPosition.y);
+
+        if (model.IsValidPosition(newPos))
+        {
+            cursorPosition = newPos;
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.move); // Or a specific layer switch sound
+            view.UpdateCursorPosition(cursorPosition);
+            // Optional: Trigger visual feedback for layer switch in View
+        }
+    }
+
+    private int GetLayerFromColumn(int col)
+    {
+        if (col <= 2) return 0; // Back
+        if (col <= 5) return 1; // Mid
+        return 2; // Front
     }
 
     private void HandleMapToggle()
@@ -197,30 +247,34 @@ public class WorldMapPresenter : MonoBehaviour
         // ハブ（row=0）からの移動特殊処理
         if (cursorPosition.y == 0)
         {
-            // ハブから下へ: 各列のB1Fへ移動可能（解放されていれば）
-            if (direction == Direction.Down)
+            // ハブ間の横移動 (1,0) <-> (4,0) <-> (7,0)
+            if (direction == Direction.Right)
             {
-                // 左・中央・右のどれかに移動
-                // デフォルトは中央の列
-                nextPos = new Vector2Int(1, 1);
+                if (cursorPosition.x == 1) nextPos = new Vector2Int(4, 0);
+                else if (cursorPosition.x == 4) nextPos = new Vector2Int(7, 0);
             }
             else if (direction == Direction.Left)
             {
-                nextPos = new Vector2Int(0, 1);
-            }
-            else if (direction == Direction.Right)
-            {
-                nextPos = new Vector2Int(2, 1);
+                if (cursorPosition.x == 7) nextPos = new Vector2Int(4, 0);
+                else if (cursorPosition.x == 4) nextPos = new Vector2Int(1, 0);
             }
         }
-        // ダンジョンからハブへの移動
+        // ダンジョン(B1F)からハブへの移動
         else if (cursorPosition.y == 1 && direction == Direction.Up)
         {
-            nextPos = new Vector2Int(1, 0); // ハブへ
+            // Back Layer (0-2) -> (1,0)
+            if (cursorPosition.x <= 2) nextPos = new Vector2Int(1, 0);
+
+            // Mid Layer (3-5) -> (4,0)
+            else if (cursorPosition.x <= 5) nextPos = new Vector2Int(4, 0);
+
+            // Front Layer (6-8) -> (7,0)
+            else nextPos = new Vector2Int(7, 0);
         }
 
         // 有効な位置かチェック
-        if (model.IsValidPosition(nextPos) && view.IsValidPosition(nextPos))
+        // 有効な位置かチェック
+        if (model.IsValidPosition(nextPos))
         {
             cursorPosition = nextPos;
             AudioManager.Instance?.PlaySE(AudioManager.SEType.move);

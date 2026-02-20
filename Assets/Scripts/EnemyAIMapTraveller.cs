@@ -58,9 +58,15 @@ public class EnemyAIMapTraveller : EnemyAI
         // Extend bounds to include immediate neighbors (transition points)
         List<Vector2Int> path = FindPath(currentPos, playerPos);
 
-        // If no path to player, skip
+        // If no path to player (e.g. different stage or blocked), check if we can warp from current position
         if (path == null)
         {
+            var transition = gridManager.GetEnemyStairDestination(enemy, currentPos, currentDirection);
+            if (transition != null)
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, currentDirection);
+            }
             return;
         }
 

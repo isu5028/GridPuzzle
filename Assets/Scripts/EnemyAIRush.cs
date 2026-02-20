@@ -111,41 +111,97 @@ public class EnemyAIRush : EnemyAI
             if (enemyStage == null) break; // Should not happen
 
             // Check what is at nextPos
-            // 1. Out of Bounds
-            if (nextPos.x < 0 || nextPos.x >= enemyStage.Width || nextPos.y < 0 || nextPos.y >= enemyStage.Height)
-            {
-                // マップ端に到達 -> 停止
-                commandManager.ExecuteCommand(new RushAttackCommand(enemy, gridManager));
 
+            // 1. Unit Check
+            Unit targetUnit = GetUnitAt(enemyStage, nextPos);
+            if (targetUnit != null)
+            {
+                // Hit Unit
                 if (enemy.gameObject.activeInHierarchy)
                 {
-                    if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
+                   if (targetUnit.IsBusy) await UniTask.WaitUntil(() => !targetUnit.IsBusy);
 
-                    enemy.OrderSpriteAnimation.PlayAnimation();
-                    // Large Shake
-                    CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
+                   commandManager.ExecuteCommand(new RushAttackCommand(enemy, targetUnit.CurrentPos, gridManager));
+                   CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 120f, Utility.GetVectorFromDirection(dir));
 
-                    await UniTask.WaitUntil(() => !enemy.IsMoving);
+                   await UniTask.WaitUntil(() => !enemy.IsMoving && (targetUnit == null || !targetUnit.IsBusy));
+                   await UniTask.Delay(100);
+                }
+                else
+                {
+                    commandManager.ExecuteCommand(new CrossStageAttackCommand(enemy, targetUnit, rushDamage));
                 }
 
                 isMoving = false;
                 break;
             }
 
-            // 2. Wall
-            CellType cell = gridManager.GetCellTypeAt(enemyStage, nextPos); // Use the new global checker
-            if (cell == CellType.Wall)
+            // 2. Walkable Check (Floor or Broken Wall)
+            // gridManager.IsWalkableAt handles checking DestroyedWalls for In-Bounds AND OOB coordinates
+            if (gridManager.IsWalkableAt(enemyStage, nextPos))
+            {
+                MoveCommand moveCmd = new MoveCommand(enemy, currentPos, nextPos, dir, dir, false);
+                commandManager.ExecuteCommand(moveCmd);
+
+                if (enemy.gameObject.activeInHierarchy)
+                {
+                    if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.rush);
+                    await UniTask.Delay(50);
+                }
+                else
+                {
+                    await UniTask.Yield();
+                }
+
+                // 階段遷移チェックは行わない（突進中は階段を無視して通過する）
+                /*
+                if (enemy.gameObject.activeInHierarchy)
+                {
+                    var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, dir);
+                    // ...
+                }
+                */
+
+                // 境界遷移チェック（Rush継続のため）
+                if (gridManager.CheckAndPerformEnemyBoundaryTransfer(enemy))
+                {
+                    // 遷移したらループ継続（次のステージでRushを続ける）
+                    continue;
+                }
+
+                continue; // Continue rushing
+            }
+
+            // 3. Destructible Check (Wall or Virtual Wall)
+            bool canBreak = false;
+            // Check bounds against the stage the enemy is currently in (which might not be the active stage)
+            if (nextPos.x >= 0 && nextPos.x < enemyStage.Width && nextPos.y >= 0 && nextPos.y < enemyStage.Height)
+            {
+                CellType cell = gridManager.GetCellTypeAt(enemyStage, nextPos);
+                if (cell == CellType.Wall) canBreak = true;
+            }
+            else
+            {
+                // OOB. Is it a breakable boundary?
+                if (gridManager.IsBoundaryCoordinate(enemyStage, nextPos))
+                {
+                    if (gridManager.GetAdjacentStageFromBoundary(enemyStage, nextPos) != null)
+                    {
+                        canBreak = true;
+                    }
+                }
+            }
+
+            if (canBreak)
             {
                 // Break Wall
                 BreakWallCommand breakCmd = new BreakWallCommand(gridManager, enemyStage, nextPos, enemy, rushDamage);
                 commandManager.ExecuteCommand(breakCmd);
 
-                // Visual feedback only if active
                 if (enemy.gameObject.activeInHierarchy)
                 {
                     if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
                     enemy.OrderSpriteAnimation.PlayAnimation();
-                    // Large Shake on Wall Hit
                     CameraManager.Instance.ShakeCamera(0.3f, 8.0f, 80f, Utility.GetVectorFromDirection(dir));
                 }
 
@@ -153,85 +209,35 @@ public class EnemyAIRush : EnemyAI
                 break;
             }
 
-            // 3. Unit (Player or Enemy)
-            Unit targetUnit = GetUnitAt(enemyStage, nextPos); // Helper needed
-            if (targetUnit != null)
-            {
-                // Hit Unit
-                // Apply Damage. Since targetUnit might be generic Unit, we can call TakeDamage.
-                // But `GetUnitAt` needs to return a Unit.
-                // If it's on inactive stage, we might need to load it or simulate damage?
-                // The constraint says "Stop in front of it".
-
-                // If the target is Player, Player is always technically "on the active stage" logic-wise if we are simulating frame-by-frame,
-                // but if Player is on Stage A, and Enemy is rushing in Stage B, they won't collide.
-                // So checking `GetUnitAt(enemyStage)` is correct.
-
-                // Visual Attack if active
-                if (enemy.gameObject.activeInHierarchy)
-                {
-                   // enemy.TryAttack(); replaced by Command
-                   // Use RushAttackCommand for same-stage attack + recoil
-
-                   // Wait for target to be ready (e.g. Player moving towards us)
-                   if (targetUnit.IsBusy) await UniTask.WaitUntil(() => !targetUnit.IsBusy);
-
-                   commandManager.ExecuteCommand(new RushAttackCommand(enemy, targetUnit.CurrentPos, gridManager));
-                   // Large Shake on Unit Hit
-                   CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 120f, Utility.GetVectorFromDirection(dir));
-
-                   await UniTask.WaitUntil(() => !enemy.IsMoving && (targetUnit == null || !targetUnit.IsBusy));
-                   await UniTask.Delay(100); // プレイヤーがすぐに行動できないように一瞬待つ
-                }
-                else
-                {
-                    // Off-screen attack
-                    commandManager.ExecuteCommand(new CrossStageAttackCommand(enemy, targetUnit, rushDamage));
-                }
-
-                isMoving = false; // Stop
-                break;
-            }
-
-            // 4. Empty -> Move
-            // Suppress the default step sound
-            MoveCommand moveCmd = new MoveCommand(enemy, currentPos, nextPos, dir, dir, false);
-            // Note: MoveCommand normally animates. If enemy is inactive, it should skip animation.
-            // We need to ensure MoveCommand handles inactive enemies gracefully (DG.Tween might complain on inactive object).
-            // Let's verify MoveCommand. Or create simple "Teleport" command for off-screen?
-            // MoveCommand calls `unit.MoveTo`. Unit.MoveTo uses DOTween.
-            // If gameObject is inactive, DOTween on Transform works but is invisible.
-            commandManager.ExecuteCommand(moveCmd);
+            // 4. Hard Stop (Unbreakable Boundary / Map Edge)
+            commandManager.ExecuteCommand(new RushAttackCommand(enemy, gridManager));
 
             if (enemy.gameObject.activeInHierarchy)
             {
-                // Play Rush Sound explicitly (Manual Interval control if needed, or rely on Loop)
-                // Since this runs every frame/step, we play it every step.
-                // Rush sound is likely a quick "Whoosh" or "Step".
-                // We use debounce in AudioManager so it won't spam.
-                if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.rush);
+                if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
 
-                await UniTask.Delay(50);
-            }
-            else
-            {
-                // Need small delay to avoid infinite loop freeze if logic is buggy,
-                // but functionally instant.
-                // To be safe against stack overflow in recursive scenarios or simple infinite loops:
-                await UniTask.Yield();
+                enemy.OrderSpriteAnimation.PlayAnimation();
+                CameraManager.Instance.ShakeCamera(0.3f, 15.0f, 60f, Utility.GetVectorFromDirection(dir));
+
+                await UniTask.WaitUntil(() => !enemy.IsMoving);
             }
 
-            // 階段遷移チェック（アクティブな場合のみ）
-            if (enemy.gameObject.activeInHierarchy)
+            isMoving = false;
+            break;
+        }
+
+
+        // 突進終了後に階段チェック
+        if (!isMoving) // activeInHierarchy check removed to allow off-screen transition
+        {
+            var transition = gridManager.GetEnemyStairDestination(enemy, enemy.CurrentPos, dir);
+            if (transition != null)
             {
-                var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, dir);
-                if (transition != null)
-                {
-                    if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
-                    await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, dir);
-                    isMoving = false;
-                    break;
-                }
+               // Change state to Idle before moving so saved data reflects Idle state
+               commandManager.ExecuteCommand(new SetRushStateCommand(this, (int)RushState.Idle));
+
+               if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+               await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, dir);
             }
         }
     }

@@ -9,12 +9,15 @@ public interface IStageTransitionSystem
     void WarpToStage(StageSO stage, Vector2Int gridPos, Direction dir);
     void WarpToStageAtStairUp(StageSO stage);
     UniTask WarpToStageAtStairUpAsync(StageSO stage);
-    UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false);
+    UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null);
     void SwitchStage(StageSO nextstage, Direction entryDirection);
     void SwitchStageDirect(StageSO nextstage, Direction entryDirection);
     UniTask PlayTransitionWithoutCommand(StageSO nextStage, Direction entryDirection);
     UniTask PlayTransitionWithoutCommand(StageSO nextStage, Direction entryDirection, Vector2Int entryPos);
     void PrepareEnemiesForTransition(StageSO nextstage, Vector3 transitionOffset);
+    bool CheckAndPerformBoundaryTransition(Unit unit);
+    bool CheckAndPerformBoundaryTransition(Unit unit, Vector2Int? overrideTargetPos);
+    bool CheckAndPerformEnemyBoundaryTransfer(Enemy enemy);
 }
 
 public interface IStageEnemySystem

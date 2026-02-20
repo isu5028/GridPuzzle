@@ -41,7 +41,8 @@ public class GridSaveSystem : ISaveSystem
                     order = e.Order,
                     maxHP = e.MaxHP,
                     index = i,
-                    ammo = e.CurrentAmmo.Value
+                    ammo = e.CurrentAmmo.Value,
+                    enemyID = e.EnemyID
                 });
             }
         }
@@ -75,7 +76,8 @@ public class GridSaveSystem : ISaveSystem
                         order = e.Order,
                         maxHP = e.MaxHP,
                         index = i,
-                        ammo = e.CurrentAmmo.Value
+                        ammo = e.CurrentAmmo.Value,
+                        enemyID = e.EnemyID
                     });
                 }
             }

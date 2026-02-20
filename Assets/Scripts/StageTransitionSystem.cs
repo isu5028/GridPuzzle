@@ -3,7 +3,7 @@ using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using System.Collections.Generic;
 
-public class StageTransitionSystem : IStageTransitionSystem
+public partial class StageTransitionSystem : IStageTransitionSystem
 {
     private GridManager gm;
 
@@ -21,14 +21,11 @@ public class StageTransitionSystem : IStageTransitionSystem
 
         // 1. Setup Transition Tilemap
         HashSet<Vector2Int> destroyed = gm.DestroyedWalls.ContainsKey(nextstage) ? gm.DestroyedWalls[nextstage] : null;
-        gm.Visualizer.SetupTransitionTilemap(nextstage, entryDirection, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
-        var dirVector = Utility.GetVectorFromDirection(entryDirection);
-        // Visualizer puts tilemap at -offset. We need to move Parent by +offset.
-        Vector3 transitionOffset = new Vector3(
-            dirVector.x * gm.Visualizer.TilemapOffset.x * 2,
-            dirVector.y * gm.Visualizer.TilemapOffset.y * 2,
-            0f);
+        // Calculate transition offset based on STAGE SIZE
+        Vector3 transitionOffset = GridCalculation.CalculateTransitionOffset(gm.CurrentStageSOInternal, nextstage, entryDirection, gm.Visualizer.CellSize);
+
+        gm.Visualizer.SetupTransitionTilemap(nextstage, transitionOffset, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
         // 2. Prepare Enemies
         // Enemies should be placed at TransitionMap position (which is -transitionOffset relative to current map)
@@ -63,6 +60,12 @@ public class StageTransitionSystem : IStageTransitionSystem
         foreach (var enemy in enemies)
         {
              if (enemy == null) continue;
+
+             if (enemy.IsDead)
+             {
+                 enemy.gameObject.SetActive(false);
+                 continue;
+             }
 
              enemy.gameObject.SetActive(true);
 
@@ -105,7 +108,7 @@ public class StageTransitionSystem : IStageTransitionSystem
     /// <summary>
     /// マップワープ時にスライドアニメーション付きで遷移する
     /// </summary>
-    public async UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false)
+    public async UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null)
     {
         if (gm.IsTransitioning) return;
         if (targetStage == null) return;
@@ -125,12 +128,12 @@ public class StageTransitionSystem : IStageTransitionSystem
         StageSO sourceStage = gm.CurrentStageSOInternal;
 
         // 1. ワープ方向を計算
-        GridCalculation.WarpDirection warpDir = GridCalculation.DetermineWarpDirection(
+        GridCalculation.WarpDirection warpDir = overrideWarpDir ?? GridCalculation.DetermineWarpDirection(
             gm.CurrentStageSOInternal.MapPosition, targetStage.MapPosition);
 
-        // 2. プレイヤーをフェードアウト（スライドと並行実行）
+        // 2. プレイヤーをフェードアウト（スライドと並行実行）※境界遷移時はフェードしない
         bool goingDown = targetStage.MapPosition.y > gm.CurrentStageSOInternal.MapPosition.y;
-        if (gm.UnitManager.Player != null)
+        if (gm.UnitManager.Player != null && overrideWarpDir == null)
         {
             gm.UnitManager.Player.FadeOutAsync(0.15f, goingDown).Forget();
         }
@@ -142,11 +145,14 @@ public class StageTransitionSystem : IStageTransitionSystem
 
         if (isSceneChange)
         {
-            gm.Visualizer.SetupWarpTransitionTilemap(targetStage, warpDir, targetPos, destroyed, GameProgressManager.Instance.IsPositionCleared);
+            // Calculate Transition Offset (Dynamic based on Stage Size for cardinal directions)
+            Vector3 transitionOffset = GridCalculation.CalculateWarpTransitionOffset(warpDir, gm.Visualizer.TilemapOffset, sourceStage, targetStage, gm.Visualizer.CellSize);
+            Vector3 initialOffset = -transitionOffset;
+
+            gm.Visualizer.SetupWarpTransitionTilemap(targetStage, initialOffset, targetPos, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
             // 4. 遷移先の敵を準備
-            Vector3 transitionOffset = gm.Visualizer.GetWarpTransitionOffset(warpDir);
-            PrepareEnemiesForTransition(targetStage, transitionOffset);
+            PrepareEnemiesForTransition(targetStage, -transitionOffset);
 
             gm.UnitManager.SetAllEnemiesActive(false);
 
@@ -155,11 +161,50 @@ public class StageTransitionSystem : IStageTransitionSystem
 
             // 5. スライドアニメーション
             AudioManager.Instance.PlaySE(AudioManager.SEType.warp);
-            gm.Visualizer.MoveGridParent(transitionOffset, 0.2f);
-            await UniTask.Delay(200);
+            var gridTween = gm.Visualizer.MoveGridParent(transitionOffset, 0.2f);
+
+            // プレイヤーのシームレス移動アニメーション（境界遷移などの場合）
+            if (gm.UnitManager.Player != null && overrideWarpDir != null)
+            {
+                // 次のステージの初期オフセットを取得（TransitionTilemapの位置）
+                // Vector3 stageOffset = GridCalculation.CalculateWarpInitialOffset(warpDir, gm.Visualizer.TilemapOffset);
+                Vector3 stageOffset = -transitionOffset; // Effectively initialOffset
+
+                // 遷移先のローカル座標を計算（GridParent基準、今のGridParentは移動前なので0ベース）
+                // GridToWorldPositionはTilemapOffset込みの座標を返す
+                // これにStageOffsetを加算することで、遷移先ステージ上での該当タイルの位置になる
+                Vector3 playerTargetLocalPos = stageOffset + (gm.Visualizer.GridToWorldPosition(targetPos) - gm.Visualizer.GridParent.position);
+
+                // GridToWorldPositionはWorld座標を返すが、GridParentが動いていない前提ならLocalとみなせる（親が0,0,0なら）
+                // ただし、もしGridToWorldPositionの実装がTransform.positionを使っているなら、親の位置を引く必要がある。
+                // 確認したコードでは `tilemap.CellToWorld(...) + ...` なので、通常はLocalに近いが、Tilemapが親の子ならLocal。
+
+                // 並行してプレイヤーを移動（イージングはスライドに合わせる）
+                var playerTween = gm.UnitManager.Player.transform.DOLocalMove(playerTargetLocalPos, 0.2f).SetEase(Ease.OutQuad);
+
+                await UniTask.WhenAll(
+                    gridTween.AsyncWaitForCompletion().AsUniTask(),
+                    playerTween.AsyncWaitForCompletion().AsUniTask()
+                );
+            }
+            else
+            {
+                await UniTask.WhenAll(
+                    gridTween.AsyncWaitForCompletion().AsUniTask()
+                );
+            }
+
+            // Kill tweens to ensure clean state
+            if(gm.UnitManager.Player != null) gm.UnitManager.Player.transform.DOKill();
         }
 
         // 6. コマンド経由でステージをロード（Undo/Redo対応）
+        // ResetGridParentPositionの前に親子関係を解除しないと、PlayerがGridParentと一緒に移動してしまい、
+        // その後のWarpToNewStageで視覚的な位置飛び（スナップ）が発生するため、ここで一時的に解除する。
+        if (gm.UnitManager.Player != null)
+        {
+            gm.UnitManager.Player.transform.SetParent(null);
+        }
         gm.Visualizer.ResetGridParentPosition();
 
         // コマンド実行前にスナップショットを取得（Undo用）
@@ -176,7 +221,7 @@ public class StageTransitionSystem : IStageTransitionSystem
         gm.Visualizer.ClearTransitionTiles();
 
         // 8. プレイヤーをフェードイン
-        if (gm.UnitManager.Player != null)
+        if (gm.UnitManager.Player != null && overrideWarpDir == null)
         {
             await gm.UnitManager.Player.FadeInAsync(0.2f, goingDown);
         }
@@ -211,13 +256,9 @@ public class StageTransitionSystem : IStageTransitionSystem
         if(gm.UnitManager.Player != null) gm.UnitManager.Player.ForceActionComplete();
 
         HashSet<Vector2Int> destroyed = gm.DestroyedWalls.ContainsKey(nextStage) ? gm.DestroyedWalls[nextStage] : null;
-        gm.Visualizer.SetupTransitionTilemap(nextStage, entryDirection, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
-        var dirVector = Utility.GetVectorFromDirection(entryDirection);
-        Vector3 transitionOffset = new Vector3(
-            dirVector.x * gm.Visualizer.TilemapOffset.x * 2,
-            dirVector.y * gm.Visualizer.TilemapOffset.y * 2,
-            0f);
+        Vector3 transitionOffset = GridCalculation.CalculateTransitionOffset(gm.CurrentStageSOInternal, nextStage, entryDirection, gm.Visualizer.CellSize);
+        gm.Visualizer.SetupTransitionTilemap(nextStage, transitionOffset, destroyed, GameProgressManager.Instance.IsPositionCleared);
 
         PrepareEnemiesForTransition(nextStage, -transitionOffset);
 
@@ -236,6 +277,75 @@ public class StageTransitionSystem : IStageTransitionSystem
         gm.Visualizer.ClearTransitionTiles();
 
         gm.IsTransitioning = false;
+        gm.IsTransitioning = false;
+    }
+
+    public bool CheckAndPerformBoundaryTransition(Unit unit) => CheckAndPerformBoundaryTransition(unit, null);
+
+    public bool CheckAndPerformBoundaryTransition(Unit unit, Vector2Int? overrideTargetPos)
+    {
+        if (unit == null || gm.IsTransitioning) return false;
+
+        Vector2Int pos = overrideTargetPos ?? unit.CurrentPos;
+        StageSO currentStage = gm.CurrentStageSO;
+
+        // Check if strictly OOB
+        if (gm.IsPositionInBounds(pos)) return false;
+
+        // Determine Direction and Neighbor
+        StageSO neighbor = null;
+        Vector2Int targetPos = Vector2Int.zero;
+        Direction targetDir = unit.CurrentDirection;
+        GridCalculation.WarpDirection warpDir = GridCalculation.WarpDirection.Down; // Default
+
+        if (pos.x < 0)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Left);
+            if (neighbor != null)
+            {
+                int y = Mathf.Clamp(pos.y, 0, neighbor.Height - 1);
+                targetPos = new Vector2Int(neighbor.Width - 1, y);
+                warpDir = GridCalculation.WarpDirection.Left;
+            }
+        }
+        else if (pos.x >= currentStage.Width)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Right);
+            if (neighbor != null)
+            {
+                int y = Mathf.Clamp(pos.y, 0, neighbor.Height - 1);
+                targetPos = new Vector2Int(0, y);
+                warpDir = GridCalculation.WarpDirection.Right;
+            }
+        }
+        else if (pos.y < 0)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Down);
+            if (neighbor != null)
+            {
+                int x = Mathf.Clamp(pos.x, 0, neighbor.Width - 1);
+                targetPos = new Vector2Int(x, neighbor.Height - 1);
+                warpDir = GridCalculation.WarpDirection.Down;
+            }
+        }
+        else if (pos.y >= currentStage.Height)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Up);
+             if (neighbor != null)
+            {
+                int x = Mathf.Clamp(pos.x, 0, neighbor.Width - 1);
+                targetPos = new Vector2Int(x, 0);
+                warpDir = GridCalculation.WarpDirection.Up;
+            }
+        }
+
+        if (neighbor != null)
+        {
+            WarpWithAnimationAsync(neighbor, targetPos, targetDir, false, warpDir).Forget();
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -306,18 +416,197 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
 
     private void PerformTransition(StageSO stage, Vector2Int p, Direction d)
     {
+        // 1. Deparent player first to avoid moving it when GridParent resets
         if (gm.UnitManager.Player != null)
         {
-            gm.UnitManager.Player.gameObject.transform.SetParent(gm.Visualizer.GridParent);
+            gm.UnitManager.Player.gameObject.transform.SetParent(null);
         }
 
         gm.CurrentStageSOInternal = stage;
 
+        // 2. Load Stage (This resets GridParent position to 0,0,0)
+        // Note: LoadStage calls WarpToNewStage internally, but we might want to ensure it happens after reparenting if needed.
+        // However, LoadStage usually instantiates or moves player.
+        gm.LoadStage(stage, false, p, d, false);
+
+        // 3. Reparent Player to GridParent (now at 0,0,0)
         if (gm.UnitManager.Player != null)
         {
-            gm.UnitManager.Player.WarpToNewStage(p, d);
+            gm.UnitManager.Player.gameObject.transform.SetParent(gm.Visualizer.GridParent);
+
+            // 4. Force Warp to ensure local position is correct relative to GridParent
+            // (LoadStage called it, but if parenting changed afterwards, we might need to refresh local pos)
+            // But since LoadStage usually handles it, this is just a safety measure.
+            // If LoadStage already parented it (it might not have if player existed), let's ensure.
+             gm.UnitManager.Player.WarpToNewStage(p, d);
+        }
+    }
+}
+
+public class EnemyCrossStageMoveCommand : ICommand, IAsyncUndoCommand
+{
+    private GridManager gm;
+    private Enemy enemy;
+    private StageSO sourceStage;
+    private StageSO targetStage;
+    private Vector2Int sourcePos;
+    private Vector2Int targetPos;
+    private Direction sourceDir;
+    private Direction targetDir;
+    private bool wasActive;
+
+    public EnemyCrossStageMoveCommand(GridManager gm, Enemy enemy, StageSO source, StageSO target, Vector2Int tPos, Direction tDir)
+    {
+        this.gm = gm;
+        this.enemy = enemy;
+        this.sourceStage = source;
+        this.targetStage = target;
+        this.targetPos = tPos;
+        this.targetDir = tDir;
+        this.sourcePos = enemy.CurrentPos;
+        this.sourceDir = enemy.CurrentDirection;
+        this.wasActive = enemy.gameObject.activeSelf;
+    }
+
+    public void Execute()
+    {
+        Transfer(sourceStage, targetStage, targetPos, targetDir);
+    }
+
+    public void Undo()
+    {
+        Transfer(targetStage, sourceStage, sourcePos, sourceDir, true);
+    }
+
+    public async UniTask UndoAsync()
+    {
+        Undo();
+        await UniTask.Yield();
+    }
+
+    private void Transfer(StageSO from, StageSO to, Vector2Int pos, Direction dir, bool isUndo = false)
+    {
+        // 1. Remove from FromStage List
+        if (gm.StageEnemiesMap.ContainsKey(from))
+        {
+            gm.StageEnemiesMap[from].Remove(enemy);
         }
 
-        gm.LoadStage(stage, false, p, d, false);
+        // 2. Add to ToStage List
+        // Make sure the target stage is fully loaded (defaults generated or save applied)
+        // before adding the new enemy, otherwise only this enemy will exist effectively "wiping" the stage's original enemies.
+        gm.EnsureStageEnemiesLoaded(to);
+
+        // Check for and remove any duplicate of this enemy that might have been loaded/generated
+        // This prevents "Ghost" enemies (one active, one inactive duplicate)
+            // 2. Add to ToStage List
+            // Make sure the target stage is fully loaded (defaults generated or save applied)
+            // before adding the new enemy, otherwise only this enemy will exist effectively "wiping" the stage's original enemies.
+            gm.EnsureStageEnemiesLoaded(to);
+
+            // Removing aggressive duplicate check that deleted valid enemies with same name (e.g. Enemy_Slime_0 vs Enemy_Slime_0)
+            // Distinct instances should coexist even if names clash across stages.
+
+
+        gm.StageEnemiesMap[to].Add(enemy);
+
+        // 3. Update Enemy State
+        enemy.WarpTo(pos, dir); // Sets internal state
+
+        // 4. Handle Visuals and UnitManager Registration
+        if (to == gm.CurrentStageSOInternal)
+        {
+            enemy.gameObject.SetActive(true);
+            // Add to current active enemies if not already there
+            if (!gm.UnitManager.Enemies.Contains(enemy))
+            {
+                gm.UnitManager.Enemies.Add(enemy);
+            }
+        }
+        else
+        {
+            enemy.gameObject.SetActive(false);
+            // Remove from current active enemies
+            if (gm.UnitManager.Enemies.Contains(enemy))
+            {
+                gm.UnitManager.Enemies.Remove(enemy);
+            }
+        }
+
+        if (from == gm.CurrentStageSOInternal)
+        {
+             // If leaving current stage, ensure removed from active list
+             if (gm.UnitManager.Enemies.Contains(enemy))
+             {
+                 gm.UnitManager.Enemies.Remove(enemy);
+             }
+        }
+    }
+}
+
+public partial class StageTransitionSystem
+{
+    public bool CheckAndPerformEnemyBoundaryTransfer(Enemy enemy)
+    {
+        if (enemy == null) return false;
+
+        Vector2Int pos = enemy.CurrentPos;
+        StageSO currentStage = gm.GetStageOfEnemy(enemy);
+        if (currentStage == null) return false;
+
+        // Check if strictly OOB relative to currentStage dimensions
+        if (pos.x >= 0 && pos.x < currentStage.Width && pos.y >= 0 && pos.y < currentStage.Height) return false;
+
+        // Determine Direction and Neighbor
+        StageSO neighbor = null;
+        Vector2Int targetPos = Vector2Int.zero;
+        Direction targetDir = enemy.CurrentDirection;
+
+        if (pos.x < 0)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Left);
+            if (neighbor != null)
+            {
+                int y = Mathf.Clamp(pos.y, 0, neighbor.Height - 1);
+                targetPos = new Vector2Int(neighbor.Width - 1, y);
+            }
+        }
+        else if (pos.x >= currentStage.Width)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Right);
+            if (neighbor != null)
+            {
+                int y = Mathf.Clamp(pos.y, 0, neighbor.Height - 1);
+                targetPos = new Vector2Int(0, y);
+            }
+        }
+        else if (pos.y < 0)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Down);
+            if (neighbor != null)
+            {
+                int x = Mathf.Clamp(pos.x, 0, neighbor.Width - 1);
+                targetPos = new Vector2Int(x, neighbor.Height - 1);
+            }
+        }
+        else if (pos.y >= currentStage.Height)
+        {
+            neighbor = currentStage.GetAdjacentStage(Direction.Up);
+            if (neighbor != null)
+            {
+                int x = Mathf.Clamp(pos.x, 0, neighbor.Width - 1);
+                targetPos = new Vector2Int(x, 0);
+            }
+        }
+
+        if (neighbor != null)
+        {
+            // Execute Transfer Command
+            var cmd = new EnemyCrossStageMoveCommand(gm, enemy, currentStage, neighbor, targetPos, targetDir);
+            gm.CommandManager.ExecuteCommand(cmd);
+            return true;
+        }
+
+        return false;
     }
 }

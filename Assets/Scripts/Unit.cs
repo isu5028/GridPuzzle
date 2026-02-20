@@ -21,6 +21,7 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] private ColorFlash colorFlash = null!;
     [SerializeField] private HPSpriteAnimation hpSpriteAnimation = null!;
     [SerializeField] protected OrderSpriteAnimation orderSpriteAnimation = null!;
+    [SerializeField] protected Transform defeatedIconTransform = null!; // 追加：倒された敵のアイコン
     [SerializeField] private Transform maskTransform = null!;
     [SerializeField] private Transform maskedTransform = null!;
     [SerializeField] protected UnitAnimator unitAnimator = null!;
@@ -50,6 +51,7 @@ public abstract class Unit : MonoBehaviour
     private Vector3 maskedOriginalPos;
     private Vector3 hpOriginalPos;
     private Vector3 orderOriginalPos;
+    private Vector3 defeatedIconOriginalPos;
 
     [SerializeField] protected int maxHP = 3;
     protected ReactiveProperty<int> hp = new ReactiveProperty<int>(3);
@@ -94,8 +96,9 @@ public abstract class Unit : MonoBehaviour
 
         maskOriginalPos = maskTransform.localPosition;
         maskedOriginalPos = maskedTransform.localPosition;
-        hpOriginalPos = hpTransform.localPosition;
-        orderOriginalPos = orderTransform.localPosition;
+        hpOriginalPos = hpTransform != null ? hpTransform.localPosition : Vector3.zero;
+        orderOriginalPos = orderTransform != null ? orderTransform.localPosition : Vector3.zero;
+        defeatedIconOriginalPos = defeatedIconTransform != null ? defeatedIconTransform.localPosition : Vector3.zero;
 
         // DitherDissolveシェーダーからマテリアルを動的に生成
         if (dissolveShader != null)
@@ -128,6 +131,16 @@ public abstract class Unit : MonoBehaviour
             if (orderTransform != null)
             {
                 foreach (var sr in orderTransform.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    Material mat = CreateAndApplyDissolveMaterial(sr);
+                    dissolveMaterials.Add(mat);
+                }
+            }
+
+            // Defeated Icon関連のSpriteRendererにもdissolveMaterialを適用
+            if (defeatedIconTransform != null)
+            {
+                foreach (var sr in defeatedIconTransform.GetComponentsInChildren<SpriteRenderer>())
                 {
                     Material mat = CreateAndApplyDissolveMaterial(sr);
                     dissolveMaterials.Add(mat);
@@ -270,8 +283,9 @@ public abstract class Unit : MonoBehaviour
 
         // アニメーション停止
         spriteTransform.DOKill();
-        hpTransform.DOKill();
-        orderTransform.DOKill();
+        if (hpTransform != null) hpTransform.DOKill();
+        if (orderTransform != null) orderTransform.DOKill();
+        if (defeatedIconTransform != null) defeatedIconTransform.DOKill();
 
         // DitherDissolveのDissolveAmountを1に設定（完全に消えた状態）
         if (dissolveMaterial != null)
@@ -617,8 +631,9 @@ public abstract class Unit : MonoBehaviour
 
         // 実行中のDOTweenアニメーションをキル
         spriteTransform.DOKill();
-        hpTransform.DOKill();
-        orderTransform.DOKill();
+        if (hpTransform != null) hpTransform.DOKill();
+        if (orderTransform != null) orderTransform.DOKill();
+        if (defeatedIconTransform != null) defeatedIconTransform.DOKill();
         maskTransform.DOKill();
 
         // マテリアルのDOTween（DissolveAmountアニメーション）もキル
@@ -655,14 +670,18 @@ public abstract class Unit : MonoBehaviour
         if (hpText != null) hpText.alpha = 1f;
         if (orderText != null) orderText.alpha = 1f;
 
-        if (hpOriginalPos == Vector3.zero && hpTransform.localPosition != Vector3.zero)
+        if (hpOriginalPos == Vector3.zero && hpTransform != null && hpTransform.localPosition != Vector3.zero)
              hpOriginalPos = hpTransform.localPosition;
 
-        if (orderOriginalPos == Vector3.zero && orderTransform.localPosition != Vector3.zero)
+        if (orderOriginalPos == Vector3.zero && orderTransform != null && orderTransform.localPosition != Vector3.zero)
              orderOriginalPos = orderTransform.localPosition;
 
-        hpTransform.localPosition = hpOriginalPos;
-        orderTransform.localPosition = orderOriginalPos;
+        if (defeatedIconOriginalPos == Vector3.zero && defeatedIconTransform != null && defeatedIconTransform.localPosition != Vector3.zero)
+             defeatedIconOriginalPos = defeatedIconTransform.localPosition;
+
+        if (hpTransform != null) hpTransform.localPosition = hpOriginalPos;
+        if (orderTransform != null) orderTransform.localPosition = orderOriginalPos;
+        if (defeatedIconTransform != null) defeatedIconTransform.localPosition = defeatedIconOriginalPos;
     }
 
     private async UniTask KnockbackAsync(Vector2Int attackerPos)

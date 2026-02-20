@@ -131,10 +131,13 @@ public class StairTraversalSystem : IStairTraversalSystem
             await gm.UnitManager.Player.FadeOutAsync(0.15f, goingDown);
         }
 
-        gm.Visualizer.SetupStairTransitionTilemapWithDirection(targetStage, stairWarpDir, currentPlayerPos, targetPlayerPos, destroyed, GameProgressManager.Instance.IsPositionCleared);
+        Vector3 transitionOffset = GridCalculation.CalculateWarpTransitionOffset(stairWarpDir, gm.Visualizer.TilemapOffset, gm.CurrentStageSOInternal, targetStage, gm.Visualizer.CellSize);
+        Vector3 initialOffset = -transitionOffset;
 
-        Vector3 transitionOffset = gm.Visualizer.GetWarpTransitionOffset(stairWarpDir);
-        gm.PrepareEnemiesForTransition(targetStage, transitionOffset);
+        gm.Visualizer.SetupStairTransitionTilemapWithDirection(targetStage, initialOffset, currentPlayerPos, targetPlayerPos, destroyed, GameProgressManager.Instance.IsPositionCleared);
+
+        // Vector3 transitionOffset = GridCalculation.CalculateWarpTransitionOffset(stairWarpDir, gm.Visualizer.TilemapOffset); // Already calculated above
+        gm.PrepareEnemiesForTransition(targetStage, -transitionOffset);
 
         gm.UnitManager.SetAllEnemiesActive(false);
 
@@ -235,9 +238,11 @@ public class StairTraversalSystem : IStairTraversalSystem
 
     public (StageSO targetStage, Vector2Int targetPos)? GetEnemyStairDestination(Enemy enemy, Vector2Int stairPos, Direction approachDirection)
     {
-        if (gm.CurrentStageSOInternal == null) return null;
+        StageSO sourceStage = gm.GetStageOfEnemy(enemy);
+        if (sourceStage == null) sourceStage = gm.CurrentStageSOInternal; // Fallback
+        if (sourceStage == null) return null;
 
-        CellType cellType = gm.GetCellTypeAt(gm.CurrentStageSOInternal, stairPos);
+        CellType cellType = gm.GetCellTypeAt(sourceStage, stairPos);
         if (cellType != CellType.StairUp && cellType != CellType.StairDown)
         {
             return null;
@@ -246,7 +251,7 @@ public class StairTraversalSystem : IStairTraversalSystem
         StageSO targetStage = null;
         Vector2Int targetStairPos = Vector2Int.zero;
 
-        StairConnectionData? connectionData = gm.CurrentStageSOInternal.GetStairConnectionData(stairPos);
+        StairConnectionData? connectionData = sourceStage.GetStairConnectionData(stairPos);
         if (connectionData != null)
         {
             targetStage = connectionData.Value.TargetStage;
@@ -260,21 +265,49 @@ public class StairTraversalSystem : IStairTraversalSystem
         {
             if (cellType == CellType.StairUp)
             {
-                targetStage = gm.CurrentStageSOInternal.DefaultUpStage;
-                targetStairPos = stairPos;
+                targetStage = sourceStage.DefaultUpStage;
             }
             else if (cellType == CellType.StairDown)
             {
-                targetStage = gm.CurrentStageSOInternal.DefaultDownStage;
-                targetStairPos = stairPos;
+                targetStage = sourceStage.DefaultDownStage;
             }
 
             if (targetStage == null && gm.WorldMapSO != null)
             {
-                int currentFloor = gm.CurrentStageSOInternal.FloorIndex;
+                int currentFloor = sourceStage.FloorIndex;
                 int targetFloor = cellType == CellType.StairUp ? currentFloor - 1 : currentFloor + 1;
                 targetStage = gm.WorldMapSO.GetStageByFloorIndex(targetFloor);
+            }
+            targetStairPos = new Vector2Int(-1, -1);
+        }
+
+        // Attempt to find matching stair in target stage if explicit position is unknown
+        if (targetStage != null && (targetStairPos == new Vector2Int(-1, -1) || targetStairPos == Vector2Int.zero))
+        {
+            CellType targetType = (cellType == CellType.StairUp) ? CellType.StairDown : CellType.StairUp;
+            bool found = false;
+
+            // Try to find the matching stair at the SAME position first
+            if (gm.GetCellTypeAt(targetStage, stairPos) == targetType)
+            {
                 targetStairPos = stairPos;
+                found = true;
+            }
+            else
+            {
+                // Search for ANY matching stair
+                Vector2Int? foundStair = FindStairPosition(targetStage, targetType);
+                if (foundStair.HasValue)
+                {
+                    targetStairPos = foundStair.Value;
+                    found = true;
+                }
+            }
+
+            if (!found)
+            {
+                // Fallback to Player Start Position if no stair found
+                targetStairPos = targetStage.PlayerStartPosition;
             }
         }
 
@@ -290,6 +323,21 @@ public class StairTraversalSystem : IStairTraversalSystem
         }
 
         return (targetStage, targetPos);
+    }
+
+    private Vector2Int? FindStairPosition(StageSO stage, CellType targetType)
+    {
+        for (int y = 0; y < stage.Height; y++)
+        {
+            for (int x = 0; x < stage.Width; x++)
+            {
+                if (gm.GetCellTypeAt(stage, new Vector2Int(x, y)) == targetType)
+                {
+                    return new Vector2Int(x, y);
+                }
+            }
+        }
+        return null; // Not found
     }
 
     public bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos)
@@ -350,8 +398,33 @@ public class StairTraversalSystem : IStairTraversalSystem
         if (!gm.LoadedStageEnemyData.ContainsKey(stage))
         {
             gm.LoadedStageEnemyData[stage] = new List<EnemySaveData>();
-            if (!gm.StageEnemiesMap.ContainsKey(stage) && stage.EnemyStartData != null)
+
+            if (gm.StageEnemiesMap.ContainsKey(stage))
             {
+                // Snapshot current existing enemies
+                int idx = 0;
+                foreach (var enemy in gm.StageEnemiesMap[stage])
+                {
+                    if (enemy == null) continue;
+                    gm.LoadedStageEnemyData[stage].Add(new EnemySaveData
+                    {
+                        gridX = enemy.CurrentPos.x,
+                        gridY = enemy.CurrentPos.y,
+                        direction = (int)enemy.CurrentDirection,
+                        isDead = enemy.IsDead,
+                        currentHP = enemy.HP.Value,
+                        maxHP = enemy.MaxHP,
+                        enemyType = (int)enemy.Type,
+                        order = enemy.Order,
+                        index = -1, // Dynamically loaded, no fixed index
+                        aiState = enemy.EnemyAI != null ? enemy.EnemyAI.GetState() : 0,
+                        ammo = enemy.CurrentAmmo.Value
+                    });
+                }
+            }
+            else if (stage.EnemyStartData != null)
+            {
+                // Load defaults
                 int idx = 0;
                 foreach (var esd in stage.EnemyStartData)
                 {
@@ -377,18 +450,21 @@ public class StairTraversalSystem : IStairTraversalSystem
     {
         if (enemy == null || targetStage == null) return;
 
+        StageSO sourceStage = gm.GetStageOfEnemy(enemy);
+        if (sourceStage == null) sourceStage = gm.CurrentStageSOInternal;
+
         AudioManager.Instance.PlaySE(AudioManager.SEType.warp);
 
         bool goingDown = false;
-        if (gm.CurrentStageSOInternal != null)
+        if (sourceStage != null)
         {
-            CellType cell = gm.GetCellTypeAt(gm.CurrentStageSOInternal, enemy.CurrentPos);
+            CellType cell = gm.GetCellTypeAt(sourceStage, enemy.CurrentPos);
             if (cell == CellType.StairDown) goingDown = true;
         }
 
         await enemy.FadeOutAsync(0.15f, goingDown);
 
-        var cmd = new EnemyStairTransitionCommand(gm, this, enemy, gm.CurrentStageSOInternal, targetStage, targetPos, direction);
+        var cmd = new EnemyStairTransitionCommand(gm, this, enemy, sourceStage, targetStage, targetPos, direction);
         gm.CommandManager.ExecuteCommand(cmd);
     }
 
