@@ -23,9 +23,17 @@ public class UnitManager : MonoBehaviour
     {
         foreach (var enemy in enemyObjects)
         {
-            if (enemy != null) Destroy(enemy);
+            if (enemy != null)
+            {
+                enemy.SetActive(false);
+                Destroy(enemy);
+            }
         }
-        if (playerObject != null) Destroy(playerObject);
+        if (playerObject != null)
+        {
+            playerObject.SetActive(false);
+            Destroy(playerObject);
+        }
 
         enemyObjects.Clear();
         enemyScripts.Clear();

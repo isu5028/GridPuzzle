@@ -9,10 +9,10 @@ public class WorldMapModel
 
     // レイアウト定数
     public const int DUNGEON_COLUMNS = 9; // 3 layers * 3 columns
-    public const int DUNGEON_ROWS = 6;
+    public const int DUNGEON_ROWS = 8;
     public const int TOTAL_ROWS = DUNGEON_ROWS + 1; // ハブ含む
 
-    // マップデータ: [col, row] で row=0がハブ、row=1-6がダンジョン
+    // マップデータ: [col, row] で row=0がハブ、row=1-8がダンジョン
     private WorldMapCellType[,] mapData;
 
     // 各セルに対応するStageSO
@@ -41,13 +41,10 @@ public class WorldMapModel
             }
         }
 
-        // ハブ（Back: 1,0 / Mid: 4,0 / Front: 7,0）は即時アクセス可能
-        List<Vector2Int> hubs = new List<Vector2Int> { new Vector2Int(1, 0), new Vector2Int(4, 0), new Vector2Int(7, 0) };
-        foreach(var h in hubs)
-        {
-            mapData[h.x, h.y] = WorldMapCellType.Cleared;
-            unlockedCells.Add(h);
-        }
+        // 初期HUB (1,0) のみ解放済み・Cleared
+        // 他のHUB (4,0), (7,0) はレイヤー到達時に解放される
+        mapData[1, 0] = WorldMapCellType.Cleared;
+        unlockedCells.Add(new Vector2Int(1, 0));
 
         // WorldMapSOからステージ情報を読み込む
         LoadStageMapping();
@@ -103,16 +100,28 @@ public class WorldMapModel
             }
         }
 
+
+
         for (int col = 0; col < DUNGEON_COLUMNS; col++)
         {
             for (int row = 0; row < TOTAL_ROWS; row++)
             {
                 Vector2Int pos = new Vector2Int(col, row);
+                bool isHub = (row == 0) && (col == 1 || col == 4 || col == 7);
+
                 if (unlockedCells.Contains(pos))
                 {
-                    // クリア状態は階層マップのクリア状態から取得
-                    bool isCleared = clearedCells.Contains(pos);
-                    mapData[col, row] = isCleared ? WorldMapCellType.Cleared : WorldMapCellType.Uncleared;
+                    if (isHub)
+                    {
+                        // HUBは一度到達したら常にCleared
+                        mapData[col, row] = WorldMapCellType.Cleared;
+                    }
+                    else
+                    {
+                        // ダンジョンセルはクリア状態を反映
+                        bool isCleared = clearedCells.Contains(pos);
+                        mapData[col, row] = isCleared ? WorldMapCellType.Cleared : WorldMapCellType.Uncleared;
+                    }
                 }
                 else
                 {
@@ -173,7 +182,7 @@ public class WorldMapModel
         {
             return pos.x == 1 || pos.x == 4 || pos.x == 7;
         }
-        // ダンジョン: col=0-8, row=1-6 is handled by < DUNGEON_COLUMNS
+        // ダンジョン: col=0-8, row=1-8 is handled by < DUNGEON_COLUMNS
         return pos.x >= 0 && pos.x < DUNGEON_COLUMNS && pos.y >= 1 && pos.y <= DUNGEON_ROWS;
     }
 
@@ -181,14 +190,11 @@ public class WorldMapModel
     {
         if (!IsValidPosition(pos)) return false;
 
-        // ハブは常にアクセス可能
-        if (IsHubPosition(pos)) return true;
-
         // 最新のデータを取得
         var progressData = GameProgressManager.Instance.GetHierarchicalMapData();
         if (progressData != null)
         {
-            // 解放済みセルのみアクセス可能
+            // 解放済みセルのみアクセス可能（HUB含む）
             foreach (var cell in progressData.unlockedCells)
             {
                 if (cell == pos) return true;
@@ -207,7 +213,7 @@ public class WorldMapModel
     /// 階段で移動した際に対応するセルを解放する
     /// </summary>
     /// <param name="column">階段の列（0, 1, 2）</param>
-    /// <param name="depth">降りた深さ（1-6）</param>
+    /// <param name="depth">降りた深さ（1-8）</param>
     public void UnlockCellByStair(int column, int depth)
     {
         if (column < 0 || column >= DUNGEON_COLUMNS) return;

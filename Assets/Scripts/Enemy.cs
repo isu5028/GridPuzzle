@@ -14,13 +14,31 @@ public class Enemy : Unit
     [SerializeField] private TextMeshPro ammoText = null!;
     [SerializeField] private Transform ammoTransform = null!;
     [SerializeField] private AmmoSpriteAnimation ammoSpriteAnimation = null!;
+    [SerializeField] private GameObject coinPrefab = null!;
     private Vector3 ammoOriginalPos; // Store original position for revival
+    private bool dropsCoin = false;
 
     private int maxAmmo = -1;
     protected ReactiveProperty<int> currentAmmo = new ReactiveProperty<int>(-1);
     public IReadOnlyReactiveProperty<int> CurrentAmmo => currentAmmo;
 
     public string EnemyID { get; set; }
+
+    protected override System.Collections.Generic.IEnumerable<TextMeshPro> GetAdditionalTextsToFade()
+    {
+        if (ammoText != null)
+        {
+            yield return ammoText;
+        }
+    }
+
+    protected override System.Collections.Generic.IEnumerable<Transform> GetAdditionalTransformsToFade()
+    {
+        if (ammoTransform != null)
+        {
+            yield return ammoTransform;
+        }
+    }
 
     public void UpdateDefeatedIcon()
     {
@@ -49,8 +67,10 @@ public class Enemy : Unit
                            Direction startDirection,
                            int maxHp,
                            int startOrder,
-                           int startAmmo)
+                           int startAmmo,
+                           bool dropsCoin = false)
     {
+        this.dropsCoin = dropsCoin;
         base.Initialize(gridMgr, turnMgr, commandMgr, startPos, startDirection, maxHp, startOrder);
         enemyAI = GetComponent<EnemyAI>();
         enemyAI.Initialize(gridMgr, commandMgr);
@@ -141,6 +161,12 @@ public class Enemy : Unit
             {
                 GameProgressManager.Instance.MarkEnemyDefeated(EnemyID);
                 UpdateDefeatedIcon(); // Icon updates before potential destruction
+
+                // 初回撃破でコインを落とす場合、その場にCoinPrefabを生成
+                if (dropsCoin && coinPrefab != null)
+                {
+                    Instantiate(coinPrefab, transform.position, Quaternion.identity);
+                }
             }
         }
 
@@ -164,37 +190,13 @@ public class Enemy : Unit
         if (ammoTransform != null)
         {
             ammoTransform.DOKill();
-            ammoTransform.localPosition = new Vector3(ammoOriginalPos.x, ammoOriginalPos.y - 50.0f, ammoOriginalPos.z);
+            ammoTransform.localPosition = ammoOriginalPos;
         }
     }
 
     protected override async UniTask DieAsync(Vector2Int attackerPos)
     {
-        // Start Ammo animation in parallel with base animation
-        // Timing: Flash(150)+Delay(200) = 350 -> Sprite
-        // 350 + 100 = 450 -> HP
-        // 450 + 50 = 500 -> Order
-        // Let's do 500 + 50 = 550 for Ammo
-
-        AnimateDieAmmo().Forget();
-
         await base.DieAsync(attackerPos);
-    }
-
-    private async UniTask AnimateDieAmmo()
-    {
-        if (ammoTransform == null) return;
-
-        try
-        {
-             // Wait for roughly the time when Order finishes starting or slightly after
-             // Flash (150) + 200 + 100 + 50 = 500ms is when Order starts.
-             // Let's wait 550ms.
-             await UniTask.Delay(550, cancellationToken: this.GetCancellationTokenOnDestroy());
-
-             ammoTransform.DOLocalMoveY(ammoOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
-        }
-        catch (System.OperationCanceledException) { }
     }
 
     public override void Revive()
@@ -285,12 +287,12 @@ public class Enemy : Unit
         base.UpdateOrderText(value);
     }
 
-    public void PerformRangedAttack(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab)
+    public void PerformRangedAttack(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab, System.Action onHit = null)
     {
-        PerformRangedAttackAsync(targetPos, targetUnit, arrowPrefab).Forget();
+        PerformRangedAttackAsync(targetPos, targetUnit, arrowPrefab, onHit).Forget();
     }
 
-    private async UniTask PerformRangedAttackAsync(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab)
+    private async UniTask PerformRangedAttackAsync(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab, System.Action onHit = null)
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
@@ -327,6 +329,7 @@ public class Enemy : Unit
                     {
                         targetUnit.TakeDamage(1, currentPos);
                     }
+                    onHit?.Invoke();
                     source.TrySetResult();
                 });
 
@@ -346,6 +349,7 @@ public class Enemy : Unit
              {
                  targetUnit.TakeDamage(1, currentPos);
              }
+             onHit?.Invoke();
         }
 
         // Return to original pos

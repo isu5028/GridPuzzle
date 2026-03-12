@@ -96,6 +96,7 @@ public class EnemyAIChaserRanged : EnemyAI
         // 射線チェック
         Vector2Int checkPos = startPos;
         Vector2Int hitPos = startPos + directionVec; // 最低でも目の前
+        bool hitWall = false;
 
         int maxDist = 30;
         for(int i=1; i<=maxDist; i++)
@@ -103,9 +104,10 @@ public class EnemyAIChaserRanged : EnemyAI
             checkPos += directionVec;
 
             // 壁チェック
-            if (!gridManager.IsCellWalkable(checkPos))
+            if (!gridManager.IsWalkableAt(gridManager.CurrentStageSO, checkPos))
             {
                 hitPos = checkPos;
+                hitWall = true;
                 break;
             }
 
@@ -120,7 +122,9 @@ public class EnemyAIChaserRanged : EnemyAI
 
         if(GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
 
-        RangedAttackCommand attackCmd = new RangedAttackCommand(enemy, hitPos, gridManager, arrow);
+        RangedAttackCommand attackCmd = new RangedAttackCommand(
+            enemy, hitPos, gridManager, arrow,
+            hitWall, hitWall ? gridManager.CurrentStageSO : null, hitWall ? hitPos : default);
         commandManager.ExecuteCommand(attackCmd);
 
         await UniTask.WaitUntil(() => !enemy.IsMoving);

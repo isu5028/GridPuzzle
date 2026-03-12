@@ -165,6 +165,26 @@ public class EnemyAIRush : EnemyAI
                 // 境界遷移チェック（Rush継続のため）
                 if (gridManager.CheckAndPerformEnemyBoundaryTransfer(enemy))
                 {
+                    // 遷移先の着地位置が壁マスなら壁を破壊せずに即死
+                    StageSO landedStage = GetEnemyStage(enemy);
+                    if (landedStage != null)
+                    {
+                        CellType landedCell = gridManager.GetCellTypeAt(landedStage, enemy.CurrentPos);
+                        if (landedCell == CellType.Wall)
+                        {
+                            Debug.Log($"[EnemyAIRush] Landed on wall at {enemy.CurrentPos} after boundary transfer. Dying without breaking wall.");
+                            commandManager.ExecuteCommand(new InstantDeathCommand(enemy, 999, gridManager.ErrorEffectPrefab));
+                            if (enemy.gameObject.activeInHierarchy)
+                            {
+                                if (!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
+                                enemy.OrderSpriteAnimation.PlayAnimation();
+                                CameraManager.Instance.ShakeCamera(0.3f, 8.0f, 80f, Utility.GetVectorFromDirection(dir));
+                            }
+                            isMoving = false;
+                            break;
+                        }
+                    }
+
                     // 遷移したらループ継続（次のステージでRushを続ける）
                     continue;
                 }

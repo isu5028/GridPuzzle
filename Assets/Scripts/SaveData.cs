@@ -24,6 +24,7 @@ public class SaveData
     public int resetMapY;
     public string saveTime; // 保存日時
     public int coins; // 所持コイン数
+    public int totalCoins; // 累計コイン数
     public List<string> defeatedEnemies = new List<string>(); // 倒した敵のIDリスト
 
     // --- ワールドマップ情報 ---

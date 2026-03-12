@@ -41,7 +41,7 @@ public class WorldMapSOEditor : Editor
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
 
-        int rows = 7; // 0 (Hub) to 6 (B5F)
+        int rows = 9; // 0 (Hub) to 8 (B8F)
         int cols = 3;
 
         GUIStyle boxStyle = new GUIStyle(GUI.skin.box);

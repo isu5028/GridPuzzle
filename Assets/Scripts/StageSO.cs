@@ -9,7 +9,7 @@ public class StageSO : ScriptableObject
     [SerializeField] private int height = 9;
 
     [Header("Hierarchical Map Position")]
-    [Tooltip("階層マップでの位置 (x=列0-8, y=行0-6、0=ハブ)")]
+    [Tooltip("階層マップでの位置 (x=列0-8, y=行0-8、0=ハブ)")]
     [SerializeField] private Vector2Int mapPosition = new Vector2Int(1, 0);
     public Vector2Int MapPosition => mapPosition;
 
@@ -152,7 +152,7 @@ public class StageSO : ScriptableObject
         playerStartDirection = direction;
     }
 
-    public void AddEnemy(Vector2Int position, EnemyType type, Direction direction, int maxHP, int SetActionOrder, int ammo = -1)
+    public void AddEnemy(Vector2Int position, EnemyType type, Direction direction, int maxHP, int SetActionOrder, int ammo = -1, bool dropsCoin = false)
     {
         enemyStartData.Add(new EnemyStartData
         {
@@ -161,7 +161,8 @@ public class StageSO : ScriptableObject
             EnemyType = type,
             MaxHP = maxHP,
             SetActionOrder = SetActionOrder,
-            Ammo = ammo
+            Ammo = ammo,
+            DropsCoin = dropsCoin
         });
     }
 
@@ -314,6 +315,7 @@ public struct EnemyStartData
     public int MaxHP;
     public int SetActionOrder;
     public int Ammo; // Added for Ranged Enemy Ammo config
+    public bool DropsCoin; // 初回撃破時にコインを落とすかどうか
 }
 
 [System.Serializable]

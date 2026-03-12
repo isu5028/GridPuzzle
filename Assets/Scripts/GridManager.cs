@@ -46,6 +46,7 @@ public partial class GridManager : MonoBehaviour
     [SerializeField] private GameObject boarEnemyPrefab = null!;
     [SerializeField] private GameObject crystalEnemyPrefab = null!;
     [SerializeField] private GameObject errorEffectPrefab = null!;
+    [SerializeField] private GameObject blockedPrefab = null!;
 
     private CellType[,] cellData = new CellType[0, 0];
     private int width;
@@ -88,6 +89,7 @@ public partial class GridManager : MonoBehaviour
     internal GameObject BoarEnemyPrefab => boarEnemyPrefab;
     internal GameObject CrystalEnemyPrefab => crystalEnemyPrefab;
     internal GameObject ErrorEffectPrefab => errorEffectPrefab;
+    public GameObject BlockedPrefab => blockedPrefab;
 
     private const float TransitionDuration = 0.2f;
     private const int TransitionDelayMs = 250;
@@ -144,6 +146,9 @@ public partial class GridManager : MonoBehaviour
         GameProgressManager.Instance.NextLoadType = null; // Reset
 
         ContinueGame(loadType);
+
+        var allStages = worldMapSO != null ? worldMapSO.GetAllStages() : new List<StageSO>();
+        GameProgressManager.Instance.RegisterStagesForClearCheck(allStages.ToArray());
     }
 
     private void HandleSyncMapActivated()
@@ -214,6 +219,12 @@ public partial class GridManager : MonoBehaviour
         isEventPlaying = false;
         uiManager.HideWipeOut();
 
+        bool wasPlayerHealed = false;
+        if (unitManager.Player != null)
+        {
+            wasPlayerHealed = unitManager.Player.HP.Value < unitManager.Player.MaxHP || unitManager.Player.IsDead;
+        }
+
         // Determine which stage to reset to (Current Stage)
         StageSO stageToReset = currentStageSO;
         if (stageToReset == null)
@@ -225,7 +236,7 @@ public partial class GridManager : MonoBehaviour
              stageToReset = initialStageSO;
         }
 
-        gridVisualizer.ClearAllTiles();
+        gridVisualizer.ClearAllTiles(true);
         GameProgressManager.Instance.ResetStageCleared();
 
         unitManager.ClearAllUnits(); // Destroys Player and current active enemies
@@ -243,13 +254,30 @@ public partial class GridManager : MonoBehaviour
             resetPos = stairUpPos.Value;
         }
 
-        LoadStage(stageToReset, true, resetPos);
+        LoadStage(stageToReset, true, resetPos, null, true, true);
 
         if(unitManager.Player != null)
         {
             unitManager.Player.WarpToNewStage(resetPos, stageToReset.PlayerStartDirection);
             // Ensure HP is full on reset
             unitManager.Player.SetHP(unitManager.Player.MaxHP);
+
+            if (wasPlayerHealed)
+            {
+                Debug.Log("Player HP Restored via Reset");
+                unitManager.Player.PlayHealEffect();
+            }
+        }
+
+        // 敵のHPも全回復させる（死亡状態の敵も含めて全員リセット）
+        foreach (var enemy in unitManager.Enemies)
+        {
+            if (enemy != null)
+            {
+                DOTween.Kill(enemy.gameObject); // 残存するDOTweenアニメーションを強制停止
+                enemy.Revive();                 // 先に復活処理（isDead=false、ビジュアルリセット）
+                enemy.SetHP(enemy.MaxHP);       // その後HP全回復
+            }
         }
     }
 
@@ -268,8 +296,14 @@ public partial class GridManager : MonoBehaviour
     {
         if (unitManager.Player != null)
         {
+            bool wasHealed = unitManager.Player.HP.Value < unitManager.Player.MaxHP || unitManager.Player.IsDead;
             unitManager.Player.Revive();
             unitManager.Player.SetHP(unitManager.Player.MaxHP);
+            if (wasHealed)
+            {
+                Debug.Log("Player HP Restored");
+                unitManager.Player.PlayHealEffect();
+            }
         }
     }
 
@@ -310,10 +344,10 @@ public partial class GridManager : MonoBehaviour
         return null;
     }
 
-    internal void LoadStage(StageSO stage, bool isFirstInit, Vector2Int startPos, Direction? customStartDir = null, bool resetTurnManager = true)
+    internal void LoadStage(StageSO stage, bool isFirstInit, Vector2Int startPos, Direction? customStartDir = null, bool resetTurnManager = true, bool keepTutorial = false)
     {
         gridVisualizer.ResetGridParentPosition(); // Ensure parent is at zero before loading
-        gridVisualizer.ClearAllTiles();
+        gridVisualizer.ClearAllTiles(keepTutorial);
 
         // 現在の敵を非表示にする
         unitManager.SetAllEnemiesActive(false);
@@ -334,7 +368,7 @@ public partial class GridManager : MonoBehaviour
         }
 
         stageEnemySystem.PrepareEnemiesForStage(stage);
-        GenerateTilemap(stage);
+        GenerateTilemap(stage, keepTutorial);
 
         if (resetTurnManager)
         {
@@ -395,7 +429,7 @@ public partial class GridManager : MonoBehaviour
         }
     }
 
-    private void GenerateTilemap(StageSO stage)
+    private void GenerateTilemap(StageSO stage, bool keepTutorial = false)
     {
         cellData = new CellType[width, height];
         for (int y = 0; y < height; y++)
@@ -408,7 +442,7 @@ public partial class GridManager : MonoBehaviour
         }
 
         HashSet<Vector2Int> destroyed = DestroyedWalls.ContainsKey(stage) ? DestroyedWalls[stage] : null;
-        gridVisualizer.RefreshTilemap(width, height, cellData, stage, destroyed, GameProgressManager.Instance.IsHierarchicalCellCleared);
+        gridVisualizer.RefreshTilemap(width, height, cellData, stage, destroyed, GameProgressManager.Instance.IsHierarchicalCellCleared, keepTutorial);
         OnEnemyStateChanged(true);
     }
 
@@ -447,6 +481,10 @@ public partial class GridManager : MonoBehaviour
             // Reflect if current stage
             if (stage == currentStageSO)
             {
+                // 壁破壊エフェクトをタイル更新前に再生（タイルが消える前にスプライトを取得するため）
+                // OOB境界壁（x=-1, x=width, y=-1, y=height）も含めてエフェクトを出す
+                gridVisualizer.PlayWallBreakEffect(pos);
+
                 if(pos.x >= 0 && pos.x < width && pos.y >= 0 && pos.y < height)
                 {
                     cellData[pos.x, pos.y] = CellType.Floor;
@@ -463,16 +501,29 @@ public partial class GridManager : MonoBehaviour
             // Do NOT break inner walls (Real Walls) automatically, so units might crash into them.
 
             // Left Neighbor Interactions: Breaking Left Boundary (-1) -> Breaks Neighbor's Right Boundary (Width)
-            if (pos.x == -1) PropagateBreak(stage, Direction.Left, new Vector2Int(stage.GetAdjacentStage(Direction.Left)?.Width ?? 0, pos.y));
+            if (pos.x == -1)
+            {
+                // 隣接ステージの境界壁が破壊される = 現在ステージ側も境界エフェクト（PropagateBreakが呼ぶ）
+                PropagateBreak(stage, Direction.Left, new Vector2Int(stage.GetAdjacentStage(Direction.Left)?.Width ?? 0, pos.y));
+            }
 
             // Right Neighbor Interactions: Breaking Right Boundary (Width) -> Breaks Neighbor's Left Boundary (-1)
-            if (pos.x == stage.Width) PropagateBreak(stage, Direction.Right, new Vector2Int(-1, pos.y));
+            if (pos.x == stage.Width)
+            {
+                PropagateBreak(stage, Direction.Right, new Vector2Int(-1, pos.y));
+            }
 
             // Down Neighbor Interactions: Breaking Bottom Boundary (-1) -> Breaks Neighbor's Top Boundary (Height)
-            if (pos.y == -1) PropagateBreak(stage, Direction.Down, new Vector2Int(pos.x, stage.GetAdjacentStage(Direction.Down)?.Height ?? 0));
+            if (pos.y == -1)
+            {
+                PropagateBreak(stage, Direction.Down, new Vector2Int(pos.x, stage.GetAdjacentStage(Direction.Down)?.Height ?? 0));
+            }
 
             // Up Neighbor Interactions: Breaking Top Boundary (Height) -> Breaks Neighbor's Bottom Boundary (-1)
-            if (pos.y == stage.Height) PropagateBreak(stage, Direction.Up, new Vector2Int(pos.x, -1));
+            if (pos.y == stage.Height)
+            {
+                PropagateBreak(stage, Direction.Up, new Vector2Int(pos.x, -1));
+            }
         }
     }
 
@@ -553,10 +604,6 @@ public partial class GridManager : MonoBehaviour
 
         if (!quiet && stateChanged)
         {
-            if(!hasAliveEnemy)
-            {
-                uiManager.ShowWin();
-            }
             gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsHierarchicalCellCleared, 0.5f, true);
         }
 
@@ -570,16 +617,28 @@ public partial class GridManager : MonoBehaviour
         bool popupShown = false;
         bool dataSavedThisFrame = false;
 
+        GameProgressManager.Instance.SetCurrentMapPosition(currentStageSO.MapPosition);
+
+        // 現在のステージに到達した時点で、階層マップのセルをアンロックする
+        // これにより境界遷移（ステージ端からの移動）でも正しくレイヤーが解放される
+        int column = currentStageSO.StairColumn;
+        int depth = currentStageSO.MapPosition.y;
+        GameProgressManager.Instance.UnlockCellByStairDescent(column, depth);
+
         foreach (var stage in stageSOs)
         {
             if (stage == null) continue;
 
             bool isCurrent = (stage == currentStageSO);
-            bool isStageCleared = GameProgressManager.Instance.IsStageFullyDefeated(stage);
-
+            bool isStageCleared;
             if (isCurrent)
             {
-                GameProgressManager.Instance.SetCurrentMapPosition(stage.MapPosition);
+                isStageCleared = GameProgressManager.Instance.IsStageFullyDefeated(stage)
+                              || GameProgressManager.Instance.IsHierarchicalCellCleared(stage.MapPosition);
+            }
+            else
+            {
+                isStageCleared = GameProgressManager.Instance.IsHierarchicalCellCleared(stage.MapPosition);
             }
 
             if (worldMapSO != null)
@@ -597,17 +656,13 @@ public partial class GridManager : MonoBehaviour
                 }
             }
 
-            // 階層マップでクリア状態をマーク（永続的）
             if (isStageCleared)
             {
                 Vector2Int mapPos = stage.MapPosition;
-                bool wasAlreadyCleared = GameProgressManager.Instance.IsHierarchicalCellCleared(mapPos);
-
-                if (!wasAlreadyCleared)
+                if (!GameProgressManager.Instance.IsHierarchicalCellCleared(mapPos))
                 {
                     GameProgressManager.Instance.MarkHierarchicalCellAsCleared(mapPos);
                     dataSavedThisFrame = true;
-                    // Debug.Log($"Stage at {mapPos} cleared for the first time");
                 }
             }
         }
@@ -615,7 +670,6 @@ public partial class GridManager : MonoBehaviour
         if (dataSavedThisFrame)
         {
             SaveGame(GameProgressManager.SaveType.Auto);
-            // Debug.Log($"Auto-saved after checking cleared stages.");
         }
     }
     #endregion
@@ -694,6 +748,7 @@ public partial class GridManager : MonoBehaviour
     internal void ResetAllEnemies() => stageEnemySystem.ResetAllEnemies();
     internal void ApplySavedEnemyData(StageSO stage, List<EnemySaveData> savedEnemies) => stageEnemySystem.ApplySavedEnemyData(stage, savedEnemies);
     internal void AddPendingEnemy(StageSO stage, Enemy enemy) => stageEnemySystem.AddPendingEnemy(stage, enemy);
+    public int GetMaxEnemyOrderInStage(StageSO stage) => stageEnemySystem.GetMaxEnemyOrderInStage(stage);
 
 
     // ==========================================
@@ -724,6 +779,9 @@ public partial class GridManager : MonoBehaviour
     private IStairTraversalSystem stairTraversalSystem;
     internal IStairTraversalSystem StairTraversalSystem => stairTraversalSystem;
 
+    #endregion
+
+    #region Stair Traversal
     public bool CheckAndShowStairDialog() => stairTraversalSystem.CheckAndShowStairDialog();
     public (StageSO targetStage, Vector2Int targetPos)? GetEnemyStairDestination(Enemy enemy, Vector2Int stairPos, Direction approachDirection) => stairTraversalSystem.GetEnemyStairDestination(enemy, stairPos, approachDirection);
     public UniTask MoveEnemyToStage(Enemy enemy, StageSO targetStage, Vector2Int targetPos, Direction direction) => stairTraversalSystem.MoveEnemyToStage(enemy, targetStage, targetPos, direction);

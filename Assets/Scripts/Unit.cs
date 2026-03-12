@@ -16,7 +16,16 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] protected Transform spriteTransform = null!;
     [SerializeField] protected TextMeshPro hpText = null!;
     [SerializeField] protected TextMeshPro orderText = null!;
-    [SerializeField] private Transform hpTransform = null!;
+
+    protected virtual System.Collections.Generic.IEnumerable<TextMeshPro> GetAdditionalTextsToFade()
+    {
+        yield break;
+    }
+    protected virtual System.Collections.Generic.IEnumerable<Transform> GetAdditionalTransformsToFade()
+    {
+        yield break;
+    }
+    [SerializeField] protected Transform hpTransform = null!;
     [SerializeField] private Transform orderTransform = null!;
     [SerializeField] private ColorFlash colorFlash = null!;
     [SerializeField] private HPSpriteAnimation hpSpriteAnimation = null!;
@@ -147,6 +156,18 @@ public abstract class Unit : MonoBehaviour
                 }
             }
 
+            foreach (var t in GetAdditionalTransformsToFade())
+            {
+                if (t != null)
+                {
+                    foreach (var sr in t.GetComponentsInChildren<SpriteRenderer>())
+                    {
+                        Material mat = CreateAndApplyDissolveMaterial(sr);
+                        dissolveMaterials.Add(mat);
+                    }
+                }
+            }
+
             // TextMeshProにもdissolveMaterialを適用
             if (hpText != null)
             {
@@ -157,6 +178,15 @@ public abstract class Unit : MonoBehaviour
             {
                 Material mat = CreateAndApplyDissolveMaterialForTMP(orderText);
                 if (mat != null) dissolveMaterials.Add(mat);
+            }
+
+            foreach (var t in GetAdditionalTextsToFade())
+            {
+                if (t != null)
+                {
+                    Material mat = CreateAndApplyDissolveMaterialForTMP(t);
+                    if (mat != null) dissolveMaterials.Add(mat);
+                }
             }
         }
         else
@@ -300,6 +330,10 @@ public abstract class Unit : MonoBehaviour
         // TextMeshProのアルファを0に
         if (hpText != null) hpText.alpha = 0f;
         if (orderText != null) orderText.alpha = 0f;
+        foreach (var t in GetAdditionalTextsToFade())
+        {
+            if (t != null) t.alpha = 0f;
+        }
 
         unitAnimator.SetDeath();
     }
@@ -400,6 +434,12 @@ public abstract class Unit : MonoBehaviour
 
     public void TryAttack()
     {
+        Debug.Log($"[Unit.TryAttack] Called on InstanceID: {this.GetInstanceID()}, gameObject: {gameObject.name}");
+
+        // SetActive(false)された後にUniRx購読が同フレームで発火しても実行しない
+        // （リセット時に旧プレイヤーが新しい敵にゴースト攻撃するのを防ぐ）
+        if (!gameObject.activeInHierarchy) return;
+
         Vector2Int[] attackPos = new Vector2Int[attackTargetPos.Length];
         for (int i = 0; i < attackTargetPos.Length; i++)
         {
@@ -460,13 +500,26 @@ public abstract class Unit : MonoBehaviour
             .Append(spriteTransform.DOLocalMove(attackLocalPos, attackDuration * 0.3f).SetEase(Ease.InQuad))
             .AppendCallback(() =>
             {
+                Debug.Log($"[Unit.AttackAsync Callback] Called by {name} (Active: {gameObject?.activeInHierarchy}), Target Pos: {targetPosition[0]}");
+
+                if (this == null || !gameObject.activeInHierarchy)
+                {
+                    Debug.Log($"[Unit.AttackAsync Callback] Cancelled because attacker {name} is null or inactive.");
+                    return;
+                }
+
                 foreach (var pos in targetPosition)
                 {
                     Unit targetUnit = gridManager.GetUnitAtPosition(pos);
                     if (targetUnit != null)
                     {
+                        Debug.Log($"[Unit.AttackAsync Callback] Attacking {targetUnit.name} at {pos}");
                         targetUnit.TakeDamage(1, currentPos);
                         if (this is Player) CameraManager.Instance.ShakeCamera(0.4f, 8.0f, 20f, Utility.GetVectorFromDirection(currentDirection));
+                    }
+                    else
+                    {
+                        Debug.Log($"[Unit.AttackAsync Callback] No target found at {pos}");
                     }
                 }
                 if (recoilDamage > 0)
@@ -476,7 +529,8 @@ public abstract class Unit : MonoBehaviour
 
                 if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
             })
-            .Append(spriteTransform.DOLocalMove(originalLocalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad));
+            .Append(spriteTransform.DOLocalMove(originalLocalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad))
+            .SetLink(gameObject, DG.Tweening.LinkBehaviour.KillOnDisable); // SetActive(false)で即座に停止
 
         await attackSequence.AsyncWaitForCompletion();
 
@@ -486,7 +540,7 @@ public abstract class Unit : MonoBehaviour
 
     public virtual void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
     {
-        //Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
+        Debug.Log($"[Unit.TakeDamage] {name} took {damage} damage from {attackerPos}! Current HP: {hp.Value}");
         Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
 
         hp.Value -= damage;
@@ -603,6 +657,16 @@ public abstract class Unit : MonoBehaviour
                        .SetTarget(orderText)  // DOTween.Kill(orderText)で停止できるように
                        .SetLink(gameObject);
             }
+            foreach (var t in GetAdditionalTextsToFade())
+            {
+                if (t != null)
+                {
+                    DOTween.To(() => t.alpha, x => t.alpha = x, 0f, duration)
+                           .SetEase(Ease.InQuad)
+                           .SetTarget(t)  // DOTween.Kill(t)で停止できるように
+                           .SetLink(gameObject);
+                }
+            }
         }
         catch (System.OperationCanceledException)
         {
@@ -649,6 +713,10 @@ public abstract class Unit : MonoBehaviour
         // TextMeshProのDOTweenもキル
         if (hpText != null) DOTween.Kill(hpText);
         if (orderText != null) DOTween.Kill(orderText);
+        foreach (var t in GetAdditionalTextsToFade())
+        {
+            if (t != null) DOTween.Kill(t);
+        }
 
         spriteTransform.localPosition = Vector3.zero;
         unitAnimator.SetDirection(currentDirection);
@@ -669,6 +737,10 @@ public abstract class Unit : MonoBehaviour
         // TextMeshProのアルファを1に戻す
         if (hpText != null) hpText.alpha = 1f;
         if (orderText != null) orderText.alpha = 1f;
+        foreach (var t in GetAdditionalTextsToFade())
+        {
+            if (t != null) t.alpha = 1f;
+        }
 
         if (hpOriginalPos == Vector3.zero && hpTransform != null && hpTransform.localPosition != Vector3.zero)
              hpOriginalPos = hpTransform.localPosition;

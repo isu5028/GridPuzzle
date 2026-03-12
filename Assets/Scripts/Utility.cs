@@ -56,6 +56,8 @@ public static class Utility
         return new Color(r / 255f, g / 255f, b / 255f, a / 255f);
     }
 
+    public static readonly Direction[] SearchOrder = { Direction.Right, Direction.Left, Direction.Up, Direction.Down };
+
     public static Direction GetDirectionFromStickInput(Vector2 input)
     {
         if (input == Vector2.zero)

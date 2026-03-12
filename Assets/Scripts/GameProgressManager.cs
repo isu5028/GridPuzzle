@@ -54,7 +54,34 @@ public class GameProgressManager : MonoBehaviour
 
     // コインと倒した敵の情報
     public ReactiveProperty<int> Coins { get; private set; } = new ReactiveProperty<int>(0);
+    public ReactiveProperty<int> TotalCoins { get; private set; } = new ReactiveProperty<int>(0);
     private HashSet<string> defeatedEnemies = new HashSet<string>();
+
+    private StageSO[] registeredStages;
+
+    public void RegisterStagesForClearCheck(StageSO[] stages)
+    {
+        registeredStages = stages;
+        RecheckAllStagesClearStatus();
+    }
+
+    private void RecheckAllStagesClearStatus()
+    {
+        if (registeredStages == null) return;
+
+        foreach (var stage in registeredStages)
+        {
+            if (stage == null) continue;
+            if (IsStageFullyDefeated(stage))
+            {
+                Vector2Int mapPos = stage.MapPosition;
+                if (!IsHierarchicalCellCleared(mapPos))
+                {
+                    MarkHierarchicalCellAsCleared(mapPos);
+                }
+            }
+        }
+    }
 
     // セーブデータが存在したかどうかのフラグ
     public bool HasLoadedData { get; private set; } = false;
@@ -124,6 +151,7 @@ public class GameProgressManager : MonoBehaviour
         currentMapPosition = Vector2Int.zero;
 
         Coins.Value = 0;
+        TotalCoins.Value = 0;
         defeatedEnemies.Clear();
 
         // 階層マップも初期化
@@ -407,6 +435,12 @@ public class GameProgressManager : MonoBehaviour
         currentMapPosition = Vector2Int.zero;
 
         Coins.Value = 0;
+        TotalCoins.Value = 0;
+        defeatedEnemies.Clear();
+    }
+
+    public void ClearDefeatedEnemies()
+    {
         defeatedEnemies.Clear();
     }
 
@@ -423,23 +457,53 @@ public class GameProgressManager : MonoBehaviour
         {
             defeatedEnemies.Add(enemyId);
             Coins.Value++;
+            TotalCoins.Value++;
+            CheckStageClearOnDefeat(enemyId);
+        }
+    }
+
+    private void CheckStageClearOnDefeat(string enemyId)
+    {
+        if (registeredStages == null) return;
+
+        foreach (var stage in registeredStages)
+        {
+            if (stage == null || stage.EnemyStartData == null) continue;
+
+            bool belongsToThisStage = false;
+            for (int i = 0; i < stage.EnemyStartData.Count; i++)
+            {
+                if (enemyId == $"{stage.name}_{i}")
+                {
+                    belongsToThisStage = true;
+                    break;
+                }
+            }
+            if (!belongsToThisStage) continue;
+
+            if (IsStageFullyDefeated(stage))
+            {
+                Vector2Int mapPos = stage.MapPosition;
+                if (!IsHierarchicalCellCleared(mapPos))
+                {
+                    MarkHierarchicalCellAsCleared(mapPos);
+                }
+            }
+            break;
         }
     }
 
     public bool IsStageFullyDefeated(StageSO stage)
     {
-        if (stage == null || stage.EnemyStartData == null || stage.EnemyStartData.Count == 0) return true;
+        if (stage == null || stage.EnemyStartData == null || stage.EnemyStartData.Count == 0) return false;
 
         for (int i = 0; i < stage.EnemyStartData.Count; i++)
         {
-            string expectedId = $"{stage.name}_{i}";
-            if (!IsEnemyDefeated(expectedId))
+            if (!IsEnemyDefeated($"{stage.name}_{i}"))
             {
-                Debug.Log($"Stage {stage.name} NOT fully defeated: missing {expectedId}. defeatedEnemies Count: {defeatedEnemies.Count}");
                 return false;
             }
         }
-        Debug.Log($"Stage {stage.name} IS fully defeated! All {stage.EnemyStartData.Count} enemies killed.");
         return true;
     }
 
@@ -474,17 +538,12 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// ステージをクリア済みとしてマークする（永続的）
-    /// </summary>
     public void MarkHierarchicalCellAsCleared(Vector2Int pos)
     {
         if (!hierarchicalClearedCells.Contains(pos))
         {
             hierarchicalClearedCells.Add(pos);
-            Debug.Log($"Stage at {pos} marked as cleared permanently");
         }
-        // 解放もする
         UnlockHierarchicalCell(pos);
     }
 
@@ -494,6 +553,21 @@ public class GameProgressManager : MonoBehaviour
     public bool IsHierarchicalCellCleared(Vector2Int pos)
     {
         return hierarchicalClearedCells.Contains(pos);
+    }
+
+    /// <summary>
+    /// 解放済みセルのColumnから、マップで表示可能なレイヤー数を返す。
+    /// Column 0-2のみ → 1、Column 3-5到達 → 2、Column 6-8到達 → 3
+    /// </summary>
+    public int GetUnlockedLayerCount()
+    {
+        int maxLayer = 0;
+        foreach (var pos in hierarchicalUnlockedCells)
+        {
+            int layer = pos.x / 3;
+            if (layer > maxLayer) maxLayer = layer;
+        }
+        return maxLayer + 1;
     }
 
     public void InitHierarchicalMap()
@@ -508,11 +582,11 @@ public class GameProgressManager : MonoBehaviour
     /// 階段を降りた際に対応するセルを解放する
     /// </summary>
     /// <param name="column">階段の列（0, 1, 2）</param>
-    /// <param name="depth">降りた深さ（1-6）</param>
+    /// <param name="depth">降りた深さ（1-8）</param>
     public void UnlockCellByStairDescent(int column, int depth)
     {
-        if (column < 0 || column > 8) return; // Expanded for 3 layers of 3 columns
-        if (depth < 1 || depth > 6) return;
+        if (column < 0 || column > 8) return;
+        if (depth < 0 || depth > 8) return;
 
         Vector2Int cellPos = new Vector2Int(column, depth);
         UnlockHierarchicalCell(cellPos);
@@ -572,6 +646,7 @@ public class GameProgressManager : MonoBehaviour
 
         // コイン情報などを保存
         data.coins = Coins.Value;
+        data.totalCoins = TotalCoins.Value;
         data.defeatedEnemies = new List<string>(defeatedEnemies);
 
         // 5. 階層マップ情報
@@ -644,6 +719,7 @@ public class GameProgressManager : MonoBehaviour
             SavedPlayerHP = data.playerHP;
 
             Coins.Value = data.coins;
+            TotalCoins.Value = data.totalCoins;
             defeatedEnemies.Clear();
             if (data.defeatedEnemies != null)
             {

@@ -55,10 +55,9 @@ public class AStarPathfinder
             closedList.Add(currentNode.Position);
 
             // 上下左右の隣接マスをチェック
-            // 優先順位: Right -> Left -> Down -> Up (左右移動を優先)
-            Direction[] searchOrder = { Direction.Right, Direction.Left, Direction.Down, Direction.Up };
+            // 優先順位: Right -> Left -> Up -> Down (左右移動を優先、詳細はUtilityで定義)
 
-            foreach (Direction dir in searchOrder)
+            foreach (Direction dir in Utility.SearchOrder)
             {
                 Vector2Int neighborPos = currentNode.Position + Utility.GetVectorFromDirection(dir);
 

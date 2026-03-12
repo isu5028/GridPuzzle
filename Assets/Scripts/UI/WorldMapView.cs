@@ -16,6 +16,7 @@ public class WorldMapView : MonoBehaviour
     [SerializeField] private Sprite unclearedTileSprite = null!;
     [SerializeField] private Sprite hubTileSprite = null!;
     [SerializeField] private Transform currentPlayerIcon = null!;
+    [SerializeField] private Transform inputGuideTransform = null!; // 追加: Inputガイドを破棄から除外するため
 
     [Header("Settings")]
     [SerializeField] private Vector2 tileSize = new Vector2(24, 16);
@@ -24,7 +25,7 @@ public class WorldMapView : MonoBehaviour
 
     // 新しいレイアウト: 3層構造 (Back/Mid/Front)
     private const int DUNGEON_COLUMNS = 9; // 3 layers * 3 columns
-    private const int DUNGEON_ROWS = 6;
+    private const int DUNGEON_ROWS = 8;
     private const int LAYERS = 3;
 
     // タイル配列: [column, row]
@@ -50,7 +51,20 @@ public class WorldMapView : MonoBehaviour
         mapPanel.localPosition = hiddenPosition;
 
         GenerateMapLayout();
-        UpdateViewPerspective(0); // Default to layer 0
+        SetVisibleLayerCount(1);
+    }
+
+    public void SetVisibleLayerCount(int count)
+    {
+        if (layerContainers == null) return;
+
+        for (int i = 0; i < LAYERS; i++)
+        {
+            layerContainers[i].gameObject.SetActive(i < count);
+        }
+
+        int activeLayer = Mathf.Min(count - 1, 0);
+        UpdateViewPerspective(activeLayer);
     }
 
     private void GenerateMapLayout()
@@ -61,7 +75,7 @@ public class WorldMapView : MonoBehaviour
         List<Transform> toDestroy = new List<Transform>();
         foreach (Transform child in mapPanel)
         {
-            if (child != cursorTransform && child != currentPlayerIcon) toDestroy.Add(child);
+            if (child != cursorTransform && child != currentPlayerIcon && child != inputGuideTransform) toDestroy.Add(child);
         }
         foreach (var t in toDestroy) Destroy(t.gameObject);
 
@@ -78,7 +92,7 @@ public class WorldMapView : MonoBehaviour
 
         // Layout within container (centered at 0,0)
         float startX = -tileSize.x; // Center of 3 columns
-        float startY = (DUNGEON_ROWS * tileSize.y) * 0.4f;
+        float startY = (DUNGEON_ROWS * tileSize.y) * 0.45f;
 
         for (int layer = 0; layer < LAYERS; layer++)
         {
@@ -232,21 +246,20 @@ public class WorldMapView : MonoBehaviour
         switch (cellType)
         {
             case WorldMapCellType.Unknown:
-                targetSprite = isHub ? (hubTileSprite != null ? hubTileSprite : clearedTileSprite) : unknownTileSprite;
-                break;
-            case WorldMapCellType.Cleared:
-            case WorldMapCellType.CurrentCleared:
-                targetSprite = isHub ? (hubTileSprite != null ? hubTileSprite : clearedTileSprite) : clearedTileSprite;
-                break;
-            case WorldMapCellType.Uncleared:
-            case WorldMapCellType.CurrentUnCleared:
-                targetSprite = isHub ? (hubTileSprite != null ? hubTileSprite : unclearedTileSprite) : unclearedTileSprite;
-                break;
             case WorldMapCellType.CurrentUnknown:
                 targetSprite = unknownTileSprite;
                 break;
+            case WorldMapCellType.Cleared:
+            case WorldMapCellType.CurrentCleared:
+                targetSprite = clearedTileSprite;
+                break;
+            case WorldMapCellType.Uncleared:
+            case WorldMapCellType.CurrentUnCleared:
+                targetSprite = isHub ? clearedTileSprite : unclearedTileSprite;
+                break;
         }
 
+        if(cellType != WorldMapCellType.Unknown) Debug.Log($"[WorldMapView] UpdateTileVisual -> Col: {col}, Row: {row}, Type: {cellType}, TargetSprite: {targetSprite.name}");
         mapTiles[col, row].sprite = targetSprite;
 
         // Highlight current position (could be an overlay or icon move)
@@ -255,7 +268,10 @@ public class WorldMapView : MonoBehaviour
             cellType == WorldMapCellType.CurrentUnCleared)
         {
              if (currentPlayerIcon != null)
+             {
+                 Debug.Log($"[WorldMapView] Current Player Icon moved to Col: {col}, Row: {row}");
                  currentPlayerIcon.localPosition = mapTiles[col, row].transform.localPosition;
+             }
         }
     }
 

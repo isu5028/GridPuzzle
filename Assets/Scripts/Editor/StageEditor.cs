@@ -32,6 +32,7 @@ public class StageEditor : Editor
     private Direction currentEnemyDirection = Direction.Up;
 
     private int currentAmmo = 3; // Default ammo for Skeleton
+    private bool currentDropsCoin = false;
     private int currentTutorialIndex = 1;
 
     // グリッド描画設定
@@ -88,14 +89,15 @@ public class StageEditor : Editor
             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "位置");
             xPos += 85;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "種類");
-            // ... (rest is same)
             xPos += 85;
-             EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "方向");
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 80, rect.height), "方向");
             xPos += 85;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "HP");
             xPos += 45;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "弾数");
             xPos += 45;
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "coin");
+            xPos += 40;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 50, rect.height), "削除");
         };
 
@@ -138,6 +140,11 @@ public class StageEditor : Editor
                 EditorGUI.LabelField(new Rect(xPos, rect.y, 40, height), "-");
             }
             xPos += 45;
+
+            // DropsCoin Toggle
+            SerializedProperty dropsCoinProp = element.FindPropertyRelative("DropsCoin");
+            dropsCoinProp.boolValue = EditorGUI.Toggle(new Rect(xPos + 10, rect.y, 20, height), dropsCoinProp.boolValue);
+            xPos += 40;
 
             if (GUI.Button(new Rect(xPos, rect.y, 50, height), "削除"))
             {
@@ -420,6 +427,11 @@ public class StageEditor : Editor
                 currentAmmo = EditorGUILayout.IntField(currentAmmo);
                 EditorGUILayout.EndHorizontal();
             }
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("コインを落とす:", GUILayout.Width(150));
+            currentDropsCoin = EditorGUILayout.Toggle(currentDropsCoin);
+            EditorGUILayout.EndHorizontal();
         }
 
         if (currentMode == EditMode.Tutorial)
@@ -709,7 +721,7 @@ public class StageEditor : Editor
                 stage.RemoveEnemyAt(new Vector2Int(x, y));
 
                 int ammo = (currentEnemyType == EnemyType.Skeleton) ? currentAmmo : -1;
-                stage.AddEnemy(new Vector2Int(x, y), currentEnemyType, currentEnemyDirection, currentMaxHP, 0, ammo);
+                stage.AddEnemy(new Vector2Int(x, y), currentEnemyType, currentEnemyDirection, currentMaxHP, 0, ammo, currentDropsCoin);
 
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();

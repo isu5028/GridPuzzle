@@ -8,6 +8,9 @@ using System;
 
 public class Player : Unit
 {
+    [Header("Effects")]
+    [SerializeField] private GameObject heartEffectPrefab = null!;
+
     private InputAction inputMove = null!;
     private InputAction inputAttack = null!;
     private InputAction inputStay = null!;
@@ -57,6 +60,7 @@ public class Player : Unit
 
     private void Initialize()
     {
+        Debug.Log($"[Player.Initialize] Subscribing inputs for InstanceID: {this.GetInstanceID()}, gameObject: {gameObject.name}");
         // 入力が可能な状態かどうかを判定するストリーム
         var canInputStream = Observable.EveryUpdate()
             .Where(_ =>
@@ -142,6 +146,10 @@ public class Player : Unit
              .Where(_ => !isDead && inputAttack.triggered)
              .Subscribe(_ =>
              {
+                 // isMovingがtrueの場合、同フレームにMoveサブスクライバが既にTryAttackを
+                 // 呼び出している（Share()による同時発火）ので二重実行を防ぐ
+                 if (isMoving) return;
+
                  turnManager.EnsureTurnStartSnapshot();
                  isProcessingAction = true;
                  TryAttack();
@@ -195,8 +203,13 @@ public class Player : Unit
 
         if (!didMove)
         {
-            // 移動しなかった（攻撃や移動失敗）場合はフラグをリセットして終了
-            isProcessingAction = false;
+            if (!isMoving)
+            {
+                // 壁衝突・移動失敗の場合のみ即時リセット
+                // isMoving=trueの場合はTryMoveから攻撃が発動しているため
+                // isProcessingActionをfalseにせず、AttackAsync→OnActionCompleteに任せる
+                isProcessingAction = false;
+            }
             return;
         }
 
@@ -216,8 +229,8 @@ public class Player : Unit
 
         if (dialogShown)
         {
-            // ダイアログが表示された場合は、ユーザーの選択待ちになるので
-            // ここでターン終了せず、ダイアログのコールバックに任せる
+            // 階段マスに乗った → TakeStairAsyncが自動でステージ移動＋OnPlayerActionCompleteを処理するため
+            // ここではターン終了せずに返る
             return;
         }
 
@@ -246,5 +259,28 @@ public class Player : Unit
     protected override void OnEnable()
     {
         base.OnEnable();
+    }
+
+    protected virtual void OnDestroy()
+    {
+        // GameObject破棄時にUniRxのストリーム監視を全て解除し、二重発動を防ぐ
+        Debug.Log($"[Player.OnDestroy] Cleaning up InstanceID: {this.GetInstanceID()}");
+    }
+
+    public void PlayHealEffect()
+    {
+        Debug.Log("PlayHealEffect");
+        AudioManager.Instance.PlaySE(AudioManager.SEType.heal);
+        if (heartEffectPrefab != null)
+        {
+            if (hpTransform != null)
+            {
+                Instantiate(heartEffectPrefab, hpTransform.position, Quaternion.identity, hpTransform);
+            }
+            else
+            {
+                Instantiate(heartEffectPrefab, transform.position, Quaternion.identity, transform);
+            }
+        }
     }
 }

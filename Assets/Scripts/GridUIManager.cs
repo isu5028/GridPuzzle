@@ -9,7 +9,6 @@ using System.Collections.Generic;
 public class GridUIManager : MonoBehaviour
 {
     [SerializeField] private TextPopUpEach popup = null!;
-    [SerializeField] private ShowWin showWin = null!;
     [SerializeField] private ShowWipeOut showWipeOut = null!;
     [SerializeField] private TransitionOut transitionOut = null!;
     [SerializeField] private End end = null!;
@@ -35,10 +34,6 @@ public class GridUIManager : MonoBehaviour
         popup?.Show();
     }
 
-    public void ShowWin()
-    {
-        showWin?.Show();
-    }
 
     public void HideWipeOut()
     {

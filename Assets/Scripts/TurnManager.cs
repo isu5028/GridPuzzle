@@ -9,6 +9,7 @@ using Cysharp.Threading;
 public class TurnManager : MonoBehaviour
 {
     [SerializeField] private HUDFeedback undoFeedback = null!;
+    [SerializeField] private HUDFeedback redoFeedback = null!;
     [SerializeField] private HUDFeedback resetFeedback = null!;
     private GridManager gridManager = null!;
     private UnitManager unitManager = null!;
@@ -138,7 +139,7 @@ public class TurnManager : MonoBehaviour
         if (executedRedo)
         {
             unitManager.NotifyUnitStateChanged();
-            undoFeedback.PlayFeedback();
+            redoFeedback.PlayFeedback();
         }
     }
 

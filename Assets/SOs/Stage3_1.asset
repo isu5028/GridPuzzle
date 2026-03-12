@@ -26,6 +26,7 @@ MonoBehaviour:
     MaxHP: 1
     SetActionOrder: 1
     Ammo: 0
+    DropsCoin: 1
   tutorialIndexData: []
   upStage: {fileID: 11400000, guid: 2b6898dbcc5bdbf4cb35bc1748f18fec, type: 2}
   downStage: {fileID: 11400000, guid: b5ec00fbd964b9142b5448e13e88dbbc, type: 2}

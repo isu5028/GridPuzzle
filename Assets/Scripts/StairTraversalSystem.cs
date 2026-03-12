@@ -59,10 +59,16 @@ public class StairTraversalSystem : IStairTraversalSystem
         if (IsPositionOccupiedInStage(targetStage, playerPos))
         {
             Debug.Log($"[Stair] Cannot take stairs: destination is occupied");
+            if (gm.BlockedPrefab != null)
+            {
+                Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(playerPos), Quaternion.identity, gm.Visualizer.GridParent);
+            }
             return false;
         }
 
-        ShowStairConfirmationDialog(cellType, targetStage);
+        // ダイアログなしで即座にステージ移動
+        bool goingDown = cellType == CellType.StairDown;
+        TakeStairAsync(targetStage, goingDown).Forget();
         return true;
     }
 
@@ -158,7 +164,7 @@ public class StairTraversalSystem : IStairTraversalSystem
             await gm.UnitManager.Player.FadeInAsync(0.2f, goingDown);
         }
 
-        if (goingDown && targetStage != null)
+        if (targetStage != null)
         {
             int column = targetStage.StairColumn;
             int depth = targetStage.MapPosition.y;
@@ -319,6 +325,10 @@ public class StairTraversalSystem : IStairTraversalSystem
         // 階段先にUnitがいる場合は移動不可
         if (IsPositionOccupiedInStage(targetStage, targetPos))
         {
+            if (gm.BlockedPrefab != null)
+            {
+                Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(stairPos), Quaternion.identity, gm.Visualizer.GridParent);
+            }
             return null;
         }
 
@@ -519,6 +529,9 @@ public class StairTraversalSystem : IStairTraversalSystem
 
         public void Execute()
         {
+            // 移動先のステージの最大Order+1を計算して設定
+            movedData.order = gm.GetMaxEnemyOrderInStage(targetStage) + 1;
+
             if (targetEnemy != null)
             {
                 if (gm.StageEnemiesMap.ContainsKey(sourceStage))
@@ -529,6 +542,7 @@ public class StairTraversalSystem : IStairTraversalSystem
                 gm.UnitManager.RemoveEnemy(targetEnemy);
 
                 targetEnemy.WarpTo(new Vector2Int(movedData.gridX, movedData.gridY), (Direction)movedData.direction);
+                targetEnemy.SetOrder(movedData.order);
                 targetEnemy.gameObject.SetActive(false);
                 targetEnemy.transform.SetParent(gm.transform);
             }
@@ -541,6 +555,7 @@ public class StairTraversalSystem : IStairTraversalSystem
             // Add to pending (so if we visit that stage, it spawns)
             gm.AddPendingEnemy(targetStage, targetEnemy);
 
+            gm.UnitManager.SortEnemiesByOrder();
             gm.SaveGame(GameProgressManager.SaveType.Auto);
         }
 
@@ -591,6 +606,7 @@ public class StairTraversalSystem : IStairTraversalSystem
                 targetEnemy.transform.SetParent(gm.Visualizer.GridParent);
                 targetEnemy.gameObject.SetActive(true);
                 targetEnemy.WarpTo(new Vector2Int(restoreData.gridX, restoreData.gridY), (Direction)restoreData.direction);
+                targetEnemy.SetOrder(restoreData.order);
 
                 gm.UnitManager.AddEnemy(targetEnemy);
 
@@ -600,6 +616,7 @@ public class StairTraversalSystem : IStairTraversalSystem
                 }
                 gm.StageEnemiesMap[sourceStage].Add(targetEnemy);
 
+                gm.UnitManager.SortEnemiesByOrder();
                  await targetEnemy.FadeInAsync(0.15f, false);
             }
         }

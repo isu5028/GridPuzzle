@@ -211,7 +211,8 @@ public partial class StageTransitionSystem : IStageTransitionSystem
         gm.TurnManager.EnsureTurnStartSnapshot();
 
         var cmd = new WarpTransitionCommand(gm, sourceStage, targetStage,
-            sourcePos, sourceDir, targetPos, targetDir, restoreHP);
+            sourcePos, sourceDir, targetPos, targetDir, restoreHP,
+            clearWalls: restoreHP && overrideWarpDir == null); // マップワープ時のみ壁をリセット
         gm.CommandManager.ExecuteCommand(cmd);
 
         // ターンを完了させて履歴に記録（敵のターンはスキップ）
@@ -361,9 +362,13 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
     private bool restoreHP;
     private int previousHP;
     private bool wasDead;
+    private bool clearWalls; // マップワープ時のみtrueにして壁をリセット
+
+    // ワープ前の壁破壊状態を保存（Undo用）
+    private Dictionary<StageSO, HashSet<Vector2Int>> destroyedWallsSnapshot;
 
     public WarpTransitionCommand(GridManager gm, StageSO source, StageSO target,
-        Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir, bool restoreHP = false)
+        Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir, bool restoreHP = false, bool clearWalls = false)
     {
         this.gm = gm;
         this.sourceStage = source;
@@ -373,6 +378,7 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
         this.targetPos = tPos;
         this.targetDir = tDir;
         this.restoreHP = restoreHP;
+        this.clearWalls = clearWalls;
 
         // HP回復する場合は現在のHPを記録
         if (restoreHP && gm.UnitManager.Player != null)
@@ -380,10 +386,23 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
             previousHP = gm.UnitManager.Player.HP.Value;
             wasDead = gm.UnitManager.Player.IsDead;
         }
+
+        // ワープ前の壁破壊状態をスナップショット保存（Undo用）
+        destroyedWallsSnapshot = new Dictionary<StageSO, HashSet<Vector2Int>>();
+        foreach (var kvp in gm.DestroyedWalls)
+        {
+            destroyedWallsSnapshot[kvp.Key] = new HashSet<Vector2Int>(kvp.Value);
+        }
     }
 
     public void Execute()
     {
+        // マップワープ時のみ壁の破壊状態をリセット（境界遷移や階段移動では維持）
+        if (clearWalls)
+        {
+            gm.DestroyedWalls.Clear();
+        }
+
         PerformTransition(targetStage, targetPos, targetDir);
 
         if (restoreHP && gm.UnitManager.Player != null && !gm.UnitManager.Player.IsDead)
@@ -398,6 +417,13 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
 
     public async UniTask UndoAsync()
     {
+        // 壁の破壊状態をワープ前に復元
+        gm.DestroyedWalls.Clear();
+        foreach (var kvp in destroyedWallsSnapshot)
+        {
+            gm.DestroyedWalls[kvp.Key] = new HashSet<Vector2Int>(kvp.Value);
+        }
+
         PerformTransition(sourceStage, sourcePos, sourceDir);
 
         // HP回復をUndoする（元のHPに戻す）
@@ -454,6 +480,7 @@ public class EnemyCrossStageMoveCommand : ICommand, IAsyncUndoCommand
     private Direction sourceDir;
     private Direction targetDir;
     private bool wasActive;
+    private int originalOrder;
 
     public EnemyCrossStageMoveCommand(GridManager gm, Enemy enemy, StageSO source, StageSO target, Vector2Int tPos, Direction tDir)
     {
@@ -466,15 +493,19 @@ public class EnemyCrossStageMoveCommand : ICommand, IAsyncUndoCommand
         this.sourcePos = enemy.CurrentPos;
         this.sourceDir = enemy.CurrentDirection;
         this.wasActive = enemy.gameObject.activeSelf;
+        this.originalOrder = enemy.Order;
     }
 
     public void Execute()
     {
+        int newOrder = gm.GetMaxEnemyOrderInStage(targetStage) + 1;
+        enemy.SetOrder(newOrder);
         Transfer(sourceStage, targetStage, targetPos, targetDir);
     }
 
     public void Undo()
     {
+        enemy.SetOrder(this.originalOrder);
         Transfer(targetStage, sourceStage, sourcePos, sourceDir, true);
     }
 
@@ -541,6 +572,8 @@ public class EnemyCrossStageMoveCommand : ICommand, IAsyncUndoCommand
                  gm.UnitManager.Enemies.Remove(enemy);
              }
         }
+
+        gm.UnitManager.SortEnemiesByOrder();
     }
 }
 

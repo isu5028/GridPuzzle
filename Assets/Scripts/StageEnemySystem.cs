@@ -20,7 +20,11 @@ public class StageEnemySystem : IStageEnemySystem
         {
             foreach (var enemy in list)
             {
-                if (enemy != null) Object.Destroy(enemy.gameObject);
+                if (enemy != null)
+                {
+                    enemy.gameObject.SetActive(false);
+                    Object.Destroy(enemy.gameObject);
+                }
             }
         }
         gm.StageEnemiesMap.Clear();
@@ -113,6 +117,7 @@ public class StageEnemySystem : IStageEnemySystem
             {
                 if (cand != null && !newEnemies.Contains(cand))
                 {
+                    cand.gameObject.SetActive(false);
                     Object.Destroy(cand.gameObject);
                 }
             }
@@ -131,7 +136,11 @@ public class StageEnemySystem : IStageEnemySystem
         {
             foreach (var e in gm.StageEnemiesMap[stage])
             {
-                if (e != null) Object.Destroy(e.gameObject);
+                if (e != null)
+                {
+                    e.gameObject.SetActive(false);
+                    Object.Destroy(e.gameObject);
+                }
             }
             gm.StageEnemiesMap[stage].Clear();
         }
@@ -207,7 +216,11 @@ public class StageEnemySystem : IStageEnemySystem
                         maxHPToUse = 3;
                  }
 
-                var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse, data.ammo);
+                bool dropsCoinToUse = false;
+                 if (data.index >= 0 && data.index < stage.EnemyStartData.Count)
+                     dropsCoinToUse = stage.EnemyStartData[data.index].DropsCoin;
+
+                var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse, data.ammo, dropsCoinToUse);
 
                 newEnemy.EnemyID = string.IsNullOrEmpty(data.enemyID) ? $"{stage.name}_{data.index}" : data.enemyID;
                 newEnemy.SetHP(data.currentHP);
@@ -286,7 +299,7 @@ public class StageEnemySystem : IStageEnemySystem
             Vector3 worldPos = gm.GridToWorldPosition(enemyData.Position);
             GameObject prefab = getEnemyPrefab(enemyData.EnemyType);
 
-            var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder, enemyData.Ammo);
+            var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder, enemyData.Ammo, enemyData.DropsCoin);
             enemyScript.name = $"Enemy_{enemyData.EnemyType}_{count}";
             enemyScript.EnemyID = $"{stage.name}_{count}";
             count++;
@@ -297,10 +310,16 @@ public class StageEnemySystem : IStageEnemySystem
         return generatedEnemies;
     }
 
-    private Enemy InstantiateAndInitializeEnemy(GameObject prefab, Vector3 worldPos, Vector2Int gridPos, Direction dir, int maxHp, int order, int ammo = -1)
+    private Enemy InstantiateAndInitializeEnemy(GameObject prefab, Vector3 worldPos, Vector2Int gridPos, Direction dir, int maxHp, int order, int ammo = -1, bool dropsCoin = false)
     {
         GameObject enemyObj = Object.Instantiate(prefab, worldPos, Quaternion.identity, gm.Visualizer.GridParent);
         var enemyScript = enemyObj.GetComponent<Enemy>();
+
+        if (maxHp <= 0)
+        {
+            maxHp = enemyScript.MaxHP;
+            if (maxHp <= 0) maxHp = 3;
+        }
 
         var ai = enemyObj.GetComponent<EnemyAIChaserRanged>();
         if (ai == null)
@@ -308,7 +327,7 @@ public class StageEnemySystem : IStageEnemySystem
             ammo = -1;
         }
 
-        enemyScript.Initialize(gm, gm.TurnManager, gm.CommandManager, gridPos, dir, maxHp, order, ammo);
+        enemyScript.Initialize(gm, gm.TurnManager, gm.CommandManager, gridPos, dir, maxHp, order, ammo, dropsCoin);
         return enemyScript;
     }
 
@@ -351,5 +370,46 @@ public class StageEnemySystem : IStageEnemySystem
             return list;
         }
         return null; // Should be empty list? or null ok?
+    }
+
+    public int GetMaxEnemyOrderInStage(StageSO stage)
+    {
+        int maxOrder = 0;
+
+        if (gm.StageEnemiesMap.TryGetValue(stage, out var enemies))
+        {
+            foreach (var e in enemies)
+            {
+                if (e != null && !e.IsDead && e.Order > maxOrder) maxOrder = e.Order;
+            }
+        }
+
+        if (gm.PendingStageEnemies.TryGetValue(stage, out var pending))
+        {
+            foreach (var pe in pending)
+            {
+                if (pe != null && !pe.IsDead && pe.Order > maxOrder) maxOrder = pe.Order;
+            }
+        }
+
+        if (!gm.StageEnemiesMap.ContainsKey(stage))
+        {
+            if (gm.LoadedStageEnemyData.TryGetValue(stage, out var dataList))
+            {
+                foreach (var d in dataList)
+                {
+                    if (!d.isDead && d.order > maxOrder) maxOrder = d.order;
+                }
+            }
+            else if (stage.EnemyStartData != null)
+            {
+                foreach (var esd in stage.EnemyStartData)
+                {
+                    if (esd.SetActionOrder > maxOrder) maxOrder = esd.SetActionOrder;
+                }
+            }
+        }
+
+        return maxOrder;
     }
 }

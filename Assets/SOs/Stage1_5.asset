@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2444d66c4f1bdcc46b77fc30f741dd82, type: 3}
+  m_Name: Stage1_5
+  m_EditorClassIdentifier: 
+  width: 12
+  height: 8
+  mapPosition: {x: 1, y: 5}
+  cellData: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000100000001000000010000000000000000000000000000000000000000000000000000000000000001000000010000000800000001000000070000000000000000000000000000000000000000000000000000000000000001000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000100000001000000010000000000000000000000000000000000000000000000000000000000000001000000010000000100000001000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  syncMapOffset: {x: 1, y: 1}
+  playerStartPosition: {x: 2, y: 2}
+  playerStartDirection: 0
+  enemyStartData:
+  - Position: {x: 4, y: 4}
+    Direction: 2
+    EnemyType: 4
+    MaxHP: 2
+    SetActionOrder: 1
+    Ammo: 1
+    DropsCoin: 1
+  tutorialIndexData: []
+  upStage: {fileID: 0}
+  downStage: {fileID: 0}
+  rightStage: {fileID: 11400000, guid: 7b2cbbb5d3859e94aaa383596a90a222, type: 2}
+  leftStage: {fileID: 11400000, guid: 0d5550ce5f05f9d448f3c0010f964cc2, type: 2}
+  defaultUpStage: {fileID: 11400000, guid: eeceaa85aa39ab64c91ee7e0f7b345e8, type: 2}
+  defaultDownStage: {fileID: 11400000, guid: e0083c5d7a425894d9fcc35a1285e078, type: 2}
+  stairConnections:
+  - Position: {x: 9, y: 5}
+    TargetStage: {fileID: 11400000, guid: 8bcf5691c951ec849976a8df1fae5fc9, type: 2}
+    TargetPosition: {x: 0, y: 0}
+  - Position: {x: 0, y: 0}
+    TargetStage: {fileID: 0}
+    TargetPosition: {x: 0, y: 0}
+  PlayerMaxHP: 2
+  PlayerStartOrder: 0

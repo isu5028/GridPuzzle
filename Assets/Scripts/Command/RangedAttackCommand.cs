@@ -11,14 +11,23 @@ public class RangedAttackCommand : ICommand
     private bool wasDead;
     private bool hitUnit;
 
+    // Wall hit info
+    private bool hitWall;
+    private StageSO wallStage;
+    private Vector2Int wallPos;
+
     private Transform arrowPrefab;
 
-    public RangedAttackCommand(Enemy attacker, Vector2Int targetPos, GridManager grid, Transform arrowPrefab)
+    public RangedAttackCommand(Enemy attacker, Vector2Int targetPos, GridManager grid, Transform arrowPrefab,
+        bool hitWall = false, StageSO wallStage = null, Vector2Int wallPos = default)
     {
         this.attacker = attacker;
         this.targetPos = targetPos;
         this.gridManager = grid;
         this.arrowPrefab = arrowPrefab;
+        this.hitWall = hitWall;
+        this.wallStage = wallStage;
+        this.wallPos = wallPos;
     }
 
     public void Execute()
@@ -32,8 +41,13 @@ public class RangedAttackCommand : ICommand
             wasDead = targetUnit.IsDead;
         }
 
+        // 壁ヒット時は矢の命中タイミングで壁を破壊する
+        System.Action onHit = hitWall && wallStage != null
+            ? () => gridManager.BreakWall(wallStage, wallPos)
+            : (System.Action)null;
+
         attacker.ConsumeAmmo();
-        attacker.PerformRangedAttack(targetPos, targetUnit, arrowPrefab);
+        attacker.PerformRangedAttack(targetPos, targetUnit, arrowPrefab, onHit);
     }
 
     public void Undo()
@@ -47,6 +61,12 @@ public class RangedAttackCommand : ICommand
             {
                 targetUnit.Revive();
             }
+        }
+
+        // 壁を元に戻す
+        if (hitWall && wallStage != null)
+        {
+            gridManager.RestoreWall(wallStage, wallPos);
         }
     }
 }

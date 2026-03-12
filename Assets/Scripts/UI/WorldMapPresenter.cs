@@ -11,6 +11,15 @@ public class WorldMapPresenter : MonoBehaviour
     [SerializeField] private WorldMapSO worldMapSO = null!;
     [SerializeField] private HUDFeedback mapFeedback = null!;
 
+    [Header("Input Feedback")]
+    [SerializeField] private HUDFeedback moveUpFeedback;
+    [SerializeField] private HUDFeedback moveDownFeedback;
+    [SerializeField] private HUDFeedback moveLeftFeedback;
+    [SerializeField] private HUDFeedback moveRightFeedback;
+    [SerializeField] private HUDFeedback mapFrontFeedback;
+    [SerializeField] private HUDFeedback mapBackFeedback;
+    [SerializeField] private HUDFeedback decideFeedback; // 追加: 決定キーの色変化用
+
     // ModelはPresenterが生成、保持する
     private WorldMapModel model;
 
@@ -73,22 +82,23 @@ public class WorldMapPresenter : MonoBehaviour
 
         if (mapFront)
         {
+            mapFrontFeedback?.PlayFeedback();
             SwitchLayer(1);
         }
         else if (mapBack)
         {
+            mapBackFeedback?.PlayFeedback();
             SwitchLayer(-1);
         }
     }
 
     private void SwitchLayer(int direction)
     {
-        Debug.Log("SwitchLayer: " + direction);
-        // direction: +1 (To Front), -1 (To Back)
         int currentLayer = GetLayerFromColumn(cursorPosition.x);
         int targetLayer = currentLayer + direction;
+        int unlockedLayers = GameProgressManager.Instance.GetUnlockedLayerCount();
 
-        if (targetLayer < 0 || targetLayer > 2) return; // Out of bounds
+        if (targetLayer < 0 || targetLayer >= unlockedLayers) return;
 
         int offset = direction * 3;
         Vector2Int newPos = new Vector2Int(cursorPosition.x + offset, cursorPosition.y);
@@ -96,9 +106,9 @@ public class WorldMapPresenter : MonoBehaviour
         if (model.IsValidPosition(newPos))
         {
             cursorPosition = newPos;
-            AudioManager.Instance?.PlaySE(AudioManager.SEType.move); // Or a specific layer switch sound
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.move);
             view.UpdateCursorPosition(cursorPosition);
-            // Optional: Trigger visual feedback for layer switch in View
+            UpdateDecideKeyColor(); // カーソル移動後に更新
         }
     }
 
@@ -127,6 +137,13 @@ public class WorldMapPresenter : MonoBehaviour
             }
             else
             {
+                // プレイヤーが死亡中はマップを開けない
+                if (gridManager.PlayerScript != null && gridManager.PlayerScript.IsDead)
+                {
+                    AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+                    return;
+                }
+
                 OpenMapAsync(false).Forget(); // Normal open
                 mapFeedback.PlayFeedback();
             }
@@ -148,23 +165,30 @@ public class WorldMapPresenter : MonoBehaviour
         // 開くときに最新データで更新
         view.RefreshMap(model.GetAllMapData());
 
-        // カーソルを現在のステージの位置へ
+        int unlockedLayers = GameProgressManager.Instance.GetUnlockedLayerCount();
+        view.SetVisibleLayerCount(unlockedLayers);
+
         StageSO currentStage = gridManager.CurrentStageSO;
         if (currentStage != null)
         {
             cursorPosition = currentStage.MapPosition;
+            int stageLayer = GetLayerFromColumn(cursorPosition.x);
+            if (stageLayer >= unlockedLayers)
+            {
+                cursorPosition = new Vector2Int(1, 0);
+            }
         }
         else
         {
-            cursorPosition = new Vector2Int(1, 0); // ハブ
+            cursorPosition = new Vector2Int(1, 0);
         }
 
-        // 現在位置が無効な場合はハブへ
         if (!model.IsValidPosition(cursorPosition))
         {
-            cursorPosition = new Vector2Int(1, 0); // ハブ
+            cursorPosition = new Vector2Int(1, 0);
         }
         view.UpdateCursorPosition(cursorPosition);
+        UpdateDecideKeyColor(); // 開いた直後に選択位置を判定して更新
 
         AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
         await view.ShowAsync();
@@ -210,6 +234,7 @@ public class WorldMapPresenter : MonoBehaviour
         {
             isHoldingMove = true;
             currentMoveTimer = initialMoveDelay;
+            PlayMoveFeedback(currentDirection);
             ApplyMove(currentDirection); // 初回移動
         }
         else
@@ -218,8 +243,20 @@ public class WorldMapPresenter : MonoBehaviour
             if (currentMoveTimer <= 0f)
             {
                 currentMoveTimer = moveRepeatRate;
+                PlayMoveFeedback(currentDirection);
                 ApplyMove(currentDirection); // 連続移動
             }
+        }
+    }
+
+    private void PlayMoveFeedback(Direction dir)
+    {
+        switch (dir)
+        {
+            case Direction.Up: moveUpFeedback?.PlayFeedback(); break;
+            case Direction.Down: moveDownFeedback?.PlayFeedback(); break;
+            case Direction.Left: moveLeftFeedback?.PlayFeedback(); break;
+            case Direction.Right: moveRightFeedback?.PlayFeedback(); break;
         }
     }
 
@@ -247,39 +284,78 @@ public class WorldMapPresenter : MonoBehaviour
         // ハブ（row=0）からの移動特殊処理
         if (cursorPosition.y == 0)
         {
-            // ハブ間の横移動 (1,0) <-> (4,0) <-> (7,0)
+            int unlockedLayers = GameProgressManager.Instance.GetUnlockedLayerCount();
             if (direction == Direction.Right)
             {
-                if (cursorPosition.x == 1) nextPos = new Vector2Int(4, 0);
-                else if (cursorPosition.x == 4) nextPos = new Vector2Int(7, 0);
+                if (cursorPosition.x == 1 && unlockedLayers >= 2) nextPos = new Vector2Int(4, 0);
+                else if (cursorPosition.x == 4 && unlockedLayers >= 3) nextPos = new Vector2Int(7, 0);
+                else return;
             }
             else if (direction == Direction.Left)
             {
                 if (cursorPosition.x == 7) nextPos = new Vector2Int(4, 0);
                 else if (cursorPosition.x == 4) nextPos = new Vector2Int(1, 0);
+                else return;
             }
         }
         // ダンジョン(B1F)からハブへの移動
         else if (cursorPosition.y == 1 && direction == Direction.Up)
         {
-            // Back Layer (0-2) -> (1,0)
             if (cursorPosition.x <= 2) nextPos = new Vector2Int(1, 0);
-
-            // Mid Layer (3-5) -> (4,0)
             else if (cursorPosition.x <= 5) nextPos = new Vector2Int(4, 0);
-
-            // Front Layer (6-8) -> (7,0)
             else nextPos = new Vector2Int(7, 0);
         }
+        else if (cursorPosition.y >= 1 && (direction == Direction.Left || direction == Direction.Right))
+        {
+            int currentLayer = GetLayerFromColumn(cursorPosition.x);
+            int nextLayer = GetLayerFromColumn(nextPos.x);
+            if (currentLayer != nextLayer)
+            {
+                // レイヤー境界を越える場合、隣のレイヤーが解禁されていれば移動可能
+                int unlockedLayers = GameProgressManager.Instance.GetUnlockedLayerCount();
+                if (nextLayer >= 0 && nextLayer < unlockedLayers)
+                {
+                    // 隣レイヤーの同じ行の対応する列に移動
+                    // Right: 現レイヤー右端(col 2,5,8) → 次レイヤー左端(col 3,6)
+                    // Left:  現レイヤー左端(col 0,3,6) → 前レイヤー右端(col 2,5)
+                    nextPos = new Vector2Int(nextPos.x, cursorPosition.y);
+                }
+                else
+                {
+                    return;
+                }
+            }
+        }
 
-        // 有効な位置かチェック
         // 有効な位置かチェック
         if (model.IsValidPosition(nextPos))
         {
             cursorPosition = nextPos;
             AudioManager.Instance?.PlaySE(AudioManager.SEType.move);
             view.UpdateCursorPosition(cursorPosition);
+            UpdateDecideKeyColor(); // カーソル移動後に更新
         }
+    }
+
+    // 追加: 現在のカーソル位置でワープできるかどうか判定し、決定キーのフィードバック色を変える
+    private void UpdateDecideKeyColor()
+    {
+        if (decideFeedback == null) return;
+
+        bool canWarp = false;
+        if (model.IsHubPosition(cursorPosition))
+        {
+            StageSO hubStage = model.GetStageAt(cursorPosition);
+            canWarp = hubStage != null && model.IsTraversable(cursorPosition);
+        }
+        else
+        {
+            var cellType = model.GetCellType(cursorPosition);
+            StageSO targetStage = model.GetStageAt(cursorPosition);
+            canWarp = cellType != WorldMapCellType.Unknown && model.IsTraversable(cursorPosition) && targetStage != null;
+        }
+
+        decideFeedback.SetInteractable(canWarp);
     }
 
     private void HandleSelection()
@@ -290,10 +366,15 @@ public class WorldMapPresenter : MonoBehaviour
             if (model.IsHubPosition(cursorPosition))
             {
                 StageSO hubStage = model.GetStageAt(cursorPosition);
-                if (hubStage != null)
+                if (hubStage != null && model.IsTraversable(cursorPosition))
                 {
+                    decideFeedback?.PlayFeedback(); // 押下時にアニメーション
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
                     WarpToStageWithResetAsync(hubStage, true).Forget();
+                }
+                else
+                {
+                    AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
                 }
                 return;
             }
@@ -306,6 +387,7 @@ public class WorldMapPresenter : MonoBehaviour
 
                 if (targetStage != null)
                 {
+                    decideFeedback?.PlayFeedback(); // 押下時にアニメーション
                     AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
                     WarpToStageWithResetAsync(targetStage, false).Forget();
                 }
@@ -319,7 +401,7 @@ public class WorldMapPresenter : MonoBehaviour
 
     /// <summary>
     /// マップを閉じてからアニメーション付きでステージにワープ
-    /// プレイヤーHP回復、Undo履歴削除。敵の位置はリセットせず保持する
+    /// プレイヤーHP回復、Undo履歴削除、および全ての敵を復活させる処理が含まれる
     /// </summary>
     private async UniTaskVoid WarpToStageWithResetAsync(StageSO targetStage, bool isHub)
     {
@@ -327,6 +409,9 @@ public class WorldMapPresenter : MonoBehaviour
         isAnimating = true;
         isForceOpen = false;
         turnManager.SetMapState(false);
+
+        // 敵の復活処理 (ハブ・ダンジョン問わずマップからワープ時は常に復活させる)
+        gridManager.ResetAllEnemies();
 
         // ワープ先の位置を決定
         Vector2Int targetPos;
@@ -348,6 +433,9 @@ public class WorldMapPresenter : MonoBehaviour
             view.HideAsync(),
             gridManager.WarpWithAnimationAsync(targetStage, targetPos, targetDir, restoreHP: true)
         );
+
+        // ワープアニメーション（WarpTransitionCommandの発行）が完了した後にUndo履歴を削除する
+        gridManager.ClearUndoHistory();
 
         isMapOpen = false;
         isAnimating = false;

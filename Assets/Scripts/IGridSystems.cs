@@ -32,6 +32,7 @@ public interface IStageEnemySystem
     void AddPendingEnemy(StageSO stage, Enemy enemy);
     void CleanupAllEnemies();
     void PrepareEnemiesForStage(StageSO stage);
+    int GetMaxEnemyOrderInStage(StageSO stage);
 }
 
 public interface IStairTraversalSystem

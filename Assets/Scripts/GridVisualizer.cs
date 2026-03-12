@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using DG.Tweening;
+using Cysharp.Threading.Tasks;
 
 public class GridVisualizer : MonoBehaviour
 {
@@ -21,13 +22,17 @@ public class GridVisualizer : MonoBehaviour
     [SerializeField] private float cellSize = 16f;
     [SerializeField] private Vector2 tilemapOffset = new Vector2(-96f, -64f);
 
+    [Header("Wall Break Effect")]
+    [SerializeField] private Shader dissolveShader = null;
+
     public float CellSize => cellSize;
     public Vector2 TilemapOffset => tilemapOffset;
     public Transform GridParent => gridParent;
     public Tilemap MainTilemap => tilemap;
     public Tilemap TransitionTilemap => transitionTilemap;
 
-    private List<GameObject> spawnedMainObjects = new List<GameObject>();
+    private List<GameObject> spawnedSyncMapObjects = new List<GameObject>();
+    private List<GameObject> spawnedTutorialObjects = new List<GameObject>();
     private List<GameObject> spawnedTransitionObjects = new List<GameObject>();
 
     private struct SyncMapEntry
@@ -52,10 +57,15 @@ public class GridVisualizer : MonoBehaviour
         return new Vector2Int(cellPos.x, cellPos.y);
     }
 
-    public void ClearAllTiles()
+    public void ClearAllTiles(bool keepTutorial = false)
     {
         tilemap.ClearAllTiles();
-        CleanupObjects(spawnedMainObjects);
+        CleanupObjects(spawnedSyncMapObjects);
+        ClearSyncMapEntries();
+        if (!keepTutorial)
+        {
+            CleanupObjects(spawnedTutorialObjects);
+        }
     }
 
     public void ClearTransitionTiles()
@@ -79,11 +89,10 @@ public class GridVisualizer : MonoBehaviour
     }
 
     // 論理データ(cellData)に基づいてTilemapを描画する
-    public void RefreshTilemap(int width, int height, CellType[,] cellData, StageSO stage, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
+    public void RefreshTilemap(int width, int height, CellType[,] cellData, StageSO stage, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck, bool keepTutorial = false)
     {
-        tilemap.ClearAllTiles();
-        ClearSyncMapEntries();
-        FillTilemapFromData(tilemap, width, height, cellData, stage, destroyedWalls, isClearedCheck);
+        ClearAllTiles(keepTutorial);
+        FillTilemapFromData(tilemap, width, height, cellData, stage, destroyedWalls, isClearedCheck, keepTutorial);
     }
 
     // StageSOから直接描画する（初期化時など、まだcellDataが空の場合用だが、
@@ -164,7 +173,7 @@ public class GridVisualizer : MonoBehaviour
 
                 if (targetMap == tilemap)
                 {
-                    spawnedMainObjects.Add(obj);
+                    spawnedTutorialObjects.Add(obj);
                 }
                 else if (targetMap == transitionTilemap)
                 {
@@ -209,7 +218,7 @@ public class GridVisualizer : MonoBehaviour
 
         if (targetMap == tilemap)
         {
-            spawnedMainObjects.Add(obj);
+            spawnedSyncMapObjects.Add(obj);
         }
         else if (targetMap == transitionTilemap)
         {
@@ -338,7 +347,7 @@ public class GridVisualizer : MonoBehaviour
         }
     }
 
-    private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData, StageSO stage, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck)
+    private void FillTilemapFromData(Tilemap targetMap, int width, int height, CellType[,] cellData, StageSO stage, HashSet<Vector2Int> destroyedWalls, Func<Vector2Int, bool> isClearedCheck, bool skipTutorialSpawn = false)
     {
         for (int y = -1; y <= height; y++)
         {
@@ -380,7 +389,7 @@ public class GridVisualizer : MonoBehaviour
                         break;
                     case CellType.Tutorial:
                         targetMap.SetTile(pos, floorTile);
-                        if (tutorialPrefabs != null && stage != null)
+                        if (!skipTutorialSpawn && tutorialPrefabs != null && stage != null)
                         {
                             InstantiateTutorialPrefab(targetMap, pos, new Vector2Int(x, y), stage);
                         }
@@ -417,6 +426,70 @@ public class GridVisualizer : MonoBehaviour
     {
         gridParent.DOKill();
         gridParent.position = Vector3.zero;
+    }
+
+    /// <summary>
+    /// 壁破壊時にDissolveアニメーションを再生する
+    /// </summary>
+    public void PlayWallBreakEffect(Vector2Int gridPos)
+    {
+        if (dissolveShader == null) return;
+
+        // wallTileからスプライトを取得（最優先）
+        Sprite wallSprite = null;
+        if (wallTile is UnityEngine.Tilemaps.Tile tile)
+        {
+            wallSprite = tile.sprite;
+        }
+
+        // fallback: Tilemapからタイル位置のスプライトを取得
+        if (wallSprite == null)
+        {
+            var tilePos = GetTilePosFromGridPos(gridPos.x, gridPos.y);
+            wallSprite = tilemap.GetSprite(tilePos);
+        }
+
+        if (wallSprite == null) return;
+
+        PlayWallBreakEffectAsync(gridPos, wallSprite).Forget();
+    }
+
+    private async UniTaskVoid PlayWallBreakEffectAsync(Vector2Int gridPos, Sprite wallSprite)
+    {
+        // 一時GOを生成
+        GameObject go = new GameObject("WallBreakEffect");
+        go.transform.SetParent(gridParent, false);
+        go.transform.position = GridToWorldPosition(gridPos);
+
+        SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = wallSprite;
+        sr.sortingLayerName = tilemap.GetComponent<TilemapRenderer>()?.sortingLayerName ?? "Default";
+        sr.sortingOrder = (tilemap.GetComponent<TilemapRenderer>()?.sortingOrder ?? 0) + 1;
+
+        // DitherDissolveマテリアルを動的生成
+        Material mat = new Material(dissolveShader);
+        mat.SetTexture("_MainTex", wallSprite.texture);
+        // 命中直後から「すでに崩れ始めている」感を出すため先出し
+        mat.SetFloat("_DissolveAmount", 0.0f);
+        mat.SetFloat("_SweepDirection", 2f); // 右上から左下
+        sr.material = mat;
+
+        // カメラシェイク（壁破壊の衝撃）
+        CameraManager.Instance.ShakeCamera(0.25f, 4.0f, 30f, Vector2.up);
+
+        // Dissolveアニメーション：OutExpoで最初にガッと崩れ素早く消える
+        float duration = 0.5f;
+        await DOTween.To(
+            () => mat.GetFloat("_DissolveAmount"),
+            x => mat.SetFloat("_DissolveAmount", x),
+            1f,
+            duration)
+            .SetEase(Ease.OutCubic)
+            .AsyncWaitForCompletion();
+
+        // クリーンアップ
+        if (mat != null) UnityEngine.Object.Destroy(mat);
+        if (go != null) UnityEngine.Object.Destroy(go);
     }
 
     /// <summary>
