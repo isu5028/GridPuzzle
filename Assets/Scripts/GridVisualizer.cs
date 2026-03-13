@@ -12,6 +12,7 @@ public class GridVisualizer : MonoBehaviour
     [SerializeField] private Tilemap transitionTilemap = null!;
     [SerializeField] private TileBase wallTile = null!;
     [SerializeField] private TileBase floorTile = null!;
+    [SerializeField] private TileBase floorGoblinTile = null!;
     [SerializeField] private TileBase stairUpTile = null!;    // 上階段タイル
     [SerializeField] private TileBase stairDownTile = null!;  // 下階段タイル
     [SerializeField] private TileBase brokenStairUpTile = null!; // 壊れた上階段タイルのプレハブ/タイル
@@ -116,6 +117,24 @@ public class GridVisualizer : MonoBehaviour
                 targetMap.SetTile(pos, wallTile);
                 break;
             case CellType.Floor:
+                bool isGoblinFloor = false;
+                if (stage != null)
+                {
+                    foreach (var et in stage.EnemyStartData)
+                    {
+                        if (et.EnemyType == EnemyType.Goblin)
+                        {
+                            if (Mathf.Abs(et.Position.x - x) <= 2 && Mathf.Abs(et.Position.y - y) <= 2)
+                            {
+                                isGoblinFloor = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                TileBase floorTileToUse = (isGoblinFloor && floorGoblinTile != null) ? floorGoblinTile : floorTile;
+                targetMap.SetTile(pos, floorTileToUse);
+                break;
             case CellType.Warp:
                 targetMap.SetTile(pos, floorTile);
                 break;
@@ -387,7 +406,23 @@ public class GridVisualizer : MonoBehaviour
                         targetMap.SetTile(pos, wallTile);
                         break;
                     case CellType.Floor:
-                        targetMap.SetTile(pos, floorTile);
+                        bool isGoblinFloor = false;
+                        if (stage != null)
+                        {
+                            foreach (var et in stage.EnemyStartData)
+                            {
+                                if (et.EnemyType == EnemyType.Goblin)
+                                {
+                                    if (Mathf.Abs(et.Position.x - x) <= 2 && Mathf.Abs(et.Position.y - y) <= 2)
+                                    {
+                                        isGoblinFloor = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        TileBase floorTileToUse = (isGoblinFloor && floorGoblinTile != null) ? floorGoblinTile : floorTile;
+                        targetMap.SetTile(pos, floorTileToUse);
                         break;
                     case CellType.Warp:
                         targetMap.SetTile(pos, floorTile);

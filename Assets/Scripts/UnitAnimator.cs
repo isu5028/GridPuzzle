@@ -28,10 +28,15 @@ public class UnitAnimator : MonoBehaviour
     [SerializeField] private Animator _animator;
     [SerializeField] private DirectionAnimations _directionAnimation;
     [SerializeField] private AnimationClip _deathAnimation;
+    [SerializeField] private AnimationClip _ignitionAnimation;
 
+    public AnimationClip IgnitionAnimation => _ignitionAnimation;
+    public bool IsAnimationLocked { get; set; } = false;
 
     public void SetDirection(Direction direction)
     {
+        if (IsAnimationLocked) return;
+
         AnimationClip clip = _directionAnimation.GetClip(direction);
         if (clip == null)
         {
@@ -45,6 +50,12 @@ public class UnitAnimator : MonoBehaviour
 
         // 新しいアニメーションを再生
         _animator.Play(clip.name, 0, normalizedTime);
+    }
+
+    public void PlayAnimation(AnimationClip clip)
+    {
+        if (clip == null || _animator == null) return;
+        _animator.Play(clip.name);
     }
 
     public void SetDeath()

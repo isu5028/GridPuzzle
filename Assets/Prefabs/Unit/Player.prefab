@@ -378,8 +378,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c3cc31b8bd99504a9a3bb90f04732d5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveDuration: 0.18
-  attackDuration: 0.25
+  moveDuration: 0.15
+  attackDuration: 0.2
   attackDistance: 8
   flashDuration: 0.15
   attackTargetPos:
@@ -399,6 +399,7 @@ MonoBehaviour:
   dissolveShader: {fileID: 4800000, guid: 0f7d8bd3d53ec15418b5f69c5fdefc85, type: 3}
   maxHP: 3
   isDead: 0
+  heartEffectPrefab: {fileID: 938620891433673011, guid: 1215093578fe46c4aa999811bbfe2861, type: 3}
 --- !u!114 &6799400408837568895
 MonoBehaviour:
   m_ObjectHideFlags: 0

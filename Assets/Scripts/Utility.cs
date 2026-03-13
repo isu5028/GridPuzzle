@@ -12,6 +12,7 @@ public enum EnemyType
     Boar,
     Crystal,
     Ghost,
+    Bomb,
 }
 
 public enum CellType

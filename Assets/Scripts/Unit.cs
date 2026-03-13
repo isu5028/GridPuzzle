@@ -407,7 +407,29 @@ public abstract class Unit : MonoBehaviour
                 checkPos += directionVector;
             }
 
+            // checkPos is now the first free cell after all crates.
+            // Handle case where that free cell is OOB (boundary transition possible)
+            bool canPush = false;
             if (gridManager.IsCellWalkable(checkPos))
+            {
+                canPush = true;
+            }
+            else if (!gridManager.IsPositionInBounds(checkPos))
+            {
+                // OOBの場合、隣接ステージへの遷移が可能かチェック
+                StageSO neighbor = gridManager.GetAdjacentStageFromBoundary(gridManager.CurrentStageSO, checkPos);
+                if (neighbor != null)
+                {
+                    // 遷移先ステージの対応する位置がWalkableか確認
+                    Vector2Int neighborEntry = GridCalculation.CalculateEntryPosition(neighbor, direction, checkPos);
+                    if (gridManager.IsWalkableAt(neighbor, neighborEntry) && gridManager.GetUnitAtPosition(neighborEntry) == null)
+                    {
+                        canPush = true;
+                    }
+                }
+            }
+
+            if (canPush)
             {
                 // 遠い方から順番に移動コマンドを発行
                 for (int i = cratesToPush.Count - 1; i >= 0; i--)
@@ -757,6 +779,7 @@ public abstract class Unit : MonoBehaviour
     // Undo時の復活処理
     public virtual void Revive()
     {
+        gameObject.SetActive(true);
         isDead = false;
         if (this is Player)
         {

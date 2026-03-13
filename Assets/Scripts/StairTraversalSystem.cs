@@ -847,4 +847,102 @@ public class StairTraversalSystem : IStairTraversalSystem
             }
         }
     }
+
+    // ステージ境界通過でCrateを隣接ステージへ即座にワープ
+    public async UniTask MoveCrateThroughBoundary(Crate crate, StageSO sourceStage, StageSO targetStage, Vector2Int targetPos, Direction direction)
+    {
+        if (crate == null || targetStage == null) return;
+
+        var cmd = new CrateBoundaryTransitionCommand(gm, crate, sourceStage, targetStage, targetPos, direction);
+        // CompleteTurn()後に呼ばれるため、AppendToLastTurnで直前のターンに追記する
+        gm.CommandManager.AppendToLastTurn(cmd);
+        await UniTask.Yield();
+    }
+
+    private class CrateBoundaryTransitionCommand : ICommand, IAsyncUndoCommand
+    {
+        private GridManager gm;
+        private Crate targetCrate;
+        private StageSO sourceStage;
+        private StageSO targetStage;
+        private Vector2Int sourcePos;
+        private Direction sourceDir;
+        private Vector2Int targetPos;
+        private Direction targetDir;
+
+        public CrateBoundaryTransitionCommand(GridManager gm, Crate crate, StageSO source, StageSO target, Vector2Int tPos, Direction dir)
+        {
+            this.gm = gm;
+            this.targetCrate = crate;
+            this.sourceStage = source ?? gm.CurrentStageSOInternal;
+            this.targetStage = target;
+            this.targetPos = tPos;
+            this.targetDir = dir;
+            this.sourcePos = crate.CurrentPos;
+            this.sourceDir = crate.CurrentDirection;
+        }
+
+        public void Execute()
+        {
+            if (targetCrate == null) return;
+
+            // 元のステージから登録解除
+            if (gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage].Remove(targetCrate);
+            gm.UnitManager.RemoveCrate(targetCrate);
+
+            // 隣接ステージの対応マスへ配置
+            targetCrate.WarpTo(targetPos, targetDir);
+
+            if (!gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage] = new List<Crate>();
+            gm.StageCratesMap[targetStage].Add(targetCrate);
+
+            // 現在のステージが遷移先なら表示、そうでなければ非表示
+            if (targetStage == gm.CurrentStageSOInternal)
+            {
+                targetCrate.gameObject.SetActive(true);
+                targetCrate.transform.SetParent(gm.Visualizer.GridParent);
+                gm.UnitManager.AddCrate(targetCrate);
+            }
+            else
+            {
+                targetCrate.gameObject.SetActive(false);
+                targetCrate.transform.SetParent(gm.transform);
+            }
+
+            gm.SaveGame(GameProgressManager.SaveType.Auto);
+        }
+
+        public void Undo() { UndoAsync().Forget(); }
+        public async UniTask UndoAsync()
+        {
+            if (targetCrate == null) return;
+
+            // 遷移先から解除
+            if (gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage].Remove(targetCrate);
+            if (targetStage == gm.CurrentStageSOInternal)
+            {
+                gm.UnitManager.RemoveCrate(targetCrate);
+            }
+
+            // 元の位置に戻す
+            targetCrate.WarpTo(sourcePos, sourceDir);
+
+            if (sourceStage == gm.CurrentStageSOInternal)
+            {
+                targetCrate.gameObject.SetActive(true);
+                targetCrate.transform.SetParent(gm.Visualizer.GridParent);
+                gm.UnitManager.AddCrate(targetCrate);
+            }
+            else
+            {
+                targetCrate.gameObject.SetActive(false);
+                targetCrate.transform.SetParent(gm.transform);
+            }
+
+            if (!gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage] = new List<Crate>();
+            gm.StageCratesMap[sourceStage].Add(targetCrate);
+
+            await UniTask.Yield();
+        }
+    }
 }

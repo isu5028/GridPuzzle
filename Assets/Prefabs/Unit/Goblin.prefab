@@ -58,7 +58,7 @@ RectTransform:
   m_GameObject: {fileID: 1270235298220272967}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 3, y: 2.875, z: 1}
+  m_LocalScale: {x: 3, y: 3.2, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 58040932328340839}
@@ -609,7 +609,7 @@ GameObject:
   - component: {fileID: 299966309297528681}
   - component: {fileID: 3414781995330460015}
   - component: {fileID: 77383832739782490}
-  - component: {fileID: 766790269746342362}
+  - component: {fileID: 4209966027584376719}
   m_Layer: 0
   m_Name: Goblin
   m_TagString: Untagged
@@ -646,8 +646,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d57305facc065ae44bbd727ad21c06cd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveDuration: 0.18
-  attackDuration: 0.25
+  moveDuration: 0.15
+  attackDuration: 0.2
   attackDistance: 8
   flashDuration: 0.15
   attackTargetPos:
@@ -671,6 +671,7 @@ MonoBehaviour:
   ammoText: {fileID: 0}
   ammoTransform: {fileID: 0}
   ammoSpriteAnimation: {fileID: 0}
+  coinPrefab: {fileID: 5718629728671522699, guid: 5fee50c973e9355449d106e7f83bb5a5, type: 3}
 --- !u!114 &3414781995330460015
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -690,6 +691,7 @@ MonoBehaviour:
     left: {fileID: 2242093226116659609, guid: 84e9027effddd104f8208052c4c5f888, type: 3}
     up: {fileID: 8451551337587442842, guid: 84e9027effddd104f8208052c4c5f888, type: 3}
   _deathAnimation: {fileID: 4348485665485846014, guid: 84e9027effddd104f8208052c4c5f888, type: 3}
+  _ignitionAnimation: {fileID: 0}
 --- !u!210 &77383832739782490
 SortingGroup:
   m_ObjectHideFlags: 0
@@ -702,7 +704,7 @@ SortingGroup:
   m_SortingLayer: 0
   m_SortingOrder: 200
   m_SortAtRoot: 1
---- !u!114 &766790269746342362
+--- !u!114 &4209966027584376719
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -711,7 +713,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 2706672242267340326}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0159a23de08f7904fbb2d289809d831e, type: 3}
+  m_Script: {fileID: 11500000, guid: 226ffbebf5054654e83891d050f0fbb3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &3546871636110419114

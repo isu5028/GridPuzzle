@@ -701,8 +701,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d57305facc065ae44bbd727ad21c06cd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveDuration: 0.18
-  attackDuration: 0.25
+  moveDuration: 0.15
+  attackDuration: 0.2
   attackDistance: 8
   flashDuration: 0.15
   attackTargetPos:
@@ -726,6 +726,7 @@ MonoBehaviour:
   ammoText: {fileID: 0}
   ammoTransform: {fileID: 0}
   ammoSpriteAnimation: {fileID: 0}
+  coinPrefab: {fileID: 5718629728671522699, guid: 5fee50c973e9355449d106e7f83bb5a5, type: 3}
 --- !u!114 &3414781995330460015
 MonoBehaviour:
   m_ObjectHideFlags: 0

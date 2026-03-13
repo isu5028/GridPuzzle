@@ -73,7 +73,7 @@ public class Enemy : Unit
         this.dropsCoin = dropsCoin;
         base.Initialize(gridMgr, turnMgr, commandMgr, startPos, startDirection, maxHp, startOrder);
         enemyAI = GetComponent<EnemyAI>();
-        enemyAI.Initialize(gridMgr, commandMgr);
+        enemyAI.Initialize(gridMgr, turnMgr, commandMgr);
 
         // Update Text again to apply AI overrides (e.g. infinite symbol)
         UpdateHPText(maxHp);
@@ -84,25 +84,24 @@ public class Enemy : Unit
 
         if (ammoText != null)
         {
+            // Subscribe regardless of startAmmo to allow dynamic activation by AI (like Bomb)
+            currentAmmo.Subscribe(x =>
+            {
+                if (ammoText != null && maxAmmo >= 0)
+                {
+                    ammoText.text = x.ToString();
+                    if (ammoSpriteAnimation != null) ammoSpriteAnimation.PlayAnimation();
+                }
+            }).AddTo(this);
+
             if (startAmmo >= 0)
             {
                 ammoText.gameObject.SetActive(true);
-                ammoText.text = startAmmo.ToString();
             }
             else
             {
                 ammoText.gameObject.SetActive(false);
             }
-        }
-
-        // Subscribe only if using ammo to check updates
-        if (startAmmo >= 0)
-        {
-            currentAmmo.Subscribe(x =>
-            {
-                if (ammoText != null) ammoText.text = x.ToString();
-                if (ammoSpriteAnimation != null) ammoSpriteAnimation.PlayAnimation();
-            }).AddTo(this);
         }
 
         UpdateDefeatedIcon();
@@ -127,6 +126,32 @@ public class Enemy : Unit
         if (maxAmmo < 0) return;
         SetAmmo(currentAmmo.Value + amount);
     }
+
+    public void SetMaxAmmo(int value)
+    {
+        maxAmmo = value;
+        if (currentAmmo.Value < 0) currentAmmo.Value = value;
+        
+        if (ammoText != null && value >= 0)
+        {
+            ammoText.text = currentAmmo.Value.ToString();
+        }
+    }
+
+    public void SetDropsCoin(bool value)
+    {
+        dropsCoin = value;
+    }
+    public bool DropsCoin => dropsCoin;
+    public bool RegisterDefeated { get; set; } = true;
+
+    public void SetAmmoTextActive(bool active)
+    {
+        if (ammoText != null) ammoText.gameObject.SetActive(active);
+    }
+
+    public TextMeshPro GetAmmoText() => ammoText;
+    public int MaxAmmo => maxAmmo;
 
     public bool HasAmmo()
     {
@@ -157,7 +182,7 @@ public class Enemy : Unit
 
         if (!isDead && willDie)
         {
-            if (!string.IsNullOrEmpty(EnemyID) && !GameProgressManager.Instance.IsEnemyDefeated(EnemyID))
+            if (RegisterDefeated && !string.IsNullOrEmpty(EnemyID) && !GameProgressManager.Instance.IsEnemyDefeated(EnemyID))
             {
                 GameProgressManager.Instance.MarkEnemyDefeated(EnemyID);
                 UpdateDefeatedIcon(); // Icon updates before potential destruction

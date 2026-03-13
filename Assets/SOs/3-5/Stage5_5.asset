@@ -31,7 +31,7 @@ MonoBehaviour:
   - {x: 9, y: 5}
   tutorialIndexData: []
   upStage: {fileID: 11400000, guid: 7b2cbbb5d3859e94aaa383596a90a222, type: 2}
-  downStage: {fileID: 0}
+  downStage: {fileID: 11400000, guid: a7cbf5261b5eecd4b8b454c6dfab7c9b, type: 2}
   rightStage: {fileID: 0}
   leftStage: {fileID: 11400000, guid: 7a11b58d82359ef47a96b0d0a4acdcdd, type: 2}
   defaultUpStage: {fileID: 11400000, guid: 7eec84eb1e9d0204487b2374f172d6f1, type: 2}

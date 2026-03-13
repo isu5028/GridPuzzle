@@ -60,6 +60,7 @@ public class StageEnemySystem : IStageEnemySystem
             case EnemyType.Boar: return gm.BoarEnemyPrefab;
             case EnemyType.Crystal: return gm.CrystalEnemyPrefab;
             case EnemyType.Ghost: return gm.GhostEnemyPrefab;
+            case EnemyType.Bomb: return gm.BombEnemyPrefab;
             default: return null!;
         }
     }
@@ -322,8 +323,9 @@ public class StageEnemySystem : IStageEnemySystem
             if (maxHp <= 0) maxHp = 3;
         }
 
-        var ai = enemyObj.GetComponent<EnemyAIChaserRanged>();
-        if (ai == null)
+        var aiRanged = enemyObj.GetComponent<EnemyAIChaserRanged>();
+        var aiBomb = enemyObj.GetComponent<EnemyAIBomb>();
+        if (aiRanged == null && aiBomb == null)
         {
             ammo = -1;
         }

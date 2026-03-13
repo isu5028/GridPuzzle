@@ -44,9 +44,9 @@ MonoBehaviour:
   crateStartPositions: []
   tutorialIndexData: []
   upStage: {fileID: 11400000, guid: e0083c5d7a425894d9fcc35a1285e078, type: 2}
-  downStage: {fileID: 0}
+  downStage: {fileID: 11400000, guid: 32bd5e534e649454b92e8c3c9e4ea196, type: 2}
   rightStage: {fileID: 11400000, guid: d0f516f29f7abf14f9f0aedba7c820c1, type: 2}
-  leftStage: {fileID: 0}
+  leftStage: {fileID: 11400000, guid: ff4f616e7772cac42abc3eb57ccc7dc9, type: 2}
   defaultUpStage: {fileID: 11400000, guid: 7a11b58d82359ef47a96b0d0a4acdcdd, type: 2}
   defaultDownStage: {fileID: 11400000, guid: 4596aab47838764429e35fe69039eb81, type: 2}
   stairConnections:

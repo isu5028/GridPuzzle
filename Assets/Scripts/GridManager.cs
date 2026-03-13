@@ -49,9 +49,17 @@ public partial class GridManager : MonoBehaviour
     [SerializeField] private GameObject boarEnemyPrefab = null!;
     [SerializeField] private GameObject crystalEnemyPrefab = null!;
     [SerializeField] private GameObject ghostEnemyPrefab = null!;
+    [SerializeField] private GameObject bombEnemyPrefab = null!;
     [SerializeField] private GameObject crateEnemyPrefab = null!;
     [SerializeField] private GameObject errorEffectPrefab = null!;
     [SerializeField] private GameObject blockedPrefab = null!;
+    [SerializeField] private GameObject explosionVFXPrefab = null!;
+    [SerializeField] private Shader explosionShader = null!;
+    [SerializeField] private Sprite explosionSprite = null!;
+
+    public Shader ExplosionShader => explosionShader;
+    public Sprite ExplosionSprite => explosionSprite;
+    public GameObject ExplosionVFXPrefab => explosionVFXPrefab;
 
     private CellType[,] cellData = new CellType[0, 0];
     private int width;
@@ -99,6 +107,7 @@ public partial class GridManager : MonoBehaviour
     internal GameObject BoarEnemyPrefab => boarEnemyPrefab;
     internal GameObject CrystalEnemyPrefab => crystalEnemyPrefab;
     internal GameObject GhostEnemyPrefab => ghostEnemyPrefab;
+    internal GameObject BombEnemyPrefab => bombEnemyPrefab;
     internal GameObject CrateEnemyPrefab => crateEnemyPrefab;
     internal GameObject ErrorEffectPrefab => errorEffectPrefab;
     public GameObject BlockedPrefab => blockedPrefab;
@@ -784,6 +793,34 @@ public partial class GridManager : MonoBehaviour
         }
     }
 
+    public void EnsureStageCratesLoaded(StageSO stage)
+    {
+        if (stage == null || StageCratesInitialized.Contains(stage)) return;
+        
+        // This logic is mostly duplicated from GenerateCrates but without the visual deactivation/reactivation logic
+        // which is specific to the current active stage.
+        StageCratesInitialized.Add(stage);
+        if (!StageCratesMap.ContainsKey(stage)) StageCratesMap[stage] = new List<Crate>();
+
+        if (stage.CrateStartPositions != null && crateEnemyPrefab != null)
+        {
+            foreach (var pos in stage.CrateStartPositions)
+            {
+                Vector3 worldPos = GridToWorldPosition(pos);
+                GameObject crateObj = Instantiate(crateEnemyPrefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
+                Crate crateScript = crateObj.GetComponent<Crate>();
+                
+                // Active/Inactive state based on whether this is the current stage
+                // If we are calling this from EnsureStageCratesLoaded, it's likely a non-current stage,
+                // so we should probably keep them disabled initially.
+                crateObj.SetActive(stage == currentStageSO);
+
+                crateScript.Initialize(this, turnManager, commandManager, pos, Direction.Right, 1, 0);
+                StageCratesMap[stage].Add(crateScript);
+            }
+        }
+    }
+
     private void GenerateCrates(StageSO stage)
     {
         DeactivateAllCratesExcept(stage);
@@ -794,21 +831,7 @@ public partial class GridManager : MonoBehaviour
 
         if (!StageCratesInitialized.Contains(stage))
         {
-            StageCratesInitialized.Add(stage);
-            if (!StageCratesMap.ContainsKey(stage)) StageCratesMap[stage] = new List<Crate>();
-
-            if (stage.CrateStartPositions != null && crateEnemyPrefab != null)
-            {
-                foreach (var pos in stage.CrateStartPositions)
-                {
-                    Vector3 worldPos = GridToWorldPosition(pos);
-                    GameObject crateObj = Instantiate(crateEnemyPrefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
-                    Crate crateScript = crateObj.GetComponent<Crate>();
-                    crateScript.Initialize(this, turnManager, commandManager, pos, Direction.Right, 1, 0);
-                    
-                    StageCratesMap[stage].Add(crateScript);
-                }
-            }
+            EnsureStageCratesLoaded(stage);
         }
 
         if (StageCratesMap.TryGetValue(stage, out var existingCrates))
@@ -816,12 +839,18 @@ public partial class GridManager : MonoBehaviour
             // 既に生成済みのCrateがあればそれを復元して再配置
             foreach (var crate in existingCrates)
             {
-                if (crate != null && !crate.IsDead)
+                if (crate != null)
                 {
                     crate.gameObject.SetActive(true);
                     crate.transform.SetParent(gridVisualizer.GridParent); // Ensure correct parent
-                    crate.SetDissolveAmount(0f); // IMPORTANT: Restore visibility
+                    crate.SetDissolveAmount(0f); // Reset dissolve first
                     crate.WarpTo(crate.CurrentPos, crate.CurrentDirection); // Ensure correct position is applied
+                    
+                    if (crate.IsDead)
+                    {
+                        crate.ApplyDeadStateVisual();
+                    }
+                    
                     unitManager.AddCrate(crate);
                 }
             }
@@ -929,7 +958,7 @@ public partial class GridManager : MonoBehaviour
     public void WarpToStage(StageSO stage) => WarpToStage(stage, stage.PlayerStartPosition, stage.PlayerStartDirection);
     public void WarpToStageAtStairUp(StageSO stage) => stageTransitionSystem.WarpToStageAtStairUp(stage);
     public UniTask WarpToStageAtStairUpAsync(StageSO stage) => stageTransitionSystem.WarpToStageAtStairUpAsync(stage);
-    public UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null) => stageTransitionSystem.WarpWithAnimationAsync(targetStage, targetPos, targetDir, restoreHP, overrideWarpDir);
+    public UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null, System.Collections.Generic.List<Crate> pushedCrates = null, System.Collections.Generic.List<Vector2Int> crateSourcePositions = null, System.Collections.Generic.List<Vector2Int> crateTargetPositions = null) => stageTransitionSystem.WarpWithAnimationAsync(targetStage, targetPos, targetDir, restoreHP, overrideWarpDir, pushedCrates, crateSourcePositions, crateTargetPositions);
     public void SwitchStage(StageSO nextstage, Direction entryDirection) => stageTransitionSystem.SwitchStage(nextstage, entryDirection);
     public void SwitchStageDirect(StageSO nextstage, Direction entryDirection) => stageTransitionSystem.SwitchStageDirect(nextstage, entryDirection);
     public UniTask PlayTransitionWithoutCommand(StageSO nextStage, Direction entryDirection) => stageTransitionSystem.PlayTransitionWithoutCommand(nextStage, entryDirection);
@@ -970,6 +999,21 @@ public partial class GridManager : MonoBehaviour
         }
     }
     public bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos) => stairTraversalSystem.IsPositionOccupiedInStage(stage, pos);
+
+    public async UniTask MoveCrateThroughBoundaryAsync(Crate crate, StageSO sourceStage, StageSO targetStage, Vector2Int targetPos, Direction direction)
+    {
+        if (crate == null || targetStage == null) return;
+        BeginTransition();
+        try
+        {
+            if (GameSettings.GameSpeed == 0) await UniTask.Delay(100);
+            await stairTraversalSystem.MoveCrateThroughBoundary(crate, sourceStage, targetStage, targetPos, direction);
+        }
+        finally
+        {
+            EndTransition();
+        }
+    }
 
     #endregion
 }

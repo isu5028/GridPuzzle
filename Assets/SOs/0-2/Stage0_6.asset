@@ -41,9 +41,10 @@ MonoBehaviour:
     SetActionOrder: 3
     Ammo: -1
     DropsCoin: 0
+  crateStartPositions: []
   tutorialIndexData: []
   upStage: {fileID: 0}
-  downStage: {fileID: 0}
+  downStage: {fileID: 11400000, guid: ff4f616e7772cac42abc3eb57ccc7dc9, type: 2}
   rightStage: {fileID: 11400000, guid: e0083c5d7a425894d9fcc35a1285e078, type: 2}
   leftStage: {fileID: 0}
   defaultUpStage: {fileID: 11400000, guid: 0d5550ce5f05f9d448f3c0010f964cc2, type: 2}

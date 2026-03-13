@@ -117,7 +117,9 @@ public class EnemyAIRush : EnemyAI
             if (targetUnit != null)
             {
                 // Hit Unit
-                if (enemy.gameObject.activeInHierarchy)
+                bool bothActive = enemy.gameObject.activeInHierarchy && targetUnit.gameObject.activeInHierarchy;
+
+                if (bothActive)
                 {
                    if (targetUnit.IsBusy) await UniTask.WaitUntil(() => !targetUnit.IsBusy);
 
@@ -273,23 +275,52 @@ public class EnemyAIRush : EnemyAI
 
     private Unit GetUnitAt(StageSO stage, Vector2Int pos)
     {
-        if (stage == gridManager.CurrentStageSO)
+        // 1. If within bounds, check normally
+        if (pos.x >= 0 && pos.x < stage.Width && pos.y >= 0 && pos.y < stage.Height)
         {
-            return gridManager.GetUnitAtPosition(pos);
+            if (stage == gridManager.CurrentStageSO)
+            {
+                return gridManager.GetUnitAtPosition(pos);
+            }
+            else
+            {
+                // Check Enemies
+                List<Enemy> enemies = gridManager.GetEnemiesOnStage(stage);
+                if (enemies != null)
+                {
+                    foreach (var e in enemies) if (e.CurrentPos == pos && !e.IsDead) return e;
+                }
+
+                // Ensure Crates are loaded before checking
+                gridManager.EnsureStageCratesLoaded(stage);
+
+                // Check Crates
+                if (gridManager.StageCratesMap.ContainsKey(stage))
+                {
+                    foreach (var crate in gridManager.StageCratesMap[stage])
+                    {
+                        if (crate != null && crate.CurrentPos == pos && !crate.IsDead) return crate;
+                    }
+                }
+            }
         }
         else
         {
-            // If stage is NOT current, Player is NOT there (Player is always on current)
-            // So only check enemies.
-
-            // Check Enemies in list
-            // Need GridManager to expose `GetEnemiesOnStage(StageSO)`.
-            List<Enemy> enemies = gridManager.GetEnemiesOnStage(stage); // Helper needed
-            if (enemies != null)
+            // 2. If out of bounds, check the adjacent stage
+            if (gridManager.IsBoundaryCoordinate(stage, pos))
             {
-                foreach (var e in enemies)
+                StageSO nextStage = gridManager.GetAdjacentStageFromBoundary(stage, pos);
+                if (nextStage != null)
                 {
-                    if (e.CurrentPos == pos && !e.IsDead) return e;
+                    // Direction the unit is traveling to enter the next stage
+                    Direction moveDir;
+                    if (pos.x == -1) moveDir = Direction.Left;
+                    else if (pos.x == stage.Width) moveDir = Direction.Right;
+                    else if (pos.y == -1) moveDir = Direction.Down;
+                    else moveDir = Direction.Up;
+
+                    Vector2Int entryPos = GridCalculation.CalculateEntryPosition(nextStage, moveDir, pos);
+                    return GetUnitAt(nextStage, entryPos); // Recursive call
                 }
             }
         }

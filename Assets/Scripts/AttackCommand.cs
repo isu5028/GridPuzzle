@@ -13,12 +13,14 @@ public class AttackCommand : ICommand
         public bool wasDead;
     }
     private List<DamageInfo> damageInfos = new List<DamageInfo>();
+    private bool breaksCrate;
 
-    public AttackCommand(Unit unit, Vector2Int[] target, GridManager grid)
+    public AttackCommand(Unit unit, Vector2Int[] target, GridManager grid, bool breaksCrate = false)
     {
         this.attacker = unit;
         this.targetPos = target;
         this.gridManager = grid;
+        this.breaksCrate = breaksCrate;
     }
 
     public void Execute()
@@ -39,7 +41,7 @@ public class AttackCommand : ICommand
             }
         }
 
-        attacker.Attack(targetPos);
+        attacker.Attack(targetPos, 0, breaksCrate);
     }
 
     public void Undo()

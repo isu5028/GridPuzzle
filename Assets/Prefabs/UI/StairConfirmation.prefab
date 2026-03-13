@@ -2040,7 +2040,7 @@ MonoBehaviour:
   - {fileID: 8475373049706297623}
   - {fileID: 4211494240050139713}
   cursorObj: {fileID: 1144721886987084898}
-  slideDuration: 0.3
+  slideDuration: 0.15
 --- !u!1 &9045680907839921392
 GameObject:
   m_ObjectHideFlags: 0

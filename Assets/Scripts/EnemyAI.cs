@@ -4,13 +4,16 @@ using UnityEngine;
 public abstract class EnemyAI: MonoBehaviour
 {
     protected GridManager gridManager;
+    protected TurnManager turnManager;
     protected CommandManager commandManager;
     protected float fastSpeedAttackDelayMs = 200f;
 
     public void Initialize(GridManager gridMgr,
+                           TurnManager turnMgr,
                            CommandManager cmdMgr)
     {
         this.gridManager = gridMgr;
+        this.turnManager = turnMgr;
         this.commandManager = cmdMgr;
     }
 

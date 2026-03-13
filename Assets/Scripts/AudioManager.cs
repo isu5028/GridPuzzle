@@ -153,6 +153,7 @@ public class AudioManager : MonoBehaviour
         cursor,
         heal,
         damaged,
+        explode,
     }
 
     public enum BGMType

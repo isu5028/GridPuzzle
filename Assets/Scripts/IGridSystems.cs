@@ -9,7 +9,7 @@ public interface IStageTransitionSystem
     void WarpToStage(StageSO stage, Vector2Int gridPos, Direction dir);
     void WarpToStageAtStairUp(StageSO stage);
     UniTask WarpToStageAtStairUpAsync(StageSO stage);
-    UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null, Crate pushedCrate = null, Vector2Int crateSourcePos = default, Vector2Int crateTargetPos = default);
+    UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null, System.Collections.Generic.List<Crate> pushedCrates = null, System.Collections.Generic.List<Vector2Int> crateSourcePositions = null, System.Collections.Generic.List<Vector2Int> crateTargetPositions = null);
     void SwitchStage(StageSO nextstage, Direction entryDirection);
     void SwitchStageDirect(StageSO nextstage, Direction entryDirection);
     UniTask PlayTransitionWithoutCommand(StageSO nextStage, Direction entryDirection);
@@ -42,5 +42,6 @@ public interface IStairTraversalSystem
     UniTask MoveEnemyToStage(Enemy enemy, StageSO targetStage, Vector2Int targetPos, Direction direction);
     (StageSO targetStage, Vector2Int targetPos)? GetCrateStairDestination(Crate crate, Vector2Int stairPos, Direction approachDirection);
     UniTask MoveCrateToStage(Crate crate, StageSO targetStage, Vector2Int targetPos, Direction direction);
+    UniTask MoveCrateThroughBoundary(Crate crate, StageSO sourceStage, StageSO targetStage, Vector2Int targetPos, Direction direction);
     bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos);
 }

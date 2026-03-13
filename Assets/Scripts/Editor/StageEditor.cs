@@ -132,9 +132,10 @@ public class StageEditor : Editor
             EditorGUI.PropertyField(new Rect(xPos, rect.y, 40, height), maxHPProp, GUIContent.none);
             xPos += 45;
 
-            // Ammo (Only for Skeleton)
+            // Ammo (Only for Skeleton or Bomb)
             SerializedProperty typeVal = element.FindPropertyRelative("EnemyType");
-            if (typeVal.enumValueIndex == (int)EnemyType.Skeleton)
+            int enemyTypeIndex = typeVal.enumValueIndex;
+            if (enemyTypeIndex == (int)EnemyType.Skeleton || enemyTypeIndex == (int)EnemyType.Bomb)
             {
                 SerializedProperty ammoProp = element.FindPropertyRelative("Ammo");
                 EditorGUI.PropertyField(new Rect(xPos, rect.y, 40, height), ammoProp, GUIContent.none);
@@ -430,10 +431,11 @@ public class StageEditor : Editor
             currentEnemyDirection = (Direction)EditorGUILayout.EnumPopup(currentEnemyDirection);
             EditorGUILayout.EndHorizontal();
 
-            if (currentEnemyType == EnemyType.Skeleton)
+            if (currentEnemyType == EnemyType.Skeleton || currentEnemyType == EnemyType.Bomb)
             {
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("初期弾数(Ammo):", GUILayout.Width(150));
+                string ammoLabel = currentEnemyType == EnemyType.Bomb ? "起爆までのターン:" : "初期弾数(Ammo):";
+                EditorGUILayout.LabelField(ammoLabel, GUILayout.Width(150));
                 currentAmmo = EditorGUILayout.IntField(currentAmmo);
                 EditorGUILayout.EndHorizontal();
             }

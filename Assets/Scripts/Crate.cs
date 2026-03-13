@@ -42,6 +42,18 @@ public class Crate : Unit
         if (currentCell == CellType.StairUp || currentCell == CellType.StairDown)
         {
             gridManager.MoveCrateThroughStairAsync(this).Forget();
+            return;
+        }
+
+        // OOBチェック: 筘がステージ外に出た場合、隣接ステージの対応マスに即座に移動
+        if (!gridManager.IsPositionInBounds(currentPos))
+        {
+            StageSO neighbor = gridManager.GetAdjacentStageFromBoundary(crateStage, currentPos);
+            if (neighbor != null)
+            {
+                Vector2Int neighborPos = GridCalculation.CalculateEntryPosition(neighbor, currentDirection, currentPos);
+                gridManager.MoveCrateThroughBoundaryAsync(this, crateStage, neighbor, neighborPos, currentDirection).Forget();
+            }
         }
     }
 

@@ -5,6 +5,8 @@ using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using Cysharp.Threading;
 
+public enum PlayerActionType { Move, Attack }
+
 [RequireComponent(typeof(UnitManager))]
 public class TurnManager : MonoBehaviour
 {
@@ -24,6 +26,10 @@ public class TurnManager : MonoBehaviour
     public bool IsOptionOpen => isOptionOpen;
     private bool isMapOpen = false;
     public bool IsMapOpen => isMapOpen;
+    private Direction lastPlayerActionDirection = Direction.Right;
+    public Direction LastPlayerActionDirection { get => lastPlayerActionDirection; set => lastPlayerActionDirection = value; }
+    private PlayerActionType lastPlayerAction = PlayerActionType.Move;
+    public PlayerActionType LastPlayerAction { get => lastPlayerAction; set => lastPlayerAction = value; }
 
     public void SetOptionState(bool isOpen)
     {

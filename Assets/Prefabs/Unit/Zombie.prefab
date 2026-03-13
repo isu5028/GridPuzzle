@@ -145,14 +145,14 @@ RectTransform:
   m_GameObject: {fileID: 1270235298220272967}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 3, y: 2.875, z: 1}
+  m_LocalScale: {x: 3, y: 3.2, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 58040932328340839}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 8}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!331 &8213331895500519546
@@ -696,7 +696,7 @@ GameObject:
   - component: {fileID: 299966309297528681}
   - component: {fileID: 3414781995330460015}
   - component: {fileID: 77383832739782490}
-  - component: {fileID: 3041838618663009794}
+  - component: {fileID: 8681608455611870868}
   m_Layer: 0
   m_Name: Zombie
   m_TagString: Untagged
@@ -733,8 +733,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d57305facc065ae44bbd727ad21c06cd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveDuration: 0.18
-  attackDuration: 0.25
+  moveDuration: 0.15
+  attackDuration: 0.2
   attackDistance: 8
   flashDuration: 0.15
   attackTargetPos:
@@ -758,6 +758,7 @@ MonoBehaviour:
   ammoText: {fileID: 0}
   ammoTransform: {fileID: 0}
   ammoSpriteAnimation: {fileID: 0}
+  coinPrefab: {fileID: 5718629728671522699, guid: 5fee50c973e9355449d106e7f83bb5a5, type: 3}
 --- !u!114 &3414781995330460015
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -789,7 +790,7 @@ SortingGroup:
   m_SortingLayer: 0
   m_SortingOrder: 200
   m_SortAtRoot: 1
---- !u!114 &3041838618663009794
+--- !u!114 &8681608455611870868
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -798,7 +799,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 2706672242267340326}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 95b80ee23463793439e4fbe2905b5d90, type: 3}
+  m_Script: {fileID: 11500000, guid: 070ff7413efbf8e4ead8e8b88fbd03e8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &3546871636110419114

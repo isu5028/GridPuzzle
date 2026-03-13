@@ -150,6 +150,8 @@ public class Player : Unit
                  // 呼び出している（Share()による同時発火）ので二重実行を防ぐ
                  if (isMoving) return;
 
+                 turnManager.LastPlayerActionDirection = currentDirection;
+                 turnManager.LastPlayerAction = PlayerActionType.Attack;
                  turnManager.EnsureTurnStartSnapshot();
                  isProcessingAction = true;
                  TryAttack();
@@ -162,6 +164,8 @@ public class Player : Unit
         turnManager.EnsureTurnStartSnapshot();
 
         Direction newDirection = Utility.GetDirectionFromStickInput(inputValue);
+        turnManager.LastPlayerActionDirection = newDirection;
+        turnManager.LastPlayerAction = PlayerActionType.Move;
         currentDirection = newDirection;
 
         if(inputStay.IsPressed())

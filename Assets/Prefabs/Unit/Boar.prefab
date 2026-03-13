@@ -58,7 +58,7 @@ RectTransform:
   m_GameObject: {fileID: 1270235298220272967}
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 3, y: 2.875, z: 1}
+  m_LocalScale: {x: 3, y: 3.2, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 58040932328340839}
@@ -646,8 +646,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d57305facc065ae44bbd727ad21c06cd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveDuration: 0.18
-  attackDuration: 0.25
+  moveDuration: 0.15
+  attackDuration: 0.2
   attackDistance: 8
   flashDuration: 0.15
   attackTargetPos:
@@ -671,6 +671,7 @@ MonoBehaviour:
   ammoText: {fileID: 0}
   ammoTransform: {fileID: 0}
   ammoSpriteAnimation: {fileID: 0}
+  coinPrefab: {fileID: 5718629728671522699, guid: 5fee50c973e9355449d106e7f83bb5a5, type: 3}
 --- !u!114 &3414781995330460015
 MonoBehaviour:
   m_ObjectHideFlags: 0

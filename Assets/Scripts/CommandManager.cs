@@ -38,6 +38,22 @@ public class CommandManager : MonoBehaviour
         currentTurnCommands.Add(command);
     }
 
+    // CompleteTurn()後に発生したコマンドを直前のターンレコードに追記する
+    // （例：MoveComplete後に非同期で起動されるCrateBoundaryTransitionCommandなど）
+    public void AppendToLastTurn(ICommand command)
+    {
+        command.Execute();
+        if (turnRecords.Count > 0)
+        {
+            turnRecords[turnRecords.Count - 1].commands.Add(command);
+        }
+        else
+        {
+            // フォールバック：記録可能なターンがなければ通常の currentTurnCommands に追加
+            currentTurnCommands.Add(command);
+        }
+    }
+
     public void CaptureTurnStart(Player player, List<Enemy> enemies)
     {
         if (pendingRecord != null) return;
