@@ -85,8 +85,8 @@ public class EnemyAIChaser : EnemyAI
                 Vector2Int attackTargetPos = currentPos + Utility.GetVectorFromDirection(dir);
                 Unit targetUnit = gridManager.GetUnitAtPosition(attackTargetPos);
 
-                // もし何かしらのユニット（他の敵や壁などは関係なくUnitであれば）がいれば攻撃
-                if (targetUnit != null)
+                // もし何かしらのユニット（Crate以外で他の敵などのUnitであれば）がいれば攻撃
+                if (targetUnit != null && !(targetUnit is Crate))
                 {
                     if (dir != currentDirection) enemy.SetDirection(dir);
                     if (GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);

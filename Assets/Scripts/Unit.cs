@@ -397,34 +397,26 @@ public abstract class Unit : MonoBehaviour
         Vector2Int targetPos = currentPos + directionVector;
 
         Unit targetOccupant = gridManager.GetUnitAtPosition(targetPos);
-        if (targetOccupant is Crate firstCrate)
+        if (targetOccupant is Crate)
         {
-            Vector2Int pos2 = targetPos + directionVector;
-            Unit occupant2 = gridManager.GetUnitAtPosition(pos2);
-
-            if (occupant2 is Crate secondCrate)
+            List<Crate> cratesToPush = new List<Crate>();
+            Vector2Int checkPos = targetPos;
+            while (gridManager.GetUnitAtPosition(checkPos) is Crate nextCrate)
             {
-                // 2つ連結している場合、その先が空いているかチェック
-                Vector2Int pos3 = pos2 + directionVector;
-                if (gridManager.IsCellWalkable(pos3))
-                {
-                    // 遠い方から順番に移動コマンドを発行
-                    MoveCommand pushCommand2 = new MoveCommand(secondCrate, pos2, pos3, secondCrate.CurrentDirection, direction, false);
-                    commandManager.ExecuteCommand(pushCommand2);
-
-                    MoveCommand pushCommand1 = new MoveCommand(firstCrate, targetPos, pos2, firstCrate.CurrentDirection, direction, false);
-                    commandManager.ExecuteCommand(pushCommand1);
-
-                    MoveCommand selfMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
-                    commandManager.ExecuteCommand(selfMoveCommand);
-                    return true;
-                }
+                cratesToPush.Add(nextCrate);
+                checkPos += directionVector;
             }
-            else if (gridManager.IsCellWalkable(pos2))
+
+            if (gridManager.IsCellWalkable(checkPos))
             {
-                // 1つだけの場合
-                MoveCommand pushCommand = new MoveCommand(firstCrate, targetPos, pos2, firstCrate.CurrentDirection, direction, false);
-                commandManager.ExecuteCommand(pushCommand);
+                // 遠い方から順番に移動コマンドを発行
+                for (int i = cratesToPush.Count - 1; i >= 0; i--)
+                {
+                    Vector2Int crateCurrentPos = targetPos + directionVector * i;
+                    Vector2Int crateTargetPos = crateCurrentPos + directionVector;
+                    MoveCommand pushCommand = new MoveCommand(cratesToPush[i], crateCurrentPos, crateTargetPos, cratesToPush[i].CurrentDirection, direction, false);
+                    commandManager.ExecuteCommand(pushCommand);
+                }
 
                 MoveCommand selfMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
                 commandManager.ExecuteCommand(selfMoveCommand);
@@ -608,9 +600,27 @@ public abstract class Unit : MonoBehaviour
     public virtual void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
     {
         Debug.Log($"[Unit.TakeDamage] {name} took {damage} damage from {attackerPos}! Current HP: {hp.Value}");
-        Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
+
+        // 方向を計算（横・縦を判定して正規化）
+        Vector2Int diff = currentPos - attackerPos;
+        Vector2 shakeDirection;
+        if (Mathf.Abs(diff.x) >= Mathf.Abs(diff.y))
+        {
+            // 横方向の揺れ
+            shakeDirection = new Vector2(diff.x >= 0 ? 1f : -1f, 0f);
+        }
+        else
+        {
+            // 縦方向の揺れ
+            shakeDirection = new Vector2(0f, diff.y >= 0 ? 1f : -1f);
+        }
 
         hp.Value -= damage;
+
+        if (this is Player)
+        {
+            AudioManager.Instance.PlaySE(AudioManager.SEType.damaged);
+        }
 
         if (gameObject.activeInHierarchy)
         {
@@ -625,14 +635,14 @@ public abstract class Unit : MonoBehaviour
             unitAnimator.SetDeath();
             hp.Value = 0;
             Die(attackerPos);
-            if(gameObject.activeInHierarchy && shakeCamera) CameraManager.Instance.ShakeCamera(0.5f, 5.0f, 30f, knockbackDirection);
+            if(gameObject.activeInHierarchy && shakeCamera) CameraManager.Instance.ShakeCamera(0.5f, 5.0f, 30f, shakeDirection);
         }
         else
         {
             if (gameObject.activeInHierarchy)
             {
                 colorFlash.AnimateToColor(Utility.mainColors[2], flashDuration);
-                if(this is Player && shakeCamera) CameraManager.Instance.ShakeCamera(0.3f, 2.0f, 50f, knockbackDirection);
+                if(this is Player && shakeCamera) CameraManager.Instance.ShakeCamera(0.3f, 2.0f, 50f, shakeDirection);
             }
         }
     }

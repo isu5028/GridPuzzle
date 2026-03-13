@@ -68,17 +68,36 @@ public class TurnManager : MonoBehaviour
 
         try
         {
+            // 高速モード判定
+            bool isFastMode = GameSettings.GameSpeed == 1;
+
+            // 箱が階段に入ったかチェック（階段落ちが発生するかどうか）
+            bool crateOnStair = false;
+            foreach (var crate in unitManager.Crates)
+            {
+                if (crate == null || !crate.gameObject.activeInHierarchy) continue;
+                // MoveCommandによって currentPos は既に移動先（階段マス）になっている
+                StageSO stage = gridManager.GetStageOfCrate(crate) ?? gridManager.CurrentStageSOInternal;
+                CellType cell = gridManager.GetCellTypeAt(stage, crate.CurrentPos);
+                if (cell == CellType.StairUp || cell == CellType.StairDown)
+                {
+                    crateOnStair = true;
+                    break;
+                }
+            }
+
+            // 通常モード、または箱が階段に乗った場合は、全ての解決を待つ
+            // 高速モードかつ階段移動がないなら、待たずに直ちに敵のターンを開始し同時行動させる
+            if (!isFastMode || crateOnStair)
+            {
+                await UniTask.WaitUntil(() => !gridManager.UnitManager.IsAnyCrateMoving());
+                await UniTask.WaitUntil(() => !gridManager.HasActiveAsyncTransitions);
+            }
+
             if (!skipEnemyTurn)
             {
                 await ExecuteEnemyTurns();
             }
-
-            // ターン終了判定におけるアニメーションのズレを防ぐため、
-            // 押し出されたCrateなどの移動中オブジェクトが止まるのを待つ
-            await UniTask.WaitUntil(() => !gridManager.UnitManager.IsAnyCrateMoving());
-
-            // その後、移動によって誘発された非同期遷移（Crateの階段落ちなど）が完全に終わるまで待つ
-            await UniTask.WaitUntil(() => !gridManager.HasActiveAsyncTransitions);
 
             commandManager.CompleteTurn();
 
