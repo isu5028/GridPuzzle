@@ -205,10 +205,7 @@ public class EnemyAIRush : EnemyAI
                 // OOB. Is it a breakable boundary?
                 if (gridManager.IsBoundaryCoordinate(enemyStage, nextPos))
                 {
-                    if (gridManager.GetAdjacentStageFromBoundary(enemyStage, nextPos) != null)
-                    {
-                        canBreak = true;
-                    }
+                    canBreak = true;
                 }
             }
 
@@ -248,7 +245,7 @@ public class EnemyAIRush : EnemyAI
 
 
         // 突進終了後に階段チェック
-        if (!isMoving) // activeInHierarchy check removed to allow off-screen transition
+        if (!isMoving && enemy != null && !enemy.IsDead) // activeInHierarchy check removed to allow off-screen transition
         {
             var transition = gridManager.GetEnemyStairDestination(enemy, enemy.CurrentPos, dir);
             if (transition != null)

@@ -73,6 +73,13 @@ public class TurnManager : MonoBehaviour
                 await ExecuteEnemyTurns();
             }
 
+            // ターン終了判定におけるアニメーションのズレを防ぐため、
+            // 押し出されたCrateなどの移動中オブジェクトが止まるのを待つ
+            await UniTask.WaitUntil(() => !gridManager.UnitManager.IsAnyCrateMoving());
+
+            // その後、移動によって誘発された非同期遷移（Crateの階段落ちなど）が完全に終わるまで待つ
+            await UniTask.WaitUntil(() => !gridManager.HasActiveAsyncTransitions);
+
             commandManager.CompleteTurn();
 
             // UnitManagerへの状態変更通知

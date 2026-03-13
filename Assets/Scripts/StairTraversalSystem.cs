@@ -13,52 +13,95 @@ public class StairTraversalSystem : IStairTraversalSystem
         this.gm = gridManager;
     }
 
+    public (StageSO targetStage, Vector2Int targetPos)? GetPlayerStairDestination(Player player, Vector2Int stairPos)
+    {
+        StageSO sourceStage = gm.CurrentStageSOInternal;
+        if (sourceStage == null) return null;
+
+        CellType cellType = gm.GetCellTypeAt(sourceStage, stairPos);
+        if (cellType != CellType.StairUp && cellType != CellType.StairDown) return null;
+
+        StageSO targetStage = null;
+        Vector2Int targetStairPos = Vector2Int.zero;
+
+        StairConnectionData? connectionData = sourceStage.GetStairConnectionData(stairPos);
+        if (connectionData != null)
+        {
+            targetStage = connectionData.Value.TargetStage;
+            targetStairPos = connectionData.Value.TargetPosition;
+            if (targetStairPos == Vector2Int.zero && connectionData.Value.Position != Vector2Int.zero)
+                targetStairPos = stairPos;
+        }
+        else
+        {
+            if (cellType == CellType.StairUp) targetStage = sourceStage.DefaultUpStage;
+            else if (cellType == CellType.StairDown) targetStage = sourceStage.DefaultDownStage;
+
+            if (targetStage == null && gm.WorldMapSO != null)
+            {
+                int currentFloor = sourceStage.FloorIndex;
+                int targetFloor = cellType == CellType.StairUp ? currentFloor - 1 : currentFloor + 1;
+                targetStage = gm.WorldMapSO.GetStageByFloorIndex(targetFloor);
+            }
+            targetStairPos = new Vector2Int(-1, -1);
+        }
+
+        if (targetStage != null && (targetStairPos == new Vector2Int(-1, -1) || targetStairPos == Vector2Int.zero))
+        {
+            CellType targetType = (cellType == CellType.StairUp) ? CellType.StairDown : CellType.StairUp;
+            bool found = false;
+
+            if (gm.GetCellTypeAt(targetStage, stairPos) == targetType)
+            {
+                targetStairPos = stairPos;
+                found = true;
+            }
+            else
+            {
+                Vector2Int? foundStair = FindStairPosition(targetStage, targetType);
+                if (foundStair.HasValue)
+                {
+                    targetStairPos = foundStair.Value;
+                    found = true;
+                }
+            }
+
+            if (!found) targetStairPos = targetStage.PlayerStartPosition;
+        }
+
+        if (targetStage == null) return null;
+        return (targetStage, targetStairPos);
+    }
+
     public bool CheckAndShowStairDialog()
     {
         if (gm.CurrentStageSOInternal == null || gm.UnitManager.Player == null || gm.WorldMapSO == null)
-        {
             return false;
-        }
 
         Vector2Int playerPos = gm.UnitManager.Player.CurrentPos;
         CellType cellType = gm.GetCellTypeAt(gm.CurrentStageSOInternal, playerPos);
 
-        if (cellType != CellType.StairUp && cellType != CellType.StairDown)
+        if (cellType == CellType.BrokenStairUp)
         {
+            if (gm.BlockedPrefab != null) Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(playerPos), Quaternion.identity, gm.Visualizer.GridParent);
             return false;
         }
 
-        StageSO targetStage = null;
-        targetStage = gm.CurrentStageSOInternal.GetConnectedStage(playerPos);
+        if (cellType != CellType.StairUp && cellType != CellType.StairDown) return false;
 
-        if (targetStage == null)
+        var destination = GetPlayerStairDestination(gm.UnitManager.Player, playerPos);
+        if (destination == null)
         {
-            if (cellType == CellType.StairUp)
-            {
-                targetStage = gm.CurrentStageSOInternal.DefaultUpStage;
-            }
-            else if (cellType == CellType.StairDown)
-            {
-                targetStage = gm.CurrentStageSOInternal.DefaultDownStage;
-            }
+            if (gm.BlockedPrefab != null) Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(playerPos), Quaternion.identity, gm.Visualizer.GridParent);
+            return false;
         }
 
-        if (targetStage == null && gm.WorldMapSO != null)
-        {
-            int currentFloor = gm.CurrentStageSOInternal.FloorIndex;
-            int targetFloor = cellType == CellType.StairUp ? currentFloor - 1 : currentFloor + 1;
-            targetStage = gm.WorldMapSO.GetStageByFloorIndex(targetFloor);
+        StageSO targetStage = destination.Value.targetStage;
+        Vector2Int targetPos = destination.Value.targetPos;
 
-            if (targetStage == null)
-            {
-                Debug.Log($"[Stair] No stage found for {cellType}");
-                return false;
-            }
-        }
-
-        if (IsPositionOccupiedInStage(targetStage, playerPos))
+        if (IsPositionOccupiedInStage(targetStage, targetPos))
         {
-            Debug.Log($"[Stair] Cannot take stairs: destination is occupied");
+            Debug.Log($"[Stair] Cannot take stairs: destination {targetPos} is occupied in {targetStage.name}");
             if (gm.BlockedPrefab != null)
             {
                 Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(playerPos), Quaternion.identity, gm.Visualizer.GridParent);
@@ -66,13 +109,12 @@ public class StairTraversalSystem : IStairTraversalSystem
             return false;
         }
 
-        // ダイアログなしで即座にステージ移動
         bool goingDown = cellType == CellType.StairDown;
-        TakeStairAsync(targetStage, goingDown).Forget();
+        TakeStairAsync(targetStage, goingDown, targetPos).Forget();
         return true;
     }
 
-    private void ShowStairConfirmationDialog(CellType stairType, StageSO targetStage)
+    private void ShowStairConfirmationDialog(CellType stairType, StageSO targetStage, Vector2Int targetPos)
     {
         if (gm.StairConfirmationPresenter == null)
         {
@@ -87,7 +129,7 @@ public class StairTraversalSystem : IStairTraversalSystem
         {
             if (confirmed)
             {
-                TakeStairAsync(targetStage, goingDown).Forget();
+                TakeStairAsync(targetStage, goingDown, targetPos).Forget();
             }
             else
             {
@@ -116,7 +158,7 @@ public class StairTraversalSystem : IStairTraversalSystem
     }
 
     // Internal use
-    private async UniTask TakeStairAsync(StageSO targetStage, bool goingDown)
+    private async UniTask TakeStairAsync(StageSO targetStage, bool goingDown, Vector2Int targetPlayerPos)
     {
         if (targetStage == null) return;
 
@@ -124,7 +166,6 @@ public class StairTraversalSystem : IStairTraversalSystem
 
         Vector2Int currentPlayerPos = gm.UnitManager.Player != null ? gm.UnitManager.Player.CurrentPos : Vector2Int.zero;
         Direction currentDirection = gm.UnitManager.Player != null ? gm.UnitManager.Player.CurrentDirection : Direction.Right;
-        Vector2Int targetPlayerPos = currentPlayerPos;
 
         GridCalculation.WarpDirection stairWarpDir = GridCalculation.DetermineStairWarpDirection(gm.CurrentStageSOInternal, targetStage, goingDown);
 
@@ -156,6 +197,12 @@ public class StairTraversalSystem : IStairTraversalSystem
         gm.Visualizer.MoveGridParent(transitionOffset, TransitionDuration);
         await UniTask.Delay(TransitionDelayMs);
 
+        if (gm.UnitManager.Player != null)
+        {
+            gm.UnitManager.Player.gameObject.transform.SetParent(null);
+        }
+        gm.Visualizer.ResetGridParentPosition();
+
         var cmd = new PlayerStairTransitionCommand(gm, this, gm.CurrentStageSOInternal, targetStage, currentPlayerPos, currentDirection, targetPlayerPos, currentDirection);
         gm.CommandManager.ExecuteCommand(cmd);
 
@@ -170,6 +217,8 @@ public class StairTraversalSystem : IStairTraversalSystem
             int depth = targetStage.MapPosition.y;
             GameProgressManager.Instance.UnlockCellByStairDescent(column, depth);
         }
+
+        gm.Visualizer.ClearTransitionTiles();
 
         gm.SyncWorldMapStatus();
         await gm.TurnManager.OnPlayerActionComplete(true);
@@ -355,6 +404,21 @@ public class StairTraversalSystem : IStairTraversalSystem
         if (stage == gm.CurrentStageSOInternal)
         {
             return gm.UnitManager.GetUnitAtPosition(pos) != null;
+        }
+
+        if (gm.StageCratesMap.TryGetValue(stage, out var crates))
+        {
+            foreach (var crate in crates)
+            {
+                if (crate != null && !crate.IsDead && crate.CurrentPos == pos) return true;
+            }
+        }
+        else if (stage.CrateStartPositions != null)
+        {
+            foreach (var cratePos in stage.CrateStartPositions)
+            {
+                if (cratePos == pos) return true;
+            }
         }
 
         bool hasStageEnemies = gm.StageEnemiesMap.ContainsKey(stage);
@@ -618,6 +682,168 @@ public class StairTraversalSystem : IStairTraversalSystem
 
                 gm.UnitManager.SortEnemiesByOrder();
                  await targetEnemy.FadeInAsync(0.15f, false);
+            }
+        }
+    }
+
+    public (StageSO targetStage, Vector2Int targetPos)? GetCrateStairDestination(Crate crate, Vector2Int stairPos, Direction approachDirection)
+    {
+        StageSO sourceStage = gm.GetStageOfCrate(crate);
+        if (sourceStage == null) sourceStage = gm.CurrentStageSOInternal; // Fallback
+        if (sourceStage == null) return null;
+
+        CellType cellType = gm.GetCellTypeAt(sourceStage, stairPos);
+        if (cellType != CellType.StairUp && cellType != CellType.StairDown)
+        {
+            return null;
+        }
+
+        StageSO targetStage = null;
+        Vector2Int targetStairPos = Vector2Int.zero;
+
+        StairConnectionData? connectionData = sourceStage.GetStairConnectionData(stairPos);
+        if (connectionData != null)
+        {
+            targetStage = connectionData.Value.TargetStage;
+            targetStairPos = connectionData.Value.TargetPosition;
+            if (targetStairPos == Vector2Int.zero && connectionData.Value.Position != Vector2Int.zero)
+            {
+                targetStairPos = stairPos;
+            }
+        }
+        else
+        {
+            if (cellType == CellType.StairUp) targetStage = sourceStage.DefaultUpStage;
+            else if (cellType == CellType.StairDown) targetStage = sourceStage.DefaultDownStage;
+
+            if (targetStage == null && gm.WorldMapSO != null)
+            {
+                int currentFloor = sourceStage.FloorIndex;
+                int targetFloor = cellType == CellType.StairUp ? currentFloor - 1 : currentFloor + 1;
+                targetStage = gm.WorldMapSO.GetStageByFloorIndex(targetFloor);
+            }
+            targetStairPos = new Vector2Int(-1, -1);
+        }
+
+        if (targetStage != null && (targetStairPos == new Vector2Int(-1, -1) || targetStairPos == Vector2Int.zero))
+        {
+            CellType targetType = (cellType == CellType.StairUp) ? CellType.StairDown : CellType.StairUp;
+            bool found = false;
+
+            if (gm.GetCellTypeAt(targetStage, stairPos) == targetType)
+            {
+                targetStairPos = stairPos;
+                found = true;
+            }
+            else
+            {
+                Vector2Int? foundStair = FindStairPosition(targetStage, targetType);
+                if (foundStair.HasValue)
+                {
+                    targetStairPos = foundStair.Value;
+                    found = true;
+                }
+            }
+
+            if (!found) targetStairPos = targetStage.PlayerStartPosition;
+        }
+
+        if (targetStage == null) return null;
+
+        Vector2Int targetPos = targetStairPos;
+        if (!gm.IsWalkableAt(targetStage, targetPos)) return null;
+
+        if (IsPositionOccupiedInStage(targetStage, targetPos))
+        {
+            if (gm.BlockedPrefab != null)
+            {
+                Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(stairPos), Quaternion.identity, gm.Visualizer.GridParent);
+            }
+            return null;
+        }
+
+        return (targetStage, targetPos);
+    }
+
+    public async UniTask MoveCrateToStage(Crate crate, StageSO targetStage, Vector2Int targetPos, Direction direction)
+    {
+        if (crate == null || targetStage == null) return;
+
+        StageSO sourceStage = gm.GetStageOfCrate(crate);
+        if (sourceStage == null) sourceStage = gm.CurrentStageSOInternal;
+
+        AudioManager.Instance.PlaySE(AudioManager.SEType.warp);
+
+        bool goingDown = false;
+        if (sourceStage != null)
+        {
+            CellType cell = gm.GetCellTypeAt(sourceStage, crate.CurrentPos);
+            if (cell == CellType.StairDown) goingDown = true;
+        }
+
+        await crate.FadeOutAsync(0.15f, goingDown);
+
+        var cmd = new CrateStairTransitionCommand(gm, crate, sourceStage, targetStage, targetPos, direction);
+        gm.CommandManager.ExecuteCommand(cmd);
+    }
+
+    private class CrateStairTransitionCommand : ICommand, IAsyncUndoCommand
+    {
+        private GridManager gm;
+        private Crate targetCrate;
+        private StageSO sourceStage;
+        private StageSO targetStage;
+        private Vector2Int targetPos;
+        private Direction targetDir;
+        private Vector2Int sourcePos;
+        private Direction sourceDir;
+
+        public CrateStairTransitionCommand(GridManager gm, Crate crate, StageSO source, StageSO target, Vector2Int tPos, Direction dir)
+        {
+            this.gm = gm;
+            this.targetCrate = crate;
+            this.sourceStage = source ?? gm.CurrentStageSOInternal;
+            this.targetStage = target;
+            this.targetPos = tPos;
+            this.targetDir = dir;
+            this.sourcePos = crate.CurrentPos;
+            this.sourceDir = crate.CurrentDirection;
+        }
+
+        public void Execute()
+        {
+            if (targetCrate != null)
+            {
+                if (gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage].Remove(targetCrate);
+                gm.UnitManager.RemoveCrate(targetCrate);
+
+                targetCrate.WarpTo(targetPos, targetDir);
+                targetCrate.gameObject.SetActive(false);
+                targetCrate.transform.SetParent(gm.transform);
+
+                if (!gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage] = new List<Crate>();
+                gm.StageCratesMap[targetStage].Add(targetCrate);
+            }
+            gm.SaveGame(GameProgressManager.SaveType.Auto);
+        }
+
+        public void Undo() { UndoAsync().Forget(); }
+        public async UniTask UndoAsync()
+        {
+            if (targetCrate != null)
+            {
+                if (gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage].Remove(targetCrate);
+
+                targetCrate.transform.SetParent(gm.Visualizer.GridParent);
+                targetCrate.gameObject.SetActive(true);
+                targetCrate.WarpTo(sourcePos, sourceDir);
+
+                gm.UnitManager.AddCrate(targetCrate);
+
+                if (!gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage] = new List<Crate>();
+                gm.StageCratesMap[sourceStage].Add(targetCrate);
+
+                await targetCrate.FadeInAsync(0.15f, false);
             }
         }
     }

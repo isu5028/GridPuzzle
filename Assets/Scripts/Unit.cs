@@ -396,15 +396,61 @@ public abstract class Unit : MonoBehaviour
         Vector2Int directionVector = Utility.GetVectorFromDirection(direction);
         Vector2Int targetPos = currentPos + directionVector;
 
+        Unit targetOccupant = gridManager.GetUnitAtPosition(targetPos);
+        if (targetOccupant is Crate firstCrate)
+        {
+            Vector2Int pos2 = targetPos + directionVector;
+            Unit occupant2 = gridManager.GetUnitAtPosition(pos2);
+
+            if (occupant2 is Crate secondCrate)
+            {
+                // 2つ連結している場合、その先が空いているかチェック
+                Vector2Int pos3 = pos2 + directionVector;
+                if (gridManager.IsCellWalkable(pos3))
+                {
+                    // 遠い方から順番に移動コマンドを発行
+                    MoveCommand pushCommand2 = new MoveCommand(secondCrate, pos2, pos3, secondCrate.CurrentDirection, direction, false);
+                    commandManager.ExecuteCommand(pushCommand2);
+
+                    MoveCommand pushCommand1 = new MoveCommand(firstCrate, targetPos, pos2, firstCrate.CurrentDirection, direction, false);
+                    commandManager.ExecuteCommand(pushCommand1);
+
+                    MoveCommand selfMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
+                    commandManager.ExecuteCommand(selfMoveCommand);
+                    return true;
+                }
+            }
+            else if (gridManager.IsCellWalkable(pos2))
+            {
+                // 1つだけの場合
+                MoveCommand pushCommand = new MoveCommand(firstCrate, targetPos, pos2, firstCrate.CurrentDirection, direction, false);
+                commandManager.ExecuteCommand(pushCommand);
+
+                MoveCommand selfMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
+                commandManager.ExecuteCommand(selfMoveCommand);
+                return true;
+            }
+
+            // 押せない場合
+            unitAnimator.SetDirection(direction);
+            OnMoveFailed();
+            return false;
+        }
+
         Vector2Int[] attackPos = new Vector2Int[attackTargetPos.Length];
         for (int i = 0; i < attackTargetPos.Length; i++)
         {
             attackPos[i] = currentPos + Utility.RotateVector(attackTargetPos[i], currentDirection);
-            if (gridManager.GetUnitAtPosition(attackPos[i]) != null)
+            Unit targetUnit = gridManager.GetUnitAtPosition(attackPos[i]);
+            if (targetUnit != null)
             {
-                unitAnimator.SetDirection(direction);
-                TryAttack();
-                return false;
+                bool isCrate = targetUnit is Crate;
+                if (!isCrate)
+                {
+                    unitAnimator.SetDirection(direction);
+                    TryAttack();
+                    return false;
+                }
             }
         }
 
@@ -416,8 +462,8 @@ public abstract class Unit : MonoBehaviour
         }
 
         // コマンドを作成して実行
-        MoveCommand moveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
-        commandManager.ExecuteCommand(moveCommand);
+        MoveCommand finalMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
+        commandManager.ExecuteCommand(finalMoveCommand);
         return true;
     }
 
@@ -425,7 +471,10 @@ public abstract class Unit : MonoBehaviour
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
-        transform.DOMove(gridManager.GridToWorldPosition(position), moveDuration).SetEase(Ease.OutCubic).OnComplete(() => isMoving = false) ;
+        transform.DOMove(gridManager.GridToWorldPosition(position), moveDuration).SetEase(Ease.OutCubic).OnComplete(() => {
+            isMoving = false;
+            OnMoveComplete();
+        });
         unitAnimator.SetDirection(direction);
         currentPos = position;
         currentDirection = direction;
@@ -453,15 +502,19 @@ public abstract class Unit : MonoBehaviour
     {
     }
 
+    protected virtual void OnMoveComplete()
+    {
+    }
+
     protected virtual void OnMoveFailed()
     {
     }
 
-    public void Attack(Vector2Int[] targetPosition, int recoilDamage = 0)
+    public void Attack(Vector2Int[] targetPosition, int recoilDamage = 0, bool breaksCrate = false)
     {
         if (gameObject.activeInHierarchy)
         {
-            AttackAsync(targetPosition, recoilDamage).Forget();
+            AttackAsync(targetPosition, recoilDamage, breaksCrate).Forget();
         }
         else
         {
@@ -471,7 +524,14 @@ public abstract class Unit : MonoBehaviour
                 Unit targetUnit = gridManager.GetUnitAtPosition(pos);
                 if (targetUnit != null)
                 {
-                    targetUnit.TakeDamage(1, currentPos, false);
+                    if (targetUnit is Crate crate)
+                    {
+                        if (breaksCrate) crate.BreakCrate(currentPos);
+                    }
+                    else
+                    {
+                        targetUnit.TakeDamage(1, currentPos, false);
+                    }
                 }
             }
             if (recoilDamage > 0)
@@ -481,7 +541,7 @@ public abstract class Unit : MonoBehaviour
         }
     }
 
-    private async UniTask AttackAsync(Vector2Int[] targetPosition, int recoilDamage)
+    private async UniTask AttackAsync(Vector2Int[] targetPosition, int recoilDamage, bool breaksCrate)
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
@@ -513,9 +573,16 @@ public abstract class Unit : MonoBehaviour
                     Unit targetUnit = gridManager.GetUnitAtPosition(pos);
                     if (targetUnit != null)
                     {
-                        Debug.Log($"[Unit.AttackAsync Callback] Attacking {targetUnit.name} at {pos}");
-                        targetUnit.TakeDamage(1, currentPos);
-                        if (this is Player) CameraManager.Instance.ShakeCamera(0.4f, 8.0f, 20f, Utility.GetVectorFromDirection(currentDirection));
+                        if (targetUnit is Crate crate)
+                        {
+                            if (breaksCrate) crate.BreakCrate(currentPos);
+                        }
+                        else
+                        {
+                            Debug.Log($"[Unit.AttackAsync Callback] Attacking {targetUnit.name} at {pos}");
+                            targetUnit.TakeDamage(1, currentPos);
+                            if (this is Player) CameraManager.Instance.ShakeCamera(0.4f, 8.0f, 20f, Utility.GetVectorFromDirection(currentDirection));
+                        }
                     }
                     else
                     {

@@ -68,6 +68,13 @@ public class HUDFeedback : MonoBehaviour
         }
     }
 
+    public void SetVisible(bool isVisible)
+    {
+        if (icon != null) icon.gameObject.SetActive(isVisible);
+        if (character != null) character.gameObject.SetActive(isVisible);
+        if (text != null) text.gameObject.SetActive(isVisible);
+    }
+
     public void PlayFeedback()
     {
         PlayFeedbackAsync().Forget();

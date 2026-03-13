@@ -168,6 +168,10 @@ public class WorldMapPresenter : MonoBehaviour
         int unlockedLayers = GameProgressManager.Instance.GetUnlockedLayerCount();
         view.SetVisibleLayerCount(unlockedLayers);
 
+        bool showLayerFeedback = unlockedLayers > 1;
+        if (mapFrontFeedback != null) mapFrontFeedback.SetVisible(showLayerFeedback);
+        if (mapBackFeedback != null) mapBackFeedback.SetVisible(showLayerFeedback);
+
         StageSO currentStage = gridManager.CurrentStageSO;
         if (currentStage != null)
         {

@@ -108,7 +108,7 @@ public partial class StageTransitionSystem : IStageTransitionSystem
     /// <summary>
     /// マップワープ時にスライドアニメーション付きで遷移する
     /// </summary>
-    public async UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null)
+    public async UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null, Crate pushedCrate = null, Vector2Int crateSourcePos = default, Vector2Int crateTargetPos = default)
     {
         if (gm.IsTransitioning) return;
         if (targetStage == null) return;
@@ -212,7 +212,10 @@ public partial class StageTransitionSystem : IStageTransitionSystem
 
         var cmd = new WarpTransitionCommand(gm, sourceStage, targetStage,
             sourcePos, sourceDir, targetPos, targetDir, restoreHP,
-            clearWalls: restoreHP && overrideWarpDir == null); // マップワープ時のみ壁をリセット
+            clearWalls: restoreHP && overrideWarpDir == null,
+            pushedCrate: pushedCrate,
+            crateSourcePos: crateSourcePos,
+            crateTargetPos: crateTargetPos); // マップワープ時のみ壁をリセット
         gm.CommandManager.ExecuteCommand(cmd);
 
         // ターンを完了させて履歴に記録（敵のターンはスキップ）
@@ -342,7 +345,28 @@ public partial class StageTransitionSystem : IStageTransitionSystem
 
         if (neighbor != null)
         {
-            WarpWithAnimationAsync(neighbor, targetPos, targetDir, false, warpDir).Forget();
+            // Crateが境界位置にあるかチェックし、あれば次のステージへ押し出す
+            Crate pushedCrateRef = null;
+            Vector2Int crateSourcePos = Vector2Int.zero;
+            Vector2Int crateTargetPos = Vector2Int.zero;
+
+            Unit boundaryUnit = gm.GetUnitAtPosition(pos);
+            if (boundaryUnit != null && boundaryUnit is Crate pushedCrate)
+            {
+                Vector2Int crateNewPos = targetPos + Utility.GetVectorFromDirection(targetDir);
+                
+                // 次のステージで移動先がWalkableかチェック（ダメなら遷移をブロックする）
+                if (!gm.IsWalkableAt(neighbor, crateNewPos))
+                {
+                    return false;
+                }
+
+                pushedCrateRef = pushedCrate;
+                crateSourcePos = pushedCrate.CurrentPos;
+                crateTargetPos = crateNewPos;
+            }
+
+            WarpWithAnimationAsync(neighbor, targetPos, targetDir, false, warpDir, pushedCrateRef, crateSourcePos, crateTargetPos).Forget();
             return true;
         }
 
@@ -367,8 +391,12 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
     // ワープ前の壁破壊状態を保存（Undo用）
     private Dictionary<StageSO, HashSet<Vector2Int>> destroyedWallsSnapshot;
 
+    private Crate pushedCrate;
+    private Vector2Int crateSourcePos;
+    private Vector2Int crateTargetPos;
+
     public WarpTransitionCommand(GridManager gm, StageSO source, StageSO target,
-        Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir, bool restoreHP = false, bool clearWalls = false)
+        Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir, bool restoreHP = false, bool clearWalls = false, Crate pushedCrate = null, Vector2Int crateSourcePos = default, Vector2Int crateTargetPos = default)
     {
         this.gm = gm;
         this.sourceStage = source;
@@ -379,6 +407,9 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
         this.targetDir = tDir;
         this.restoreHP = restoreHP;
         this.clearWalls = clearWalls;
+        this.pushedCrate = pushedCrate;
+        this.crateSourcePos = crateSourcePos;
+        this.crateTargetPos = crateTargetPos;
 
         // HP回復する場合は現在のHPを記録
         if (restoreHP && gm.UnitManager.Player != null)
@@ -403,6 +434,15 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
             gm.DestroyedWalls.Clear();
         }
 
+        if (pushedCrate != null)
+        {
+            if (gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage].Remove(pushedCrate);
+            if (!gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage] = new System.Collections.Generic.List<Crate>();
+            if (!gm.StageCratesMap[targetStage].Contains(pushedCrate)) gm.StageCratesMap[targetStage].Add(pushedCrate);
+
+            pushedCrate.WarpTo(crateTargetPos, pushedCrate.CurrentDirection);
+        }
+
         PerformTransition(targetStage, targetPos, targetDir);
 
         if (restoreHP && gm.UnitManager.Player != null && !gm.UnitManager.Player.IsDead)
@@ -422,6 +462,15 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
         foreach (var kvp in destroyedWallsSnapshot)
         {
             gm.DestroyedWalls[kvp.Key] = new HashSet<Vector2Int>(kvp.Value);
+        }
+
+        if (pushedCrate != null)
+        {
+            if (gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage].Remove(pushedCrate);
+            if (!gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage] = new System.Collections.Generic.List<Crate>();
+            if (!gm.StageCratesMap[sourceStage].Contains(pushedCrate)) gm.StageCratesMap[sourceStage].Add(pushedCrate);
+
+            pushedCrate.WarpTo(crateSourcePos, pushedCrate.CurrentDirection);
         }
 
         PerformTransition(sourceStage, sourcePos, sourceDir);

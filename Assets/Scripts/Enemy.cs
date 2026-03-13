@@ -324,10 +324,10 @@ public class Enemy : Unit
                 Vector3 targetWorldPos = gridManager.GridToWorldPosition(targetPos);
 
                 arrowScript.Launch(spawnPos, targetWorldPos, () => {
-                    // Apply Damage IMMEDIATELY when arrow reaches target
                     if (targetUnit != null)
                     {
-                        targetUnit.TakeDamage(1, currentPos);
+                        if (targetUnit is Crate c) c.BreakCrate(currentPos);
+                        else targetUnit.TakeDamage(1, currentPos);
                     }
                     onHit?.Invoke();
                     source.TrySetResult();
@@ -347,7 +347,8 @@ public class Enemy : Unit
              // Fallback damage if no arrow
              if (targetUnit != null)
              {
-                 targetUnit.TakeDamage(1, currentPos);
+                 if (targetUnit is Crate c) c.BreakCrate(currentPos);
+                 else targetUnit.TakeDamage(1, currentPos);
              }
              onHit?.Invoke();
         }

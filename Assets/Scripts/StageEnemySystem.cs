@@ -59,6 +59,7 @@ public class StageEnemySystem : IStageEnemySystem
             case EnemyType.Zombie: return gm.ZombieEnemyPrefab;
             case EnemyType.Boar: return gm.BoarEnemyPrefab;
             case EnemyType.Crystal: return gm.CrystalEnemyPrefab;
+            case EnemyType.Ghost: return gm.GhostEnemyPrefab;
             default: return null!;
         }
     }

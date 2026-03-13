@@ -119,7 +119,7 @@ public static class GridCalculation
                 // Note: This relies on StageSO's static data directly.
                 // It does NOT consider dynamically changes (destroyed walls) unless GetWallAt logic is replicated.
                 // Assuming StairUp are static map features.
-                if (stage.GetWallAt(x, y) == CellType.StairUp)
+                if (stage.GetWallAt(x, y) == CellType.StairUp || stage.GetWallAt(x, y) == CellType.BrokenStairUp)
                 {
                     return new Vector2Int(x, y);
                 }

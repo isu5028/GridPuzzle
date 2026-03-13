@@ -5,54 +5,105 @@ public class EnemyAIPatrol : EnemyAI
 {
     public override async UniTask ExecuteAI(Enemy enemy)
     {
-        Vector2Int  currentPos = enemy.CurrentPos;
+        Vector2Int currentPos = enemy.CurrentPos;
         Direction currentDirection = enemy.CurrentDirection;
         Vector2Int directionalVector = Utility.GetVectorFromDirection(currentDirection);
         Vector2Int frontPos = currentPos + directionalVector;
 
-        // 前方に攻撃対象がいるか確認
+        // 前方のユニットを確認
         Unit frontUnit = gridManager.GetUnitAtPosition(frontPos);
-        if(frontUnit != null)
+
+        // --- 木箱の押し出し判定 (最大2つ) ---
+        if (frontUnit != null && frontUnit is Crate firstCrate)
         {
-            if(GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
+            Vector2Int pos2 = frontPos + directionalVector;
+            Unit unit2 = gridManager.GetUnitAtPosition(pos2);
+
+            if (unit2 != null && unit2 is Crate secondCrate)
+            {
+                // 2つ連続している場合、3つ目のマスが空いているかチェック
+                Vector2Int pos3 = pos2 + directionalVector;
+                if (gridManager.IsCellWalkable(pos3))
+                {
+                    // 遠い方から順番に移動コマンドを発行
+                    commandManager.ExecuteCommand(new MoveCommand(secondCrate, pos2, pos3, secondCrate.CurrentDirection, currentDirection, false));
+                    commandManager.ExecuteCommand(new MoveCommand(firstCrate, frontPos, pos2, firstCrate.CurrentDirection, currentDirection, false));
+                    commandManager.ExecuteCommand(new MoveCommand(enemy, currentPos, frontPos, currentDirection, currentDirection));
+
+                    if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+                    await CheckTransitions(enemy, frontPos, currentDirection);
+                    return;
+                }
+            }
+            else if (gridManager.IsCellWalkable(pos2))
+            {
+                // 1つだけの場合
+                commandManager.ExecuteCommand(new MoveCommand(firstCrate, frontPos, pos2, firstCrate.CurrentDirection, currentDirection, false));
+                commandManager.ExecuteCommand(new MoveCommand(enemy, currentPos, frontPos, currentDirection, currentDirection));
+
+                if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+                await CheckTransitions(enemy, frontPos, currentDirection);
+                return;
+            }
+        }
+        // 反撃（通常攻撃）
+        else if (frontUnit != null)
+        {
+            if (GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
             enemy.TryAttack();
             await UniTask.WaitUntil(() => !enemy.IsMoving);
             return;
         }
 
-        // 前方に移動可能か確認 (境界越えも含む)
+        // 通常移動 (前方)
         bool canMoveForward = gridManager.IsCellWalkable(frontPos) || IsValidBoundaryMove(enemy, frontPos, currentDirection);
-
-        if(canMoveForward)
+        if (canMoveForward && frontUnit == null)
         {
-            MoveCommand moveCommand = new MoveCommand(enemy, currentPos, frontPos, currentDirection, currentDirection);
-            commandManager.ExecuteCommand(moveCommand);
-
+            commandManager.ExecuteCommand(new MoveCommand(enemy, currentPos, frontPos, currentDirection, currentDirection));
             if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
-
-            // 境界遷移チェック
             if (gridManager.CheckAndPerformEnemyBoundaryTransfer(enemy)) return;
-
-            // 階段遷移チェック
-            var transition = gridManager.GetEnemyStairDestination(enemy, frontPos, currentDirection);
-            if (transition != null)
-            {
-                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
-                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, currentDirection);
-            }
+            await CheckTransitions(enemy, frontPos, currentDirection);
         }
         else
         {
-            // 壁がある場合は方向転換
+            // --- 反転ロジック ---
             Direction oppositeDirection = GetOppositeDirection(currentDirection);
             Vector2Int oppositeVector = Utility.GetVectorFromDirection(oppositeDirection);
-
-            // 反対側に攻撃対象がいるか確認
             Vector2Int backPos = currentPos + oppositeVector;
             Unit backUnit = gridManager.GetUnitAtPosition(backPos);
-            if(backUnit != null)
+
+            if (backUnit != null && backUnit is Crate backFirstCrate)
             {
-                if(GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
+                Vector2Int bPos2 = backPos + oppositeVector;
+                Unit bUnit2 = gridManager.GetUnitAtPosition(bPos2);
+
+                if (bUnit2 != null && bUnit2 is Crate backSecondCrate)
+                {
+                    Vector2Int bPos3 = bPos2 + oppositeVector;
+                    if (gridManager.IsCellWalkable(bPos3))
+                    {
+                        commandManager.ExecuteCommand(new MoveCommand(backSecondCrate, bPos2, bPos3, backSecondCrate.CurrentDirection, oppositeDirection, false));
+                        commandManager.ExecuteCommand(new MoveCommand(backFirstCrate, backPos, bPos2, backFirstCrate.CurrentDirection, oppositeDirection, false));
+                        commandManager.ExecuteCommand(new MoveCommand(enemy, currentPos, backPos, currentDirection, oppositeDirection));
+
+                        if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+                        await CheckTransitions(enemy, backPos, oppositeDirection);
+                        return;
+                    }
+                }
+                else if (gridManager.IsCellWalkable(bPos2))
+                {
+                    commandManager.ExecuteCommand(new MoveCommand(backFirstCrate, backPos, bPos2, backFirstCrate.CurrentDirection, oppositeDirection, false));
+                    commandManager.ExecuteCommand(new MoveCommand(enemy, currentPos, backPos, currentDirection, oppositeDirection));
+
+                    if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+                    await CheckTransitions(enemy, backPos, oppositeDirection);
+                    return;
+                }
+            }
+            else if (backUnit != null)
+            {
+                if (GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
                 enemy.SetDirection(oppositeDirection);
                 enemy.TryAttack();
                 await UniTask.WaitUntil(() => !enemy.IsMoving);
@@ -60,62 +111,27 @@ public class EnemyAIPatrol : EnemyAI
             }
 
             bool canMoveBackward = gridManager.IsCellWalkable(backPos) || IsValidBoundaryMove(enemy, backPos, oppositeDirection);
-
-            MoveCommand moveCommand = new MoveCommand(enemy, currentPos, backPos, currentDirection, oppositeDirection);
-
-            // 後ろも移動不可なら移動せず方向転換のみ（MoveCommandは移動なしでも方向転換するかも？いや、same posならしないか）
-            // MoveCommandの実装を見ると、from!=toなら移動する。
-            // ここでは canMoveBackward チェックを入れてない？ 元コードは `MoveCommand` を無条件で実行してる？
-            // 元コード: `MoveCommand moveCommand = new MoveCommand(enemy, currentPos, backPos, currentDirection, oppositeDirection);`
-            // `execute` -> 壁なら移動しないはず？
-            // SystemのMoveCommandは `gridManager.IsWalkableAt` をチェックしている？
-            // いや、Commandは実行するもの。AI判定で弾くべき。
-            // 元コードは `else` ブロックに入った時点で「前は無理」。
-            // 後ろについての `IsCellWalkable` チェックがない？
-            // あ、MoveCommandの中で詰まるだけか。
-            // しかし境界移動させるなら、MoveCommandに渡す `backPos` はOOBになる。
-            // MoveCommandがOOBを受け入れるか？
-            // MoveCommand -> `Unit.Move` -> Tween.
-            // MoveCommand自体は座標の妥当性をチェックしないかもしれない（AIがチェック済み前提）。
-            // なので `canMoveBackward` をチェックして、OKならMoveCommand発行、NGなら何もしない（or 方向転換のみ）とするべきだが、
-            // 今回は既存の挙動を変えすぎないよう、BoundaryMoveが可能ならMoveCommandを発行するようにする。
-
+            Vector2Int targetPos = canMoveBackward ? backPos : currentPos;
+            commandManager.ExecuteCommand(new MoveCommand(enemy, currentPos, targetPos, currentDirection, oppositeDirection));
+            if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
             if (canMoveBackward)
             {
-                commandManager.ExecuteCommand(moveCommand);
-                if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
-
-                // 境界遷移チェック
                 if (gridManager.CheckAndPerformEnemyBoundaryTransfer(enemy)) return;
-
-                // 階段遷移チェック
-                var transition = gridManager.GetEnemyStairDestination(enemy, backPos, oppositeDirection);
-                if (transition != null)
-                {
-                    if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
-                    await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, oppositeDirection);
-                }
+                await CheckTransitions(enemy, backPos, oppositeDirection);
             }
-            else
-            {
-                // 移動できないが方向転換はする？ 元コードはMoveCommand投げてる。
-                // MoveCommandは移動不可ならその場で方向転換だけする仕様か確認が必要だが、
-                // 取り急ぎ「移動できるなら移動」にする。
-                // 元のコードは `commandManager.ExecuteCommand(moveCommand)` を呼んでた。
-                // つまり後ろが壁でもMoveCommandを呼ぶことで方向転換を実現していた可能性がある。
-                // 変更: 後ろが壁でも方向転換はしたい。
-                // MoveCommandに (current, current) を渡せば方向転換だけになる？
-                // backPosがOOBかつBoundaryMoveも不可の場合、MoveCommandを呼ぶとどうなる？
-                // UnitがOOBに移動してしまう？
-                // 既存: `MoveCommand` creates `Move` tween.
-                // ここは安全策として、BoundaryMoveがTrueか、WalkableがTrueなら backPos へ移動。
-                // どちらもFalseなら、CurrentPosへ移動（＝方向転換のみ）するコマンドにする。
+        }
+    }
 
-                Vector2Int targetPos = canMoveBackward ? backPos : currentPos;
-                MoveCommand rotateCmd = new MoveCommand(enemy, currentPos, targetPos, currentDirection, oppositeDirection);
-                commandManager.ExecuteCommand(rotateCmd);
-                if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
-            }
+    /// <summary>
+    /// 移動後の遷移（階段等）をチェックするヘルパー
+    /// </summary>
+    private async UniTask CheckTransitions(Enemy enemy, Vector2Int pos, Direction dir)
+    {
+        var transition = gridManager.GetEnemyStairDestination(enemy, pos, dir);
+        if (transition != null)
+        {
+            if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+            await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, dir);
         }
     }
 

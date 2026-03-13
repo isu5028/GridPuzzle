@@ -21,6 +21,7 @@ public class StageSO : ScriptableObject
     [SerializeField] private Vector2Int playerStartPosition = Vector2Int.zero;
     [SerializeField] private Direction playerStartDirection = Direction.Right;
     [SerializeField] private List<EnemyStartData> enemyStartData = new List<EnemyStartData>();
+    [SerializeField] private List<Vector2Int> crateStartPositions = new List<Vector2Int>();
     [SerializeField] private List<TutorialIndexData> tutorialIndexData = new List<TutorialIndexData>();
 
     [Header("Adjacent Stages (平面マップ用)")]
@@ -97,6 +98,7 @@ public class StageSO : ScriptableObject
     public int PlayerStartOrder = 0;
     public List<EnemyStartData> EnemyStartData => enemyStartData;
     public List<TutorialIndexData> TutorialData => tutorialIndexData;
+    public List<Vector2Int> CrateStartPositions => crateStartPositions;
     public Direction PlayerStartDirection => playerStartDirection;
 
     // wallDataの初期化と取得・設定
@@ -174,6 +176,24 @@ public class StageSO : ScriptableObject
     public void ClearEnemies()
     {
         enemyStartData.Clear();
+    }
+
+    public void AddCrate(Vector2Int position)
+    {
+        if(!crateStartPositions.Contains(position))
+        {
+            crateStartPositions.Add(position);
+        }
+    }
+
+    public void RemoveCrateAt(Vector2Int position)
+    {
+        crateStartPositions.Remove(position);
+    }
+
+    public void ClearCrates()
+    {
+        crateStartPositions.Clear();
     }
 
     private void OnValidate()
@@ -297,7 +317,7 @@ public class StageSO : ScriptableObject
         if (cellData == null) return null;
         for (int i = 0; i < cellData.Length; i++)
         {
-            if (cellData[i] == CellType.StairUp)
+            if (cellData[i] == CellType.StairUp || cellData[i] == CellType.BrokenStairUp)
             {
                 return new Vector2Int(i % width, i / width);
             }

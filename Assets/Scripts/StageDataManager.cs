@@ -11,6 +11,13 @@ public class StageDataManager
     private Dictionary<StageSO, List<Enemy>> stageEnemiesMap = new Dictionary<StageSO, List<Enemy>>();
     public Dictionary<StageSO, List<Enemy>> StageEnemiesMap => stageEnemiesMap;
 
+    // Stage -> List of Crate Instances
+    private Dictionary<StageSO, List<Crate>> stageCratesMap = new Dictionary<StageSO, List<Crate>>();
+    public Dictionary<StageSO, List<Crate>> StageCratesMap => stageCratesMap;
+
+    private HashSet<StageSO> stageCratesInitialized = new HashSet<StageSO>();
+    public HashSet<StageSO> StageCratesInitialized => stageCratesInitialized;
+
     // Stage -> Save Data for Enemies (not yet instantiated)
     private Dictionary<StageSO, List<EnemySaveData>> loadedStageEnemyData = new Dictionary<StageSO, List<EnemySaveData>>();
     public Dictionary<StageSO, List<EnemySaveData>> LoadedStageEnemyData => loadedStageEnemyData;
@@ -29,6 +36,8 @@ public class StageDataManager
         loadedStageEnemyData.Clear();
         pendingStageEnemies.Clear();
         destroyedWalls.Clear();
+        stageCratesMap.Clear();
+        stageCratesInitialized.Clear();
     }
 
     public void ClearEnemies()
@@ -36,6 +45,8 @@ public class StageDataManager
         stageEnemiesMap.Clear();
         loadedStageEnemyData.Clear();
         pendingStageEnemies.Clear();
+        stageCratesMap.Clear();
+        stageCratesInitialized.Clear();
     }
 
     public void ClearWalls()

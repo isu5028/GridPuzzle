@@ -26,13 +26,16 @@ public partial class GridManager : MonoBehaviour
     public StageDataManager StageData => stageData;
 
     // --- Legacy Accessors (Delegated to StageData) ---
-    internal Dictionary<StageSO, List<Enemy>> StageEnemiesMap => stageData.StageEnemiesMap;
+    // Stage -> List of Crates
+    public Dictionary<StageSO, List<Enemy>> StageEnemiesMap => stageData.StageEnemiesMap;
+    public Dictionary<StageSO, List<Crate>> StageCratesMap => stageData.StageCratesMap;
     // ロード時に復元されたがまだ実体化されていない敵データ
-    internal Dictionary<StageSO, List<EnemySaveData>> LoadedStageEnemyData => stageData.LoadedStageEnemyData;
+    public Dictionary<StageSO, List<EnemySaveData>> LoadedStageEnemyData => stageData.LoadedStageEnemyData;
     // Undo時の敵インスタンス重複を防ぐための待機リスト
-    internal Dictionary<StageSO, List<Enemy>> PendingStageEnemies => stageData.PendingStageEnemies;
+    public Dictionary<StageSO, List<Enemy>> PendingStageEnemies => stageData.PendingStageEnemies;
     // Destroyed Walls: Stage -> Set of positions
-    internal Dictionary<StageSO, HashSet<Vector2Int>> DestroyedWalls => stageData.DestroyedWalls;
+    public Dictionary<StageSO, HashSet<Vector2Int>> DestroyedWalls => stageData.DestroyedWalls;
+    public HashSet<StageSO> StageCratesInitialized => stageData.StageCratesInitialized;
 
     [Header("Visualizer")]
     [SerializeField] private GridVisualizer gridVisualizer = null!;
@@ -45,6 +48,8 @@ public partial class GridManager : MonoBehaviour
     [SerializeField] private GameObject zombieEnemyPrefab = null!;
     [SerializeField] private GameObject boarEnemyPrefab = null!;
     [SerializeField] private GameObject crystalEnemyPrefab = null!;
+    [SerializeField] private GameObject ghostEnemyPrefab = null!;
+    [SerializeField] private GameObject crateEnemyPrefab = null!;
     [SerializeField] private GameObject errorEffectPrefab = null!;
     [SerializeField] private GameObject blockedPrefab = null!;
 
@@ -66,8 +71,13 @@ public partial class GridManager : MonoBehaviour
 
     private TurnManager turnManager = null!;
     private CommandManager commandManager = null!;
+    private int transitionCount = 0;
     private bool isTransitioning = false;
-    internal bool IsTransitioning { get => isTransitioning; set => isTransitioning = value; }
+    internal bool IsTransitioning { get => isTransitioning || transitionCount > 0; set => isTransitioning = value; }
+    internal bool HasActiveAsyncTransitions => transitionCount > 0;
+
+    public void BeginTransition() => transitionCount++;
+    public void EndTransition() => transitionCount--;
 
     // Internal accessors for subsystems
     internal StageSO InitialStageSO { get => initialStageSO; set => initialStageSO = value; }
@@ -88,6 +98,8 @@ public partial class GridManager : MonoBehaviour
     internal GameObject ZombieEnemyPrefab => zombieEnemyPrefab;
     internal GameObject BoarEnemyPrefab => boarEnemyPrefab;
     internal GameObject CrystalEnemyPrefab => crystalEnemyPrefab;
+    internal GameObject GhostEnemyPrefab => ghostEnemyPrefab;
+    internal GameObject CrateEnemyPrefab => crateEnemyPrefab;
     internal GameObject ErrorEffectPrefab => errorEffectPrefab;
     public GameObject BlockedPrefab => blockedPrefab;
 
@@ -227,6 +239,20 @@ public partial class GridManager : MonoBehaviour
 
         // Determine which stage to reset to (Current Stage)
         StageSO stageToReset = currentStageSO;
+        if (stageToReset != null && stageToReset.name.Contains("_HiddenWallNeighbor_"))
+        {
+            // Fallback to the real stage that this neighbor is attached to
+            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
+            {
+                StageSO adj = stageToReset.GetAdjacentStage(dir);
+                if (adj != null && !adj.name.Contains("_HiddenWallNeighbor_"))
+                {
+                    stageToReset = adj;
+                    break;
+                }
+            }
+        }
+        
         if (stageToReset == null)
         {
              if (initialStageSO == null)
@@ -317,7 +343,8 @@ public partial class GridManager : MonoBehaviour
                cellType == CellType.SyncMap ||
                cellType == CellType.Tutorial ||
                cellType == CellType.StairUp ||
-               cellType == CellType.StairDown;
+               cellType == CellType.StairDown ||
+               cellType == CellType.BrokenStairUp;
     }
 
     public bool IsWalkableAt(StageSO stage, Vector2Int pos)
@@ -368,6 +395,7 @@ public partial class GridManager : MonoBehaviour
         }
 
         stageEnemySystem.PrepareEnemiesForStage(stage);
+        GenerateCrates(stage);
         GenerateTilemap(stage, keepTutorial);
 
         if (resetTurnManager)
@@ -389,6 +417,10 @@ public partial class GridManager : MonoBehaviour
         foreach (var e in unitManager.Enemies)
         {
             if (e != null && !e.IsDead && e.gameObject.activeInHierarchy) activeUnits.Add(e);
+        }
+        foreach (var c in unitManager.Crates)
+        {
+            if (c != null && !c.IsDead && c.gameObject.activeInHierarchy) activeUnits.Add(c);
         }
 
         HashSet<Unit> unitsToKill = new HashSet<Unit>();
@@ -504,39 +536,78 @@ public partial class GridManager : MonoBehaviour
             if (pos.x == -1)
             {
                 // 隣接ステージの境界壁が破壊される = 現在ステージ側も境界エフェクト（PropagateBreakが呼ぶ）
-                PropagateBreak(stage, Direction.Left, new Vector2Int(stage.GetAdjacentStage(Direction.Left)?.Width ?? 0, pos.y));
+                PropagateBreak(stage, Direction.Left, pos.y);
             }
 
             // Right Neighbor Interactions: Breaking Right Boundary (Width) -> Breaks Neighbor's Left Boundary (-1)
             if (pos.x == stage.Width)
             {
-                PropagateBreak(stage, Direction.Right, new Vector2Int(-1, pos.y));
+                PropagateBreak(stage, Direction.Right, pos.y);
             }
 
             // Down Neighbor Interactions: Breaking Bottom Boundary (-1) -> Breaks Neighbor's Top Boundary (Height)
             if (pos.y == -1)
             {
-                PropagateBreak(stage, Direction.Down, new Vector2Int(pos.x, stage.GetAdjacentStage(Direction.Down)?.Height ?? 0));
+                PropagateBreak(stage, Direction.Down, pos.x);
             }
 
             // Up Neighbor Interactions: Breaking Top Boundary (Height) -> Breaks Neighbor's Bottom Boundary (-1)
             if (pos.y == stage.Height)
             {
-                PropagateBreak(stage, Direction.Up, new Vector2Int(pos.x, -1));
+                PropagateBreak(stage, Direction.Up, pos.x);
             }
         }
     }
 
-    private void PropagateBreak(StageSO currentStage, Direction dir, Vector2Int targetPos)
+    private void PropagateBreak(StageSO currentStage, Direction dir, int lateralPos)
     {
         StageSO neighbor = currentStage.GetAdjacentStage(dir);
-        if (neighbor == null) return;
+        if (neighbor == null)
+        {
+            neighbor = GetOrCreateAdjacentStage(currentStage, dir);
+        }
 
-        // Only propagate if we hit valid coordinates (Prevent recursive errors if width/height 0, though unlikely)
-        // Also check if valid break target
+        Vector2Int targetPos = Vector2Int.zero;
+        if (dir == Direction.Left) targetPos = new Vector2Int(neighbor.Width, lateralPos);
+        else if (dir == Direction.Right) targetPos = new Vector2Int(-1, lateralPos);
+        else if (dir == Direction.Up) targetPos = new Vector2Int(lateralPos, -1);
+        else if (dir == Direction.Down) targetPos = new Vector2Int(lateralPos, neighbor.Height);
 
         // Infinite recursion is prevented by the `Contains` check in BreakWall.
         BreakWall(neighbor, targetPos);
+    }
+
+    private StageSO GetOrCreateAdjacentStage(StageSO currentStage, Direction dir)
+    {
+        StageSO neighbor = currentStage.GetAdjacentStage(dir);
+        if (neighbor != null) return neighbor;
+
+        neighbor = ScriptableObject.CreateInstance<StageSO>();
+        neighbor.name = currentStage.name + "_HiddenWallNeighbor_" + dir.ToString();
+
+        // 16x9 wall fill
+        neighbor.InitializeWallData();
+        for (int x = 0; x < neighbor.Width; x++)
+        {
+            for (int y = 0; y < neighbor.Height; y++)
+            {
+                neighbor.SetWallAt(x, y, true);
+            }
+        }
+
+        // Link them
+        currentStage.SetAdjacentStage(dir, neighbor);
+
+        Direction opp = dir switch {
+            Direction.Up => Direction.Down,
+            Direction.Down => Direction.Up,
+            Direction.Left => Direction.Right,
+            Direction.Right => Direction.Left,
+            _ => Direction.Left
+        };
+        neighbor.SetAdjacentStage(opp, currentStage);
+
+        return neighbor;
     }
 
     public void RestoreWall(StageSO stage, Vector2Int pos)
@@ -560,18 +631,24 @@ public partial class GridManager : MonoBehaviour
                 }
 
                 // --- Recursive Restore for Adjacent Stage (Virtual Walls ONLY) ---
-                if (pos.x == -1) PropagateRestore(stage, Direction.Left, new Vector2Int(stage.GetAdjacentStage(Direction.Left)?.Width ?? 0, pos.y));
-                if (pos.x == stage.Width) PropagateRestore(stage, Direction.Right, new Vector2Int(-1, pos.y));
-                if (pos.y == -1) PropagateRestore(stage, Direction.Down, new Vector2Int(pos.x, stage.GetAdjacentStage(Direction.Down)?.Height ?? 0));
-                if (pos.y == stage.Height) PropagateRestore(stage, Direction.Up, new Vector2Int(pos.x, -1));
+                if (pos.x == -1) PropagateRestore(stage, Direction.Left, pos.y);
+                if (pos.x == stage.Width) PropagateRestore(stage, Direction.Right, pos.y);
+                if (pos.y == -1) PropagateRestore(stage, Direction.Down, pos.x);
+                if (pos.y == stage.Height) PropagateRestore(stage, Direction.Up, pos.x);
             }
         }
     }
 
-    private void PropagateRestore(StageSO currentStage, Direction dir, Vector2Int targetPos)
+    private void PropagateRestore(StageSO currentStage, Direction dir, int lateralPos)
     {
         StageSO neighbor = currentStage.GetAdjacentStage(dir);
         if (neighbor == null) return;
+
+        Vector2Int targetPos = Vector2Int.zero;
+        if (dir == Direction.Left) targetPos = new Vector2Int(neighbor.Width, lateralPos);
+        else if (dir == Direction.Right) targetPos = new Vector2Int(-1, lateralPos);
+        else if (dir == Direction.Up) targetPos = new Vector2Int(lateralPos, -1);
+        else if (dir == Direction.Down) targetPos = new Vector2Int(lateralPos, neighbor.Height);
 
         RestoreWall(neighbor, targetPos);
     }
@@ -690,6 +767,66 @@ public partial class GridManager : MonoBehaviour
 
         unitManager.RegisterPlayer(playerObj);
     }
+
+    private void DeactivateAllCratesExcept(StageSO targetStage)
+    {
+        foreach (var kvp in StageCratesMap)
+        {
+            if (kvp.Key == targetStage) continue;
+
+            foreach (var crate in kvp.Value)
+            {
+                if (crate != null && crate.gameObject.activeSelf)
+                {
+                    crate.gameObject.SetActive(false);
+                }
+            }
+        }
+    }
+
+    private void GenerateCrates(StageSO stage)
+    {
+        DeactivateAllCratesExcept(stage);
+
+        // 既存のアクティブなCrate参照をクリア
+        unitManager.CrateObjects.Clear();
+        unitManager.Crates.Clear();
+
+        if (!StageCratesInitialized.Contains(stage))
+        {
+            StageCratesInitialized.Add(stage);
+            if (!StageCratesMap.ContainsKey(stage)) StageCratesMap[stage] = new List<Crate>();
+
+            if (stage.CrateStartPositions != null && crateEnemyPrefab != null)
+            {
+                foreach (var pos in stage.CrateStartPositions)
+                {
+                    Vector3 worldPos = GridToWorldPosition(pos);
+                    GameObject crateObj = Instantiate(crateEnemyPrefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
+                    Crate crateScript = crateObj.GetComponent<Crate>();
+                    crateScript.Initialize(this, turnManager, commandManager, pos, Direction.Right, 1, 0);
+                    
+                    StageCratesMap[stage].Add(crateScript);
+                }
+            }
+        }
+
+        if (StageCratesMap.TryGetValue(stage, out var existingCrates))
+        {
+            // 既に生成済みのCrateがあればそれを復元して再配置
+            foreach (var crate in existingCrates)
+            {
+                if (crate != null && !crate.IsDead)
+                {
+                    crate.gameObject.SetActive(true);
+                    crate.transform.SetParent(gridVisualizer.GridParent); // Ensure correct parent
+                    crate.SetDissolveAmount(0f); // IMPORTANT: Restore visibility
+                    crate.WarpTo(crate.CurrentPos, crate.CurrentDirection); // Ensure correct position is applied
+                    unitManager.AddCrate(crate);
+                }
+            }
+        }
+    }
     #endregion
 
     #region Utility Methods (Proxy to UnitManager / Visualizer)
@@ -745,7 +882,36 @@ public partial class GridManager : MonoBehaviour
     public StageSO GetStageOfEnemy(Enemy enemy) => stageEnemySystem.GetStageOfEnemy(enemy);
     public List<Enemy> GetEnemiesOnStage(StageSO stage) => stageEnemySystem.GetEnemiesOnStage(stage);
 
-    internal void ResetAllEnemies() => stageEnemySystem.ResetAllEnemies();
+    public StageSO GetStageOfCrate(Crate crate)
+    {
+        foreach (var pair in StageCratesMap)
+        {
+            if (pair.Value.Contains(crate)) return pair.Key;
+        }
+        return null;
+    }
+
+    internal void ResetAllEnemies()
+    {
+        stageEnemySystem.ResetAllEnemies();
+        
+        foreach (var list in StageCratesMap.Values)
+        {
+            foreach (var crate in list)
+            {
+                if (crate != null)
+                {
+                    crate.gameObject.SetActive(false);
+                    Destroy(crate.gameObject);
+                }
+            }
+        }
+        StageCratesMap.Clear();
+        StageCratesInitialized.Clear();
+        unitManager.CrateObjects.Clear();
+        unitManager.Crates.Clear();
+    }
+    
     internal void ApplySavedEnemyData(StageSO stage, List<EnemySaveData> savedEnemies) => stageEnemySystem.ApplySavedEnemyData(stage, savedEnemies);
     internal void AddPendingEnemy(StageSO stage, Enemy enemy) => stageEnemySystem.AddPendingEnemy(stage, enemy);
     public int GetMaxEnemyOrderInStage(StageSO stage) => stageEnemySystem.GetMaxEnemyOrderInStage(stage);
@@ -785,6 +951,24 @@ public partial class GridManager : MonoBehaviour
     public bool CheckAndShowStairDialog() => stairTraversalSystem.CheckAndShowStairDialog();
     public (StageSO targetStage, Vector2Int targetPos)? GetEnemyStairDestination(Enemy enemy, Vector2Int stairPos, Direction approachDirection) => stairTraversalSystem.GetEnemyStairDestination(enemy, stairPos, approachDirection);
     public UniTask MoveEnemyToStage(Enemy enemy, StageSO targetStage, Vector2Int targetPos, Direction direction) => stairTraversalSystem.MoveEnemyToStage(enemy, targetStage, targetPos, direction);
+
+    public async UniTask MoveCrateThroughStairAsync(Crate crate)
+    {
+        var transition = stairTraversalSystem.GetCrateStairDestination(crate, crate.CurrentPos, crate.CurrentDirection);
+        if (transition != null)
+        {
+            BeginTransition();
+            try
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(150);
+                await stairTraversalSystem.MoveCrateToStage(crate, transition.Value.targetStage, transition.Value.targetPos, crate.CurrentDirection);
+            }
+            finally
+            {
+                EndTransition();
+            }
+        }
+    }
     public bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos) => stairTraversalSystem.IsPositionOccupiedInStage(stage, pos);
 
     #endregion

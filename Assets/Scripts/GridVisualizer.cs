@@ -14,6 +14,7 @@ public class GridVisualizer : MonoBehaviour
     [SerializeField] private TileBase floorTile = null!;
     [SerializeField] private TileBase stairUpTile = null!;    // 上階段タイル
     [SerializeField] private TileBase stairDownTile = null!;  // 下階段タイル
+    [SerializeField] private TileBase brokenStairUpTile = null!; // 壊れた上階段タイルのプレハブ/タイル
     [SerializeField] private GameObject tileSyncMapPrefab = null!;
     [SerializeField] private List<GameObject> tutorialPrefabs = new List<GameObject>();
     [SerializeField] private Transform gridParent = null!;
@@ -139,6 +140,10 @@ public class GridVisualizer : MonoBehaviour
             case CellType.StairDown:
                 // 下階段タイル（設定されていなければ床タイルで代用）
                 targetMap.SetTile(pos, stairDownTile != null ? stairDownTile : floorTile);
+                break;
+            case CellType.BrokenStairUp:
+                // 壊れた上階段タイル（設定されていなければ通常の上階段、それもなければ床タイルで代用）
+                targetMap.SetTile(pos, brokenStairUpTile != null ? brokenStairUpTile : (stairUpTile != null ? stairUpTile : floorTile));
                 break;
             default:
                 targetMap.SetTile(pos, null);
@@ -408,6 +413,10 @@ public class GridVisualizer : MonoBehaviour
                     case CellType.StairDown:
                         // 下階段タイル（設定されていなければ床タイルで代用）
                         targetMap.SetTile(pos, stairDownTile != null ? stairDownTile : floorTile);
+                        break;
+                    case CellType.BrokenStairUp:
+                        // 壊れた上階段タイル
+                        targetMap.SetTile(pos, brokenStairUpTile != null ? brokenStairUpTile : (stairUpTile != null ? stairUpTile : floorTile));
                         break;
                     default:
                         targetMap.SetTile(pos, null);

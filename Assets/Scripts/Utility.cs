@@ -11,6 +11,7 @@ public enum EnemyType
     Zombie,
     Boar,
     Crystal,
+    Ghost,
 }
 
 public enum CellType
@@ -24,6 +25,7 @@ public enum CellType
     Tutorial,
     StairUp,    // 上の階へ移動（フロアインデックス-1）
     StairDown,  // 下の階へ移動（フロアインデックス+1）
+    BrokenStairUp, // 通行不能な壊れた上り階段
 }
 
 public enum Direction

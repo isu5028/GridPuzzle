@@ -23,6 +23,8 @@ public class StageEditor : Editor
         Tutorial,   // チュートリアル配置
         StairUp,    // 上階段配置
         StairDown,  // 下階段配置
+        BrokenStairUp, // 壊れた上階段配置
+        Crate,      // Crate配置
         StairLink   // 階段リンク設定（追加）
     }
 
@@ -49,9 +51,11 @@ public class StageEditor : Editor
     private readonly Color tutorialColor = new Color(1f, 0.64f, 0f, 0.5f); // オレンジ半透明
     private readonly Color stairUpColor = new Color(0.3f, 0.5f, 0.9f, 0.7f); // 青（上へ）
     private readonly Color stairDownColor = new Color(0.9f, 0.4f, 0.3f, 0.7f); // 赤（下へ）
+    private readonly Color brokenStairUpColor = new Color(0.5f, 0.6f, 0.7f, 0.7f); // グレー青（壊れた上階段）
     private readonly Color gridLineColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
     private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // マゼンタ半透明
     private readonly Color stairLinkColor = new Color(0.5f, 0.0f, 1.0f, 0.7f); // 紫（リンク）
+    private readonly Color crateColor = new Color(0.55f, 0.40f, 0.20f, 0.8f); // 茶色
 
     private void OnEnable()
     {
@@ -391,6 +395,12 @@ public class StageEditor : Editor
         if (GUILayout.Toggle(currentMode == EditMode.StairDown, "階段↓", "Button"))
             currentMode = EditMode.StairDown;
 
+        if (GUILayout.Toggle(currentMode == EditMode.BrokenStairUp, "壊階段↑", "Button"))
+            currentMode = EditMode.BrokenStairUp;
+
+        if (GUILayout.Toggle(currentMode == EditMode.Crate, "Crate", "Button"))
+            currentMode = EditMode.Crate;
+
         EditorGUILayout.EndHorizontal();
 
         // プレイヤーの初期方向を選択するためのフィールド
@@ -455,6 +465,7 @@ public class StageEditor : Editor
             case EditMode.Tutorial: modeText = "チュートリアルセル(Index)を配置"; break;
             case EditMode.StairUp: modeText = "上階段を配置（上の階へ移動）"; break;
             case EditMode.StairDown: modeText = "下階段を配置（下の階へ移動）"; break;
+            case EditMode.BrokenStairUp: modeText = "壊れた上階段を配置（通行不能）"; break;
             case EditMode.StairLink: modeText = "階段をクリックして接続設定（StairConnections）を追加・選択"; break;
         }
 
@@ -516,6 +527,7 @@ public class StageEditor : Editor
                 else if (cellType == CellType.Tutorial) cellColor = tutorialColor;
                 else if (cellType == CellType.StairUp) cellColor = stairUpColor;
                 else if (cellType == CellType.StairDown) cellColor = stairDownColor;
+                else if (cellType == CellType.BrokenStairUp) cellColor = brokenStairUpColor;
 
                 EditorGUI.DrawRect(cellRect, cellColor);
 
@@ -596,6 +608,29 @@ public class StageEditor : Editor
 
                             // 敵の向きを描画
                             DrawDirectionArrow(cellRect, enemy.Direction, Color.white);
+                        }
+                    }
+                }
+
+                if (stage.CrateStartPositions != null)
+                {
+                    foreach (var pos in stage.CrateStartPositions)
+                    {
+                        if (pos.x == x && pos.y == y)
+                        {
+                            Rect crateRect = new Rect(
+                                cellRect.x + CELL_SIZE * 0.1f,
+                                cellRect.y + CELL_SIZE * 0.1f,
+                                CELL_SIZE * 0.8f,
+                                CELL_SIZE * 0.8f
+                            );
+                            EditorGUI.DrawRect(crateRect, crateColor);
+                            GUI.Label(crateRect, "CR", new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter,
+                                fontStyle = FontStyle.Bold,
+                                normal = { textColor = Color.white }
+                            });
                         }
                     }
                 }
@@ -741,6 +776,10 @@ public class StageEditor : Editor
                 }
                 // 敵がその位置にいる場合は削除
                 stage.RemoveEnemyAt(clickPos);
+                
+                // Crateがその位置にいる場合は削除
+                stage.RemoveCrateAt(clickPos);
+
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();
 
@@ -761,6 +800,17 @@ public class StageEditor : Editor
                 // 下階段セルを配置
                 stage.SetCellTypeAt(x, y, CellType.StairDown);
                 stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.BrokenStairUp:
+                // 壊れた上階段セルを配置
+                stage.SetCellTypeAt(x, y, CellType.BrokenStairUp);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.Crate:
+                // Crateを配置 (既にあれば無視される想定)
+                stage.AddCrate(new Vector2Int(x, y));
                 break;
 
             case EditMode.StairLink:
@@ -832,6 +882,8 @@ public class StageEditor : Editor
         EditorGUILayout.LabelField("階段↑", GUILayout.Width(60));
         DrawColorBox(stairDownColor);
         EditorGUILayout.LabelField("階段↓", GUILayout.Width(60));
+        DrawColorBox(brokenStairUpColor);
+        EditorGUILayout.LabelField("壊階段↑", GUILayout.Width(60));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();

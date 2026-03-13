@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2444d66c4f1bdcc46b77fc30f741dd82, type: 3}
+  m_Name: Stage4_6
+  m_EditorClassIdentifier: 
+  width: 12
+  height: 8
+  mapPosition: {x: 4, y: 6}
+  cellData: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000008000000000000000100000001000000010000000100000001000000010000000100000007000000010000000100000001000000000000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  syncMapOffset: {x: 1, y: 1}
+  playerStartPosition: {x: 10, y: 4}
+  playerStartDirection: 0
+  enemyStartData:
+  - Position: {x: 1, y: 1}
+    Direction: 0
+    EnemyType: 3
+    MaxHP: 2
+    SetActionOrder: 1
+    Ammo: 5
+    DropsCoin: 0
+  - Position: {x: 3, y: 1}
+    Direction: 0
+    EnemyType: 3
+    MaxHP: 2
+    SetActionOrder: 2
+    Ammo: 5
+    DropsCoin: 0
+  - Position: {x: 5, y: 1}
+    Direction: 0
+    EnemyType: 3
+    MaxHP: 2
+    SetActionOrder: 3
+    Ammo: 5
+    DropsCoin: 1
+  crateStartPositions: []
+  tutorialIndexData: []
+  upStage: {fileID: 11400000, guid: e0083c5d7a425894d9fcc35a1285e078, type: 2}
+  downStage: {fileID: 0}
+  rightStage: {fileID: 11400000, guid: d0f516f29f7abf14f9f0aedba7c820c1, type: 2}
+  leftStage: {fileID: 0}
+  defaultUpStage: {fileID: 11400000, guid: 7a11b58d82359ef47a96b0d0a4acdcdd, type: 2}
+  defaultDownStage: {fileID: 11400000, guid: 4596aab47838764429e35fe69039eb81, type: 2}
+  stairConnections:
+  - Position: {x: 9, y: 5}
+    TargetStage: {fileID: 11400000, guid: 8bcf5691c951ec849976a8df1fae5fc9, type: 2}
+    TargetPosition: {x: 0, y: 0}
+  - Position: {x: 0, y: 0}
+    TargetStage: {fileID: 0}
+    TargetPosition: {x: 0, y: 0}
+  PlayerMaxHP: 2
+  PlayerStartOrder: 0
