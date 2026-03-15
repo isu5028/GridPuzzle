@@ -259,7 +259,6 @@ public class StairTraversalSystem : IStairTraversalSystem
         public void Execute()
         {
             PerformTransition(targetStage, targetPos, targetDir);
-            gm.SaveGame(GameProgressManager.SaveType.Auto);
         }
 
         public void Undo() { UndoAsync().Forget(); }
@@ -526,6 +525,7 @@ public class StairTraversalSystem : IStairTraversalSystem
 
         StageSO sourceStage = gm.GetStageOfEnemy(enemy);
         if (sourceStage == null) sourceStage = gm.CurrentStageSOInternal;
+        Vector2Int sourcePos = enemy.CurrentPos;
 
         AudioManager.Instance.PlaySE(AudioManager.SEType.warp);
 
@@ -538,8 +538,14 @@ public class StairTraversalSystem : IStairTraversalSystem
 
         await enemy.FadeOutAsync(0.15f, goingDown);
 
+        if (enemy == null || enemy.IsDead) return;
+        if (gm.CommandManager.IsUndoing || gm.CommandManager.IsRedoing) return;
+
+        StageSO currentStage = gm.GetStageOfEnemy(enemy) ?? gm.CurrentStageSOInternal;
+        if (currentStage != sourceStage || enemy.CurrentPos != sourcePos) return;
+
         var cmd = new EnemyStairTransitionCommand(gm, this, enemy, sourceStage, targetStage, targetPos, direction);
-        gm.CommandManager.ExecuteCommand(cmd);
+        gm.CommandManager.ExecuteCommandWithTurnFallback(cmd);
     }
 
     private class EnemyStairTransitionCommand : ICommand, IAsyncUndoCommand
@@ -620,7 +626,6 @@ public class StairTraversalSystem : IStairTraversalSystem
             gm.AddPendingEnemy(targetStage, targetEnemy);
 
             gm.UnitManager.SortEnemiesByOrder();
-            gm.SaveGame(GameProgressManager.SaveType.Auto);
         }
 
         public void Undo() { UndoAsync().Forget(); }
@@ -824,7 +829,6 @@ public class StairTraversalSystem : IStairTraversalSystem
                 if (!gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage] = new List<Crate>();
                 gm.StageCratesMap[targetStage].Add(targetCrate);
             }
-            gm.SaveGame(GameProgressManager.SaveType.Auto);
         }
 
         public void Undo() { UndoAsync().Forget(); }
@@ -854,6 +858,8 @@ public class StairTraversalSystem : IStairTraversalSystem
         if (crate == null || targetStage == null) return;
 
         var cmd = new CrateBoundaryTransitionCommand(gm, crate, sourceStage, targetStage, targetPos, direction);
+        // 着地先に押し出せないCrateがある場合はコマンドを追加しない（Crateはステージを越えない）
+        if (!cmd.IsValid) return;
         // CompleteTurn()後に呼ばれるため、AppendToLastTurnで直前のターンに追記する
         gm.CommandManager.AppendToLastTurn(cmd);
         await UniTask.Yield();
@@ -870,6 +876,14 @@ public class StairTraversalSystem : IStairTraversalSystem
         private Vector2Int targetPos;
         private Direction targetDir;
 
+        // 着地先の隣接ステージにすでに存在するCrateの連鎖押し出し情報
+        private List<Crate> chainCrates;
+        private List<Vector2Int> chainSourcePositions;
+        private List<Vector2Int> chainTargetPositions;
+
+        /// <summary>着地先にスペースがあり、Crateをステージ越えさせてよい場合 true</summary>
+        public bool IsValid { get; private set; } = true;
+
         public CrateBoundaryTransitionCommand(GridManager gm, Crate crate, StageSO source, StageSO target, Vector2Int tPos, Direction dir)
         {
             this.gm = gm;
@@ -880,17 +894,96 @@ public class StairTraversalSystem : IStairTraversalSystem
             this.targetDir = dir;
             this.sourcePos = crate.CurrentPos;
             this.sourceDir = crate.CurrentDirection;
+
+            BuildChainPush(tPos, dir);
+        }
+
+        /// <summary>
+        /// 着地先 entryPos から進行方向に連続するCrateを収集し、
+        /// まとめて1マスずつ押し出せるか検証する。
+        /// </summary>
+        private void BuildChainPush(Vector2Int entryPos, Direction dir)
+        {
+            chainCrates = new List<Crate>();
+            chainSourcePositions = new List<Vector2Int>();
+            chainTargetPositions = new List<Vector2Int>();
+
+            if (targetStage == null) return;
+
+            gm.EnsureStageCratesLoaded(targetStage);
+
+            Vector2Int dirVec = Utility.GetVectorFromDirection(dir);
+            Vector2Int scanPos = entryPos;
+
+            // 進行方向に並ぶCrateを連続収集
+            while (true)
+            {
+                Crate found = FindCrateInStage(targetStage, scanPos);
+                if (found == null) break;
+                chainCrates.Add(found);
+                chainSourcePositions.Add(scanPos);
+                scanPos += dirVec;
+            }
+
+            if (chainCrates.Count == 0) return;
+
+            // 連鎖の末尾の次のマスが空きであることを確認
+            Vector2Int finalDest = entryPos + dirVec * chainCrates.Count;
+            bool finalOk = IsInBounds(targetStage, finalDest)
+                        && gm.IsWalkableAt(targetStage, finalDest)
+                        && gm.GetEnemyAt(targetStage, finalDest) == null
+                        && FindCrateInStage(targetStage, finalDest) == null;
+
+            if (!finalOk)
+            {
+                // 押し出せない → コマンド自体を無効化して入ってくるCrateは境界を越えない
+                chainCrates.Clear();
+                chainSourcePositions.Clear();
+                IsValid = false;
+                return;
+            }
+
+            // 各Crateの移動先を計算（着地マスから1マスずつずれる）
+            for (int i = 0; i < chainCrates.Count; i++)
+            {
+                chainTargetPositions.Add(entryPos + dirVec * (i + 1));
+            }
+        }
+
+        private Crate FindCrateInStage(StageSO stage, Vector2Int pos)
+        {
+            if (!gm.StageCratesMap.TryGetValue(stage, out var crates)) return null;
+            foreach (var c in crates)
+            {
+                if (c != null && !c.IsDead && c.CurrentPos == pos) return c;
+            }
+            return null;
+        }
+
+        private static bool IsInBounds(StageSO stage, Vector2Int pos)
+        {
+            return pos.x >= 0 && pos.x < stage.Width
+                && pos.y >= 0 && pos.y < stage.Height;
         }
 
         public void Execute()
         {
             if (targetCrate == null) return;
 
-            // 元のステージから登録解除
+            // 1. 着地先にいる連鎖Crateを奥から順に1マス押し出す
+            if (chainCrates != null && chainCrates.Count > 0)
+            {
+                for (int i = chainCrates.Count - 1; i >= 0; i--)
+                {
+                    chainCrates[i].WarpTo(chainTargetPositions[i], targetDir);
+                }
+            }
+
+            // 2. 元のステージから登録解除
             if (gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage].Remove(targetCrate);
             gm.UnitManager.RemoveCrate(targetCrate);
 
-            // 隣接ステージの対応マスへ配置
+            // 3. 隣接ステージの対応マスへ配置
             targetCrate.WarpTo(targetPos, targetDir);
 
             if (!gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage] = new List<Crate>();
@@ -908,8 +1001,6 @@ public class StairTraversalSystem : IStairTraversalSystem
                 targetCrate.gameObject.SetActive(false);
                 targetCrate.transform.SetParent(gm.transform);
             }
-
-            gm.SaveGame(GameProgressManager.SaveType.Auto);
         }
 
         public void Undo() { UndoAsync().Forget(); }
@@ -917,14 +1008,14 @@ public class StairTraversalSystem : IStairTraversalSystem
         {
             if (targetCrate == null) return;
 
-            // 遷移先から解除
+            // 1. 遷移先から入ってきたCrateを解除
             if (gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage].Remove(targetCrate);
             if (targetStage == gm.CurrentStageSOInternal)
             {
                 gm.UnitManager.RemoveCrate(targetCrate);
             }
 
-            // 元の位置に戻す
+            // 2. 元の位置に戻す
             targetCrate.WarpTo(sourcePos, sourceDir);
 
             if (sourceStage == gm.CurrentStageSOInternal)
@@ -941,6 +1032,15 @@ public class StairTraversalSystem : IStairTraversalSystem
 
             if (!gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage] = new List<Crate>();
             gm.StageCratesMap[sourceStage].Add(targetCrate);
+
+            // 3. 連鎖Crateを元の位置に戻す（手前から順に）
+            if (chainCrates != null && chainCrates.Count > 0)
+            {
+                for (int i = 0; i < chainCrates.Count; i++)
+                {
+                    chainCrates[i].WarpTo(chainSourcePositions[i], targetDir);
+                }
+            }
 
             await UniTask.Yield();
         }

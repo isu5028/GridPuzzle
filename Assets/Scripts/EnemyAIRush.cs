@@ -309,6 +309,13 @@ public class EnemyAIRush : EnemyAI
             // 2. If out of bounds, check the adjacent stage
             if (gridManager.IsBoundaryCoordinate(stage, pos))
             {
+                // 未破壊の外壁は視線・攻撃を遮る。
+                // ここで隣接ステージのユニットを返すと、Rush が壁破壊より先に攻撃分岐に入ってしまう。
+                if (!gridManager.IsWalkableAt(stage, pos))
+                {
+                    return null;
+                }
+
                 StageSO nextStage = gridManager.GetAdjacentStageFromBoundary(stage, pos);
                 if (nextStage != null)
                 {

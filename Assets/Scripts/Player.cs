@@ -21,6 +21,9 @@ public class Player : Unit
     private bool isProcessingAction = false;
 
     private bool isInputBlocked = false;
+    private StageSO lastShopPriceShakeStage;
+    private Vector2Int lastShopPriceShakePos;
+    private bool hasLastShopPriceShakePos;
 
     protected override void Start()
     {
@@ -150,6 +153,9 @@ public class Player : Unit
                  // 呼び出している（Share()による同時発火）ので二重実行を防ぐ
                  if (isMoving) return;
 
+                 // Shop Item上ではSPACE入力をショップ操作に割り当てる
+                 if (TryHandleShopInteractionByAttack()) return;
+
                  turnManager.LastPlayerActionDirection = currentDirection;
                  turnManager.LastPlayerAction = PlayerActionType.Attack;
                  turnManager.EnsureTurnStartSnapshot();
@@ -157,6 +163,11 @@ public class Player : Unit
                  TryAttack();
              })
              .AddTo(this);
+
+        // --- Shop Prompt ---
+        Observable.EveryUpdate()
+            .Subscribe(_ => UpdateShopPrompt())
+            .AddTo(this);
     }
 
     private void HandleMoveInput(Vector2 inputValue)
@@ -260,6 +271,83 @@ public class Player : Unit
         OnActionComplete();
     }
 
+    private bool TryHandleShopInteractionByAttack()
+    {
+        if (gridManager == null) return false;
+
+        bool consumed = gridManager.TryInteractCurrentStageShopItem(currentPos, out bool purchasedNow, out bool readMode, out _, out _);
+        if (!consumed) return false;
+
+        if (purchasedNow)
+        {
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlaySE(AudioManager.SEType.buy);
+            }
+        }
+        else if (readMode)
+        {
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlaySE(AudioManager.SEType.tap);
+            }
+        }
+        else
+        {
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlaySE(AudioManager.SEType.cancel);
+            }
+        }
+
+        UpdateShopPrompt();
+
+        if (purchasedNow)
+        {
+            gridManager.TriggerShopPromptShake();
+        }
+
+        return true;
+    }
+
+    private void UpdateShopPrompt()
+    {
+        if (gridManager == null) return;
+
+        StageSO currentStage = gridManager.CurrentStageSO;
+        bool enteredNewCellOrStage = !hasLastShopPriceShakePos
+            || lastShopPriceShakeStage != currentStage
+            || lastShopPriceShakePos != currentPos;
+
+        lastShopPriceShakeStage = currentStage;
+        lastShopPriceShakePos = currentPos;
+        hasLastShopPriceShakePos = true;
+
+        if (isDead ||
+            gridManager.IsTransitioning ||
+            gridManager.IsEventPlaying ||
+            gridManager.IsStairDialogOpen ||
+            (turnManager != null && (turnManager.IsMapOpen || turnManager.IsOptionOpen)))
+        {
+            gridManager.HideShopPrompt();
+            return;
+        }
+
+        if (gridManager.TryGetCurrentShopPromptText(currentPos, out string promptText))
+        {
+            gridManager.ShowShopPromptAt(currentPos, promptText);
+
+            if (enteredNewCellOrStage)
+            {
+                gridManager.TriggerCurrentShopItemPriceShake(currentPos);
+            }
+        }
+        else
+        {
+            gridManager.HideShopPrompt();
+        }
+    }
+
     protected override void OnEnable()
     {
         base.OnEnable();
@@ -269,6 +357,11 @@ public class Player : Unit
     {
         // GameObject破棄時にUniRxのストリーム監視を全て解除し、二重発動を防ぐ
         Debug.Log($"[Player.OnDestroy] Cleaning up InstanceID: {this.GetInstanceID()}");
+
+        if (gridManager != null)
+        {
+            gridManager.HideShopPrompt();
+        }
     }
 
     public void PlayHealEffect()

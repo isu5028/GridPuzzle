@@ -35,6 +35,7 @@ public partial class GridManager : MonoBehaviour
     public Dictionary<StageSO, List<Enemy>> PendingStageEnemies => stageData.PendingStageEnemies;
     // Destroyed Walls: Stage -> Set of positions
     public Dictionary<StageSO, HashSet<Vector2Int>> DestroyedWalls => stageData.DestroyedWalls;
+    public Dictionary<StageSO, HashSet<Vector2Int>> PermanentDestroyedWalls => stageData.PermanentDestroyedWalls;
     public HashSet<StageSO> StageCratesInitialized => stageData.StageCratesInitialized;
 
     [Header("Visualizer")]
@@ -50,6 +51,7 @@ public partial class GridManager : MonoBehaviour
     [SerializeField] private GameObject crystalEnemyPrefab = null!;
     [SerializeField] private GameObject ghostEnemyPrefab = null!;
     [SerializeField] private GameObject bombEnemyPrefab = null!;
+    [SerializeField] private GameObject kingEnemyPrefab = null!;
     [SerializeField] private GameObject crateEnemyPrefab = null!;
     [SerializeField] private GameObject errorEffectPrefab = null!;
     [SerializeField] private GameObject blockedPrefab = null!;
@@ -108,17 +110,53 @@ public partial class GridManager : MonoBehaviour
     internal GameObject CrystalEnemyPrefab => crystalEnemyPrefab;
     internal GameObject GhostEnemyPrefab => ghostEnemyPrefab;
     internal GameObject BombEnemyPrefab => bombEnemyPrefab;
+    internal GameObject KingEnemyPrefab => kingEnemyPrefab;
     internal GameObject CrateEnemyPrefab => crateEnemyPrefab;
     internal GameObject ErrorEffectPrefab => errorEffectPrefab;
     public GameObject BlockedPrefab => blockedPrefab;
 
     private const float TransitionDuration = 0.2f;
     private const int TransitionDelayMs = 250;
+#if UNITY_EDITOR
+    private const KeyCode debugResetPermanentWallsKey = KeyCode.F11;
+#endif
 
     private Vector2Int currentResetMapPos;
 
+    // Stage6-7 固定ギミック（1-based: 左6上3 ～ 左8上6）
+    private static readonly Vector2Int stage67MapPosition = new Vector2Int(6, 7);
+    private const int stage67PatternLeft = 5;   // 0-based
+    private const int stage67PatternTopFromTop = 2; // 「上から3番目」なので0-basedで2
+    private const int stage67PatternWidth = 3;
+    private const int stage67PatternHeight = 4;
+
+    // Stage6-7 パターン達成履歴フラグ（恒久壁データに保存するための番兵座標）
+    // 描画範囲外の座標を使うことで、見た目に影響なくSave/Load/Resetを跨いで履歴を保持する
+    private static readonly Vector2Int stage67PatternACompletedFlagPos = new Vector2Int(-1000, -1000);
+    private static readonly Vector2Int stage67PatternBCompletedFlagPos = new Vector2Int(-1001, -1000);
+
+    // 壁= true, 床= false
+    private static readonly bool[,] stage67PatternA = new bool[stage67PatternHeight, stage67PatternWidth]
+    {
+        { false, false, false },
+        { true,  true,  true  },
+        { true,  true,  false },
+        { true,  false, false }
+    };
+
+    private static readonly bool[,] stage67PatternB = new bool[stage67PatternHeight, stage67PatternWidth]
+    {
+        { true,  true,  true  },
+        { true,  true,  true  },
+        { true,  false, true  },
+        { false, false, false }
+    };
+
     private bool isEventPlaying = false;
     private bool isWaitingForTitleInput = false;
+
+    [SerializeField] private int kingAutoUndoDelayMs = 500;
+    private bool isKingAutoUndoInProgress = false;
     public bool IsEventPlaying => isEventPlaying;
     public bool IsStairDialogOpen => uiManager.IsStairDialogOpen;
 
@@ -134,9 +172,15 @@ public partial class GridManager : MonoBehaviour
         stageEnemySystem = new StageEnemySystem(this);
         stageTransitionSystem = new StageTransitionSystem(this);
         stairTraversalSystem = new StairTraversalSystem(this);
+        shopSystem = new ShopSystem(this);
 
         if (gridVisualizer == null)
             gridVisualizer = GetComponent<GridVisualizer>();
+
+        if (gridVisualizer != null)
+        {
+            gridVisualizer.SetShopItemPurchasedResolver(IsShopItemPurchased);
+        }
 
         gridVisualizer.OnSyncMapActivated += HandleSyncMapActivated;
 
@@ -155,7 +199,15 @@ public partial class GridManager : MonoBehaviour
 
         // UnitManagerのイベント購読
         unitManager.OnUnitStateChanged
-             .Subscribe(_ => OnEnemyStateChanged())
+             .Subscribe(unit =>
+             {
+                 OnEnemyStateChanged();
+                 if (shopSystem != null)
+                 {
+                     shopSystem.OnUnitStateChanged(unit);
+                 }
+                 TryHandleKingAutoUndo(unit).Forget();
+             })
              .AddTo(this);
 
         // debug
@@ -191,6 +243,54 @@ public partial class GridManager : MonoBehaviour
         // isEventPlaying = false;
     }
 
+    private async UniTaskVoid TryHandleKingAutoUndo(Unit changedUnit)
+    {
+        Enemy changedEnemy = changedUnit as Enemy;
+
+        if (isKingAutoUndoInProgress) return;
+        if (isWaitingForTitleInput) return;
+        if (turnManager == null || commandManager == null || unitManager == null) return;
+        if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+        if (changedEnemy == null) return;
+        if (changedEnemy.Type != EnemyType.King) return;
+        if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
+        if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
+        if (!commandManager.CanUndo()) return;
+
+        isKingAutoUndoInProgress = true;
+        bool previousEventPlaying = isEventPlaying;
+        isEventPlaying = true;
+
+        try
+        {
+            int waitMs = Mathf.Max(0, kingAutoUndoDelayMs);
+            if (waitMs > 0)
+            {
+                await UniTask.Delay(waitMs);
+            }
+
+            if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+            if (changedEnemy == null) return;
+            if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
+            if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
+
+            if (shopSystem != null)
+            {
+                shopSystem.SetSuppressNextKingEnterDialogue(true);
+            }
+
+            await turnManager.UndoTurn();
+        }
+        finally
+        {
+            isKingAutoUndoInProgress = false;
+            if (!isWaitingForTitleInput)
+            {
+                isEventPlaying = previousEventPlaying;
+            }
+        }
+    }
+
     private void OnDestroy()
     {
         if (gridVisualizer != null)
@@ -218,12 +318,22 @@ public partial class GridManager : MonoBehaviour
 
         if (isEventPlaying) return;
 
+        if (shopSystem != null)
+        {
+            shopSystem.Tick(Time.deltaTime);
+        }
+
 #if UNITY_EDITOR
         if(Input.GetKeyDown(KeyCode.L))
         {
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Manual);
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Auto);
             Debug.Log("Game progress reset.");
+        }
+
+        if (Input.GetKeyDown(debugResetPermanentWallsKey))
+        {
+            DebugResetPermanentDestroyedWalls();
         }
 
         if(Input.GetKeyDown(KeyCode.F12))
@@ -261,7 +371,7 @@ public partial class GridManager : MonoBehaviour
                 }
             }
         }
-        
+
         if (stageToReset == null)
         {
              if (initialStageSO == null)
@@ -276,7 +386,7 @@ public partial class GridManager : MonoBehaviour
 
         unitManager.ClearAllUnits(); // Destroys Player and current active enemies
         ResetAllEnemies(); // Destroys any remaining enemies and clears saved data to reset positions
-        DestroyedWalls.Clear(); // Return walls to normal on reset
+        ClearDestroyedWallsKeepPermanent(); // 恒久破壊壁は維持してリセット
 
         currentStageSO = stageToReset; // Ensure current is set
         gridVisualizer.ResetGridParentPosition();
@@ -314,6 +424,100 @@ public partial class GridManager : MonoBehaviour
                 enemy.SetHP(enemy.MaxHP);       // その後HP全回復
             }
         }
+
+        SaveGame(GameProgressManager.SaveType.Auto);
+    }
+
+    public void ClearDestroyedWallsKeepPermanent()
+    {
+        DestroyedWalls.Clear();
+        ReapplyPermanentDestroyedWalls();
+    }
+
+    public void ReapplyPermanentDestroyedWalls()
+    {
+        foreach (var kvp in PermanentDestroyedWalls)
+        {
+            StageSO stage = kvp.Key;
+            HashSet<Vector2Int> permanentSet = kvp.Value;
+
+            if (stage == null || permanentSet == null || permanentSet.Count == 0) continue;
+
+            if (!DestroyedWalls.ContainsKey(stage))
+            {
+                DestroyedWalls[stage] = new HashSet<Vector2Int>();
+            }
+
+            foreach (var pos in permanentSet)
+            {
+                DestroyedWalls[stage].Add(pos);
+            }
+        }
+    }
+
+    /// <summary>
+    /// デバッグ用：恒久破壊壁の状態だけをリセットする
+    /// </summary>
+    public void DebugResetPermanentDestroyedWalls()
+    {
+        int removedCount = 0;
+
+        foreach (var kvp in PermanentDestroyedWalls)
+        {
+            StageSO stage = kvp.Key;
+            HashSet<Vector2Int> permanentSet = kvp.Value;
+            if (stage == null || permanentSet == null || permanentSet.Count == 0) continue;
+
+            if (DestroyedWalls.TryGetValue(stage, out var destroyedSet))
+            {
+                foreach (var pos in permanentSet)
+                {
+                    if (destroyedSet.Remove(pos)) removedCount++;
+                }
+
+                if (destroyedSet.Count == 0)
+                {
+                    DestroyedWalls.Remove(stage);
+                }
+            }
+        }
+
+        PermanentDestroyedWalls.Clear();
+
+        // 敵撃破状態もリセット（全ステージ）
+        int playerHPBeforeReload = unitManager.Player != null ? unitManager.Player.HP.Value : 0;
+        StageSO stageBeforeReload = currentStageSO;
+        Vector2Int playerPosBeforeReload = unitManager.Player != null
+            ? unitManager.Player.CurrentPos
+            : (stageBeforeReload != null ? stageBeforeReload.PlayerStartPosition : Vector2Int.zero);
+        Direction playerDirBeforeReload = unitManager.Player != null
+            ? unitManager.Player.CurrentDirection
+            : (stageBeforeReload != null ? stageBeforeReload.PlayerStartDirection : Direction.Down);
+
+        GameProgressManager.Instance.ClearDefeatedEnemies();
+        stageEnemySystem.ResetAllEnemies();
+
+        if (stageBeforeReload != null)
+        {
+            LoadStage(stageBeforeReload, false, playerPosBeforeReload, playerDirBeforeReload, true);
+
+            if (unitManager.Player != null)
+            {
+                unitManager.Player.WarpToNewStage(playerPosBeforeReload, playerDirBeforeReload);
+                unitManager.Player.SetHP(playerHPBeforeReload);
+            }
+        }
+
+        // リセット前のUndo履歴は敵参照が無効化されるためクリア
+        ClearUndoHistory();
+
+        if (currentStageSO != null)
+        {
+            GenerateTilemap(currentStageSO);
+            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsHierarchicalCellCleared, 0f, false, !isTransitioning);
+        }
+
+        Debug.Log($"[Debug] Permanent wall destruction and defeated enemy icon states have been reset. RemovedWallEntries={removedCount}");
     }
 
     /// <summary>
@@ -380,6 +584,29 @@ public partial class GridManager : MonoBehaviour
         return null;
     }
 
+    private bool IsCrystalStage(StageSO stage)
+    {
+        if (stage == null || stage.EnemyStartData == null) return false;
+
+        foreach (var enemyData in stage.EnemyStartData)
+        {
+            if (enemyData.EnemyType == EnemyType.Crystal) return true;
+        }
+
+        return false;
+    }
+
+    private void MarkStageClearedOnEntryIfCrystal(StageSO stage)
+    {
+        if (!IsCrystalStage(stage)) return;
+
+        Vector2Int mapPosition = stage.MapPosition;
+        if (!GameProgressManager.Instance.IsHierarchicalCellCleared(mapPosition))
+        {
+            GameProgressManager.Instance.MarkHierarchicalCellAsCleared(mapPosition);
+        }
+    }
+
     internal void LoadStage(StageSO stage, bool isFirstInit, Vector2Int startPos, Direction? customStartDir = null, bool resetTurnManager = true, bool keepTutorial = false)
     {
         gridVisualizer.ResetGridParentPosition(); // Ensure parent is at zero before loading
@@ -406,6 +633,11 @@ public partial class GridManager : MonoBehaviour
         stageEnemySystem.PrepareEnemiesForStage(stage);
         GenerateCrates(stage);
         GenerateTilemap(stage, keepTutorial);
+        MarkStageClearedOnEntryIfCrystal(stage);
+        if (shopSystem != null)
+        {
+            shopSystem.OnStageLoaded(stage);
+        }
 
         if (resetTurnManager)
         {
@@ -508,7 +740,7 @@ public partial class GridManager : MonoBehaviour
     #endregion
 
     #region Wall Management
-    public void BreakWall(StageSO stage, Vector2Int pos)
+    public void BreakWall(StageSO stage, Vector2Int pos, bool permanent = false)
     {
         if (!DestroyedWalls.ContainsKey(stage))
         {
@@ -518,6 +750,11 @@ public partial class GridManager : MonoBehaviour
         if (!DestroyedWalls[stage].Contains(pos))
         {
             DestroyedWalls[stage].Add(pos);
+
+            if (permanent)
+            {
+                MarkPermanentDestroyedWall(stage, pos);
+            }
 
             // Reflect if current stage
             if (stage == currentStageSO)
@@ -545,30 +782,36 @@ public partial class GridManager : MonoBehaviour
             if (pos.x == -1)
             {
                 // 隣接ステージの境界壁が破壊される = 現在ステージ側も境界エフェクト（PropagateBreakが呼ぶ）
-                PropagateBreak(stage, Direction.Left, pos.y);
+                PropagateBreak(stage, Direction.Left, pos.y, permanent);
             }
 
             // Right Neighbor Interactions: Breaking Right Boundary (Width) -> Breaks Neighbor's Left Boundary (-1)
             if (pos.x == stage.Width)
             {
-                PropagateBreak(stage, Direction.Right, pos.y);
+                PropagateBreak(stage, Direction.Right, pos.y, permanent);
             }
 
             // Down Neighbor Interactions: Breaking Bottom Boundary (-1) -> Breaks Neighbor's Top Boundary (Height)
             if (pos.y == -1)
             {
-                PropagateBreak(stage, Direction.Down, pos.x);
+                PropagateBreak(stage, Direction.Down, pos.x, permanent);
             }
 
             // Up Neighbor Interactions: Breaking Top Boundary (Height) -> Breaks Neighbor's Bottom Boundary (-1)
             if (pos.y == stage.Height)
             {
-                PropagateBreak(stage, Direction.Up, pos.x);
+                PropagateBreak(stage, Direction.Up, pos.x, permanent);
+            }
+
+            // Stage6-7の矩形エリア内が更新されたときのみ形状判定
+            if (IsStage67PatternAreaCell(stage, pos))
+            {
+                EvaluateStage67WallPuzzle(stage);
             }
         }
     }
 
-    private void PropagateBreak(StageSO currentStage, Direction dir, int lateralPos)
+    private void PropagateBreak(StageSO currentStage, Direction dir, int lateralPos, bool permanent = false)
     {
         StageSO neighbor = currentStage.GetAdjacentStage(dir);
         if (neighbor == null)
@@ -583,7 +826,197 @@ public partial class GridManager : MonoBehaviour
         else if (dir == Direction.Down) targetPos = new Vector2Int(lateralPos, neighbor.Height);
 
         // Infinite recursion is prevented by the `Contains` check in BreakWall.
-        BreakWall(neighbor, targetPos);
+        BreakWall(neighbor, targetPos, permanent);
+    }
+
+    private bool IsPermanentDestroyedWall(StageSO stage, Vector2Int pos)
+    {
+        return PermanentDestroyedWalls.ContainsKey(stage) && PermanentDestroyedWalls[stage].Contains(pos);
+    }
+
+    private void MarkPermanentDestroyedWall(StageSO stage, Vector2Int pos)
+    {
+        if (!PermanentDestroyedWalls.ContainsKey(stage))
+        {
+            PermanentDestroyedWalls[stage] = new HashSet<Vector2Int>();
+        }
+
+        PermanentDestroyedWalls[stage].Add(pos);
+    }
+
+    private bool IsStage67PatternAreaCell(StageSO stage, Vector2Int pos)
+    {
+        if (stage == null || stage.MapPosition != stage67MapPosition) return false;
+
+        int topY = stage.Height - 1 - stage67PatternTopFromTop;
+        int bottomY = topY - (stage67PatternHeight - 1);
+
+        return pos.x >= stage67PatternLeft
+            && pos.x < stage67PatternLeft + stage67PatternWidth
+            && pos.y >= bottomY
+            && pos.y <= topY;
+    }
+
+    private void EvaluateStage67WallPuzzle(StageSO stage)
+    {
+        if (stage == null || stage.MapPosition != stage67MapPosition) return;
+
+        bool matchedA = MatchesStage67Pattern(stage, stage67PatternA);
+        bool matchedB = MatchesStage67Pattern(stage, stage67PatternB);
+
+        if (matchedA)
+        {
+            MarkStage67PatternCompleted(stage, true);
+        }
+
+        if (matchedB)
+        {
+            MarkStage67PatternCompleted(stage, false);
+        }
+
+        bool completedA = IsStage67PatternCompleted(stage, true);
+        bool completedB = IsStage67PatternCompleted(stage, false);
+
+        // 1つ目（A/Bどちらでも）を達成したら右端列を解放
+        if (!IsStage67RightmostColumnUnlocked(stage) && (completedA || completedB))
+        {
+            BreakRightmostColumnWallsPermanently(stage);
+        }
+
+        // もう片方も達成したら右側外壁を解放
+        if (!IsStage67RightOuterBoundaryUnlocked(stage) && completedA && completedB)
+        {
+            BreakRightOuterBoundaryPermanently(stage);
+        }
+    }
+
+    private void MarkStage67PatternCompleted(StageSO stage, bool isPatternA)
+    {
+        Vector2Int flagPos = isPatternA ? stage67PatternACompletedFlagPos : stage67PatternBCompletedFlagPos;
+        if (IsPermanentDestroyedWall(stage, flagPos)) return;
+
+        MarkPermanentDestroyedWall(stage, flagPos);
+
+        if (!DestroyedWalls.ContainsKey(stage))
+        {
+            DestroyedWalls[stage] = new HashSet<Vector2Int>();
+        }
+        DestroyedWalls[stage].Add(flagPos);
+    }
+
+    private bool IsStage67PatternCompleted(StageSO stage, bool isPatternA)
+    {
+        Vector2Int flagPos = isPatternA ? stage67PatternACompletedFlagPos : stage67PatternBCompletedFlagPos;
+        return IsPermanentDestroyedWall(stage, flagPos);
+    }
+
+    private bool IsStage67RightmostColumnUnlocked(StageSO stage)
+    {
+        int x = stage.Width - 1;
+        for (int y = 0; y < stage.Height; y++)
+        {
+            Vector2Int pos = new Vector2Int(x, y);
+            if (stage.GetWallAt(x, y) == CellType.Wall && !IsPermanentDestroyedWall(stage, pos))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsStage67RightOuterBoundaryUnlocked(StageSO stage)
+    {
+        int boundaryX = stage.Width;
+        for (int y = 0; y < stage.Height; y++)
+        {
+            if (!IsPermanentDestroyedWall(stage, new Vector2Int(boundaryX, y)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool MatchesStage67Pattern(StageSO stage, bool[,] patternWallMask)
+    {
+        if (stage.Width <= stage67PatternLeft + stage67PatternWidth - 1) return false;
+        if (stage.Height <= stage67PatternTopFromTop + stage67PatternHeight - 1) return false;
+
+        int topY = stage.Height - 1 - stage67PatternTopFromTop;
+
+        for (int row = 0; row < stage67PatternHeight; row++)
+        {
+            for (int col = 0; col < stage67PatternWidth; col++)
+            {
+                // パターン配列は「上から下」の順なので、Yは上段から減らして参照する
+                Vector2Int pos = new Vector2Int(stage67PatternLeft + col, topY - row);
+                bool isWall = GetCellTypeAtLogic(stage, pos) == CellType.Wall;
+                if (isWall != patternWallMask[row, col])
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private void BreakRightmostColumnWallsPermanently(StageSO stage)
+    {
+        int x = stage.Width - 1;
+        bool didBreak = false;
+
+        for (int y = 0; y < stage.Height; y++)
+        {
+            Vector2Int pos = new Vector2Int(x, y);
+            if (GetCellTypeAtLogic(stage, pos) == CellType.Wall)
+            {
+                BreakWall(stage, pos, true);
+                didBreak = true;
+            }
+        }
+
+        if (didBreak)
+        {
+            TriggerStage67SolveFeedback();
+        }
+    }
+
+    private void BreakRightOuterBoundaryPermanently(StageSO stage)
+    {
+        int boundaryX = stage.Width;
+        bool didBreak = false;
+
+        for (int y = 0; y < stage.Height; y++)
+        {
+            Vector2Int pos = new Vector2Int(boundaryX, y);
+            if (GetCellTypeAtLogic(stage, pos) == CellType.Wall)
+            {
+                BreakWall(stage, pos, true);
+                didBreak = true;
+            }
+        }
+
+        if (didBreak)
+        {
+            TriggerStage67SolveFeedback();
+        }
+    }
+
+    private void TriggerStage67SolveFeedback()
+    {
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlaySE(AudioManager.SEType.solve);
+        }
+
+        if (CameraManager.Instance != null)
+        {
+            // パズル解決演出として強めの揺れ
+            CameraManager.Instance.ShakeCamera(0.5f, 12.0f, 30f, new Vector2(1f, 1f));
+        }
     }
 
     private StageSO GetOrCreateAdjacentStage(StageSO currentStage, Direction dir)
@@ -621,6 +1054,11 @@ public partial class GridManager : MonoBehaviour
 
     public void RestoreWall(StageSO stage, Vector2Int pos)
     {
+        if (IsPermanentDestroyedWall(stage, pos))
+        {
+            return;
+        }
+
         if (DestroyedWalls.ContainsKey(stage))
         {
             if (DestroyedWalls[stage].Remove(pos))
@@ -701,7 +1139,6 @@ public partial class GridManager : MonoBehaviour
         if (currentStageSO == null) return;
 
         bool popupShown = false;
-        bool dataSavedThisFrame = false;
 
         GameProgressManager.Instance.SetCurrentMapPosition(currentStageSO.MapPosition);
 
@@ -748,14 +1185,8 @@ public partial class GridManager : MonoBehaviour
                 if (!GameProgressManager.Instance.IsHierarchicalCellCleared(mapPos))
                 {
                     GameProgressManager.Instance.MarkHierarchicalCellAsCleared(mapPos);
-                    dataSavedThisFrame = true;
                 }
             }
-        }
-
-        if (dataSavedThisFrame)
-        {
-            SaveGame(GameProgressManager.SaveType.Auto);
         }
     }
     #endregion
@@ -796,7 +1227,7 @@ public partial class GridManager : MonoBehaviour
     public void EnsureStageCratesLoaded(StageSO stage)
     {
         if (stage == null || StageCratesInitialized.Contains(stage)) return;
-        
+
         // This logic is mostly duplicated from GenerateCrates but without the visual deactivation/reactivation logic
         // which is specific to the current active stage.
         StageCratesInitialized.Add(stage);
@@ -809,7 +1240,7 @@ public partial class GridManager : MonoBehaviour
                 Vector3 worldPos = GridToWorldPosition(pos);
                 GameObject crateObj = Instantiate(crateEnemyPrefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
                 Crate crateScript = crateObj.GetComponent<Crate>();
-                
+
                 // Active/Inactive state based on whether this is the current stage
                 // If we are calling this from EnsureStageCratesLoaded, it's likely a non-current stage,
                 // so we should probably keep them disabled initially.
@@ -845,12 +1276,12 @@ public partial class GridManager : MonoBehaviour
                     crate.transform.SetParent(gridVisualizer.GridParent); // Ensure correct parent
                     crate.SetDissolveAmount(0f); // Reset dissolve first
                     crate.WarpTo(crate.CurrentPos, crate.CurrentDirection); // Ensure correct position is applied
-                    
+
                     if (crate.IsDead)
                     {
                         crate.ApplyDeadStateVisual();
                     }
-                    
+
                     unitManager.AddCrate(crate);
                 }
             }
@@ -923,7 +1354,7 @@ public partial class GridManager : MonoBehaviour
     internal void ResetAllEnemies()
     {
         stageEnemySystem.ResetAllEnemies();
-        
+
         foreach (var list in StageCratesMap.Values)
         {
             foreach (var crate in list)
@@ -940,7 +1371,7 @@ public partial class GridManager : MonoBehaviour
         unitManager.CrateObjects.Clear();
         unitManager.Crates.Clear();
     }
-    
+
     internal void ApplySavedEnemyData(StageSO stage, List<EnemySaveData> savedEnemies) => stageEnemySystem.ApplySavedEnemyData(stage, savedEnemies);
     internal void AddPendingEnemy(StageSO stage, Enemy enemy) => stageEnemySystem.AddPendingEnemy(stage, enemy);
     public int GetMaxEnemyOrderInStage(StageSO stage) => stageEnemySystem.GetMaxEnemyOrderInStage(stage);
@@ -973,6 +1404,140 @@ public partial class GridManager : MonoBehaviour
     // ==========================================
     private IStairTraversalSystem stairTraversalSystem;
     internal IStairTraversalSystem StairTraversalSystem => stairTraversalSystem;
+
+    // ==========================================
+    // Shop System Delegation
+    // ==========================================
+    private IShopSystem shopSystem;
+    internal IShopSystem ShopSystem => shopSystem;
+
+    public bool IsShopStage(StageSO stage) => shopSystem != null && shopSystem.IsShopStage(stage);
+    public bool IsCurrentStageShop() => shopSystem != null && shopSystem.IsShopStage(currentStageSO);
+
+    public bool TryGetShopItemAt(StageSO stage, Vector2Int pos, out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+        return shopSystem != null && shopSystem.TryGetShopItemAt(stage, pos, out itemId, out price);
+    }
+
+    public bool TryGetCurrentStageShopItemAt(Vector2Int pos, out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+        return shopSystem != null && shopSystem.TryGetShopItemAt(currentStageSO, pos, out itemId, out price);
+    }
+
+    public bool IsShopItemPurchased(StageSO stage, Vector2Int pos)
+        => shopSystem != null && shopSystem.IsShopItemPurchased(stage, pos);
+
+    public bool IsCurrentStageShopItemPurchased(Vector2Int pos)
+        => shopSystem != null && shopSystem.IsShopItemPurchased(currentStageSO, pos);
+
+    public bool CanPurchaseCurrentStageShopItem(Vector2Int pos)
+        => shopSystem != null && shopSystem.CanPurchaseShopItem(currentStageSO, pos);
+
+    public bool TryPurchaseCurrentStageShopItem(Vector2Int pos, out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+
+        bool purchased = shopSystem != null && shopSystem.TryPurchaseShopItem(currentStageSO, pos, out itemId, out price);
+        if (purchased && gridVisualizer != null)
+        {
+            gridVisualizer.SetShopItemPurchasedVisual(currentStageSO, pos, true);
+            shopSystem.OnShopItemPurchased(currentStageSO, pos, itemId, price);
+        }
+
+        return purchased;
+    }
+
+    public bool TryPurchaseShopItemAtPlayerPosition(out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+
+        if (unitManager == null || unitManager.Player == null) return false;
+        return TryPurchaseCurrentStageShopItem(unitManager.Player.CurrentPos, out itemId, out price);
+    }
+
+    public void ResetShopPurchases(StageSO stage)
+    {
+        if (shopSystem == null) return;
+        shopSystem.ResetShopPurchases(stage);
+    }
+
+    public void ResetAllShopPurchases()
+    {
+        if (shopSystem == null) return;
+        shopSystem.ResetAllShopPurchases();
+    }
+
+    public bool TryGetCurrentShopPromptText(Vector2Int pos, out string promptText)
+    {
+        promptText = string.Empty;
+
+        if (!TryGetCurrentStageShopItemAt(pos, out _, out _))
+        {
+            return false;
+        }
+
+        bool isEnglish = GameSettings.Language == 0;
+        promptText = IsCurrentStageShopItemPurchased(pos)
+            ? (isEnglish ? "SPACE to Read" : "SPACEで読む")
+            : (isEnglish ? "SPACE to Buy" : "SPACEで買う");
+        return true;
+    }
+
+    public bool TryInteractCurrentStageShopItem(Vector2Int pos, out bool purchasedNow, out bool readMode, out int itemId, out int price)
+    {
+        purchasedNow = false;
+        readMode = false;
+        itemId = -1;
+        price = -1;
+
+        if (!TryGetCurrentStageShopItemAt(pos, out itemId, out price))
+        {
+            return false;
+        }
+
+        if (IsCurrentStageShopItemPurchased(pos))
+        {
+            readMode = true;
+            return true;
+        }
+
+        purchasedNow = TryPurchaseCurrentStageShopItem(pos, out itemId, out price);
+        return true;
+    }
+
+    public void ShowShopPromptAt(Vector2Int pos, string message)
+    {
+        if (gridVisualizer == null) return;
+        gridVisualizer.ShowShopPromptAt(GridToWorldPosition(pos), message);
+    }
+
+    public void HideShopPrompt()
+    {
+        if (gridVisualizer == null) return;
+        gridVisualizer.HideShopPrompt();
+    }
+
+    public void TriggerCurrentShopItemPriceShake(Vector2Int pos)
+    {
+        if (gridVisualizer == null) return;
+        if (currentStageSO == null) return;
+        if (!TryGetCurrentStageShopItemAt(pos, out _, out _)) return;
+        if (IsCurrentStageShopItemPurchased(pos)) return;
+
+        gridVisualizer.PlayShopItemPriceShake(currentStageSO, pos);
+    }
+
+    public void TriggerShopPromptShake()
+    {
+        if (gridVisualizer == null) return;
+        gridVisualizer.PlayShopPromptShake();
+    }
 
     #endregion
 

@@ -333,10 +333,8 @@ public class OptionPresenter : MonoBehaviour
             await UniTask.WaitUntil(() => turnManager.IsPlayerTurn && !turnManager.IsProcessingTurn);
         }
 
-        gridManager.SaveGame(GameProgressManager.SaveType.Manual);
-        AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
-        Debug.Log("Game Saved via Option");
-        // "Saved" ポップアップなどを出すならここ
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+        Debug.Log("Manual save is disabled. Progress is saved only on reset and map warp.");
     }
 
     private async UniTaskVoid HandleLoadAsync()

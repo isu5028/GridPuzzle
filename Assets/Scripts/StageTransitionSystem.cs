@@ -344,56 +344,74 @@ public partial class StageTransitionSystem : IStageTransitionSystem
 
         if (neighbor != null)
         {
-            // プレイヤーの前方にある連続したCrateを全て収集（ステージ内外問わず）
+            gm.EnsureStageCratesLoaded(neighbor);
+
+            Vector2Int dirVec = Utility.GetVectorFromDirection(targetDir);
+
+            List<Crate> sourceStageCrates = new List<Crate>();
+            Vector2Int sourceScanPos = unit.CurrentPos + dirVec;
+            while (TryGetCrateAt(currentStage, sourceScanPos, out Crate sourceCrate))
+            {
+                sourceStageCrates.Add(sourceCrate);
+                sourceScanPos += dirVec;
+            }
+
+            List<Crate> targetStageCrates = new List<Crate>();
+            Vector2Int targetScanPos = targetPos;
+            while (TryGetCrateAt(neighbor, targetScanPos, out Crate targetCrate))
+            {
+                targetStageCrates.Add(targetCrate);
+                targetScanPos += dirVec;
+            }
+
             List<Crate> pushedCrates = null;
             List<Vector2Int> crateSourceLayout = null;
             List<Vector2Int> crateTargetLayout = null;
 
-            Vector2Int dirVec = Utility.GetVectorFromDirection(targetDir);
-            // プレイヤーが押す先から順に走査する
-            Vector2Int scanPos = unit.CurrentPos + dirVec;
-
-            // 次ステージでの最初のCrateの落下先（プレイヤー到着地点の一歩先から）
-            Vector2Int crateEntryBase = targetPos + dirVec;
-
-            int crateIndex = 0;
-            while (true)
+            int totalCratesToPush = sourceStageCrates.Count + targetStageCrates.Count;
+            if (totalCratesToPush > 0)
             {
-                Unit unitAtScan = gm.GetUnitAtPosition(scanPos);
-                if (unitAtScan is Crate c)
+                pushedCrates = new List<Crate>(totalCratesToPush);
+                crateSourceLayout = new List<Vector2Int>(totalCratesToPush);
+                crateTargetLayout = new List<Vector2Int>(totalCratesToPush);
+            }
+
+            HashSet<Vector2Int> vacatedByTargetCrates = new HashSet<Vector2Int>();
+            foreach (var crate in targetStageCrates)
+            {
+                vacatedByTargetCrates.Add(crate.CurrentPos);
+            }
+
+            HashSet<Vector2Int> reservedTargets = new HashSet<Vector2Int>();
+
+            for (int i = 0; i < sourceStageCrates.Count; i++)
+            {
+                Crate crate = sourceStageCrates[i];
+                Vector2Int crateNextPos = targetPos + dirVec * (i + 1);
+
+                if (!CanPushCrateInto(neighbor, crateNextPos, vacatedByTargetCrates, reservedTargets))
                 {
-                    Vector2Int crateNextPos = crateEntryBase + dirVec * crateIndex;
-
-                    // 次のステージで移動先がWalkableかチェック
-                    if (!gm.IsWalkableAt(neighbor, crateNextPos))
-                    {
-                        return false;
-                    }
-                    // 他のユニットが占有していないか確認
-                    Unit occupant = gm.GetUnitAtPosition(crateNextPos);
-                    if (occupant != null && !(occupant is Crate))
-                    {
-                        return false;
-                    }
-
-                    if (pushedCrates == null)
-                    {
-                        pushedCrates = new List<Crate>();
-                        crateSourceLayout = new List<Vector2Int>();
-                        crateTargetLayout = new List<Vector2Int>();
-                    }
-
-                    pushedCrates.Add(c);
-                    crateSourceLayout.Add(c.CurrentPos);
-                    crateTargetLayout.Add(crateNextPos);
-
-                    scanPos += dirVec;
-                    crateIndex++;
+                    return false;
                 }
-                else
+
+                pushedCrates.Add(crate);
+                crateSourceLayout.Add(crate.CurrentPos);
+                crateTargetLayout.Add(crateNextPos);
+            }
+
+            for (int i = 0; i < targetStageCrates.Count; i++)
+            {
+                Crate crate = targetStageCrates[i];
+                Vector2Int crateNextPos = targetPos + dirVec * (sourceStageCrates.Count + i + 1);
+
+                if (!CanPushCrateInto(neighbor, crateNextPos, vacatedByTargetCrates, reservedTargets))
                 {
-                    break;
+                    return false;
                 }
+
+                pushedCrates.Add(crate);
+                crateSourceLayout.Add(crate.CurrentPos);
+                crateTargetLayout.Add(crateNextPos);
             }
 
             WarpWithAnimationAsync(neighbor, targetPos, targetDir, false, warpDir, pushedCrates, crateSourceLayout, crateTargetLayout).Forget();
@@ -401,6 +419,45 @@ public partial class StageTransitionSystem : IStageTransitionSystem
         }
 
         return false;
+    }
+
+    private bool TryGetCrateAt(StageSO stage, Vector2Int pos, out Crate crate)
+    {
+        crate = null;
+        if (stage == null) return false;
+
+        gm.EnsureStageCratesLoaded(stage);
+        if (!gm.StageCratesMap.TryGetValue(stage, out var crates)) return false;
+
+        foreach (var candidate in crates)
+        {
+            if (candidate == null || candidate.IsDead) continue;
+            if (candidate.CurrentPos == pos)
+            {
+                crate = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsPositionInBounds(StageSO stage, Vector2Int pos)
+    {
+        return stage != null
+            && pos.x >= 0 && pos.x < stage.Width
+            && pos.y >= 0 && pos.y < stage.Height;
+    }
+
+    private bool CanPushCrateInto(StageSO stage, Vector2Int pos, HashSet<Vector2Int> vacatedByTargetCrates, HashSet<Vector2Int> reservedTargets)
+    {
+        if (!IsPositionInBounds(stage, pos)) return false;
+        if (!gm.IsWalkableAt(stage, pos)) return false;
+        if (!reservedTargets.Add(pos)) return false;
+        if (gm.GetEnemyAt(stage, pos) != null) return false;
+
+        if (!TryGetCrateAt(stage, pos, out _)) return true;
+        return vacatedByTargetCrates.Contains(pos);
     }
 }
 
@@ -424,6 +481,7 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
     private List<Crate> pushedCrates;
     private List<Vector2Int> crateSourcePositions;
     private List<Vector2Int> crateTargetPositions;
+    private List<StageSO> crateOriginalStages;
 
     public WarpTransitionCommand(GridManager gm, StageSO source, StageSO target,
         Vector2Int sPos, Direction sDir, Vector2Int tPos, Direction tDir, bool restoreHP = false, bool clearWalls = false, List<Crate> pushedCrates = null, List<Vector2Int> crateSourcePositions = null, List<Vector2Int> crateTargetPositions = null)
@@ -440,6 +498,16 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
         this.pushedCrates = pushedCrates;
         this.crateSourcePositions = crateSourcePositions;
         this.crateTargetPositions = crateTargetPositions;
+
+        if (pushedCrates != null && pushedCrates.Count > 0)
+        {
+            crateOriginalStages = new List<StageSO>(pushedCrates.Count);
+            foreach (var crate in pushedCrates)
+            {
+                StageSO stageOfCrate = crate != null ? gm.GetStageOfCrate(crate) : null;
+                crateOriginalStages.Add(stageOfCrate ?? sourceStage);
+            }
+        }
 
         // HP回復する場合は現在のHPを記録
         if (restoreHP && gm.UnitManager.Player != null)
@@ -461,15 +529,25 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
         // マップワープ時のみ壁の破壊状態をリセット（境界遷移や階段移動では維持）
         if (clearWalls)
         {
-            gm.DestroyedWalls.Clear();
+            gm.ClearDestroyedWallsKeepPermanent();
         }
 
-        if (pushedCrates != null && pushedCrates.Count > 0)
+        if (pushedCrates != null && crateTargetPositions != null && pushedCrates.Count > 0)
         {
-            for (int i = 0; i < pushedCrates.Count; i++)
+            for (int i = 0; i < pushedCrates.Count && i < crateTargetPositions.Count; i++)
             {
                 Crate crate = pushedCrates[i];
-                if (gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage].Remove(crate);
+                if (crate == null) continue;
+
+                StageSO originalStage = (crateOriginalStages != null && i < crateOriginalStages.Count)
+                    ? crateOriginalStages[i]
+                    : sourceStage;
+
+                if (originalStage != null && gm.StageCratesMap.ContainsKey(originalStage))
+                {
+                    gm.StageCratesMap[originalStage].Remove(crate);
+                }
+
                 if (!gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage] = new System.Collections.Generic.List<Crate>();
                 if (!gm.StageCratesMap[targetStage].Contains(crate)) gm.StageCratesMap[targetStage].Add(crate);
 
@@ -484,7 +562,10 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
             gm.RestorePlayerHP();
         }
 
-        gm.SaveGame(GameProgressManager.SaveType.Auto);
+        if (clearWalls)
+        {
+            gm.SaveGame(GameProgressManager.SaveType.Auto);
+        }
     }
 
     public void Undo() { UndoAsync().Forget(); }
@@ -497,15 +578,31 @@ public class WarpTransitionCommand : ICommand, IAsyncUndoCommand
         {
             gm.DestroyedWalls[kvp.Key] = new HashSet<Vector2Int>(kvp.Value);
         }
+        gm.ReapplyPermanentDestroyedWalls();
 
-        if (pushedCrates != null && pushedCrates.Count > 0)
+        if (pushedCrates != null && crateSourcePositions != null && pushedCrates.Count > 0)
         {
-            for (int i = 0; i < pushedCrates.Count; i++)
+            for (int i = 0; i < pushedCrates.Count && i < crateSourcePositions.Count; i++)
             {
                 Crate crate = pushedCrates[i];
+                if (crate == null) continue;
+
                 if (gm.StageCratesMap.ContainsKey(targetStage)) gm.StageCratesMap[targetStage].Remove(crate);
-                if (!gm.StageCratesMap.ContainsKey(sourceStage)) gm.StageCratesMap[sourceStage] = new System.Collections.Generic.List<Crate>();
-                if (!gm.StageCratesMap[sourceStage].Contains(crate)) gm.StageCratesMap[sourceStage].Add(crate);
+
+                StageSO originalStage = (crateOriginalStages != null && i < crateOriginalStages.Count)
+                    ? crateOriginalStages[i]
+                    : sourceStage;
+
+                if (originalStage == null)
+                {
+                    originalStage = sourceStage;
+                }
+
+                if (originalStage != null)
+                {
+                    if (!gm.StageCratesMap.ContainsKey(originalStage)) gm.StageCratesMap[originalStage] = new System.Collections.Generic.List<Crate>();
+                    if (!gm.StageCratesMap[originalStage].Contains(crate)) gm.StageCratesMap[originalStage].Add(crate);
+                }
 
                 crate.WarpTo(crateSourcePositions[i], crate.CurrentDirection);
             }

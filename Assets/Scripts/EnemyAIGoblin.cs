@@ -19,7 +19,7 @@ public class EnemyAIGoblin : EnemyAI
         for (int i = 0; i < 2; i++)
         {
             if (enemy.IsDead) break;
-            
+
             UpdateTargetQueue(enemy); // アクション間にターゲットが死んだ場合などを考慮して更新
 
             Vector2Int currentPos = enemy.CurrentPos;
@@ -58,7 +58,12 @@ public class EnemyAIGoblin : EnemyAI
 
                     MoveCommand moveCommand = new MoveCommand(enemy, currentPos, nextPos, currentDirection, moveDirection);
                     commandManager.ExecuteCommand(moveCommand);
-                    if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+                    // 移動アニメーションが完了するまで必ず待つ。
+                    // 高速モードでも待機しないと、移動アニメーションのOnCompleteが
+                    // isMovingをfalseにした時点でWaitUntil(!IsMoving && !IsAnimating)が
+                    // 攻撃アニメーション途中に満足してしまい、攻撃コールバック（ダメージ処理）より
+                    // 先にプレイヤーのターンが返ってしまうバグが発生する。
+                    await UniTask.WaitUntil(() => !enemy.IsMoving);
 
                     // 階段遷移チェック
                     var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, moveDirection);
@@ -154,7 +159,7 @@ public class EnemyAIGoblin : EnemyAI
             {
                 Vector2Int pos = initialPos + new Vector2Int(x, y);
                 Unit unit = gridManager.GetUnitAtPosition(pos);
-                
+
                 // Crate以外のユニット（Playerや他のEnemyなど）をターゲットとして認識
                 if (unit != null && !unit.IsDead && !(unit is Crate) && unit != enemy)
                 {

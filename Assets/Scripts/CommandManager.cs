@@ -15,6 +15,7 @@ public class CommandManager : MonoBehaviour
     private List<TurnRecord> redoRecords = new List<TurnRecord>();
     private List<ICommand> currentTurnCommands = new List<ICommand>();
     private TurnRecord pendingRecord = null;
+    public bool HasPendingTurnRecord => pendingRecord != null;
     private bool isUndoing = false;
     public bool IsUndoing => isUndoing;
     private bool isRedoing = false;
@@ -52,6 +53,27 @@ public class CommandManager : MonoBehaviour
             // フォールバック：記録可能なターンがなければ通常の currentTurnCommands に追加
             currentTurnCommands.Add(command);
         }
+    }
+
+    // 非同期で遅延実行されたコマンド用。
+    // ターンが開いている間は現在ターンへ、閉じている場合は直前ターンへ追記する。
+    public void ExecuteCommandWithTurnFallback(ICommand command)
+    {
+        command.Execute();
+
+        if (pendingRecord != null)
+        {
+            currentTurnCommands.Add(command);
+            return;
+        }
+
+        if (turnRecords.Count > 0)
+        {
+            turnRecords[turnRecords.Count - 1].commands.Add(command);
+            return;
+        }
+
+        currentTurnCommands.Add(command);
     }
 
     public void CaptureTurnStart(Player player, List<Enemy> enemies)

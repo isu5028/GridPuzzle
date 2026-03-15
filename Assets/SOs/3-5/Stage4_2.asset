@@ -20,18 +20,19 @@ MonoBehaviour:
   playerStartPosition: {x: 2, y: 2}
   playerStartDirection: 0
   enemyStartData:
-  - Position: {x: 10, y: 6}
+  - Position: {x: 6, y: 6}
     Direction: 2
     EnemyType: 3
-    MaxHP: 5
+    MaxHP: 3
     SetActionOrder: 1
-    Ammo: 5
+    Ammo: 8
     DropsCoin: 1
   crateStartPositions:
-  - {x: 9, y: 2}
-  - {x: 2, y: 3}
-  - {x: 3, y: 4}
   - {x: 1, y: 1}
+  - {x: 4, y: 2}
+  - {x: 6, y: 0}
+  - {x: 3, y: 3}
+  - {x: 7, y: 4}
   tutorialIndexData: []
   upStage: {fileID: 11400000, guid: 5c0f27a6564a70f4896ac9b1806679f9, type: 2}
   downStage: {fileID: 11400000, guid: ba7bdbd9021391b42940706234ba5797, type: 2}

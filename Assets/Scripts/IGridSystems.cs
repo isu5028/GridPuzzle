@@ -45,3 +45,20 @@ public interface IStairTraversalSystem
     UniTask MoveCrateThroughBoundary(Crate crate, StageSO sourceStage, StageSO targetStage, Vector2Int targetPos, Direction direction);
     bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos);
 }
+
+public interface IShopSystem
+{
+    bool IsShopStage(StageSO stage);
+    bool TryGetShopItemAt(StageSO stage, Vector2Int pos, out int itemId, out int price);
+    bool IsShopItemPurchased(StageSO stage, Vector2Int pos);
+    bool CanPurchaseShopItem(StageSO stage, Vector2Int pos);
+    bool TryPurchaseShopItem(StageSO stage, Vector2Int pos, out int itemId, out int price);
+    void MarkShopItemPurchased(StageSO stage, Vector2Int pos);
+    void ResetShopPurchases(StageSO stage);
+    void ResetAllShopPurchases();
+    void Tick(float deltaTime);
+    void OnStageLoaded(StageSO stage);
+    void OnUnitStateChanged(Unit unit);
+    void OnShopItemPurchased(StageSO stage, Vector2Int pos, int itemId, int price);
+    void SetSuppressNextKingEnterDialogue(bool suppress);
+}

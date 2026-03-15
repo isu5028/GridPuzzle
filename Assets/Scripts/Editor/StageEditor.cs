@@ -25,6 +25,7 @@ public class StageEditor : Editor
         StairDown,  // 下階段配置
         BrokenStairUp, // 壊れた上階段配置
         Crate,      // Crate配置
+        ShopItem,   // Shop Item配置
         StairLink   // 階段リンク設定（追加）
     }
 
@@ -36,6 +37,7 @@ public class StageEditor : Editor
     private int currentAmmo = 3; // Default ammo for Skeleton
     private bool currentDropsCoin = false;
     private int currentTutorialIndex = 1;
+    private int currentShopItemId = 0;
 
     // グリッド描画設定
     private const float CELL_SIZE = 30f;
@@ -56,6 +58,7 @@ public class StageEditor : Editor
     private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // マゼンタ半透明
     private readonly Color stairLinkColor = new Color(0.5f, 0.0f, 1.0f, 0.7f); // 紫（リンク）
     private readonly Color crateColor = new Color(0.55f, 0.40f, 0.20f, 0.8f); // 茶色
+    private readonly Color shopItemColor = new Color(0.95f, 0.75f, 0.10f, 0.85f); // 黄
 
     private void OnEnable()
     {
@@ -402,6 +405,9 @@ public class StageEditor : Editor
         if (GUILayout.Toggle(currentMode == EditMode.Crate, "Crate", "Button"))
             currentMode = EditMode.Crate;
 
+        if (GUILayout.Toggle(currentMode == EditMode.ShopItem, "Item", "Button"))
+            currentMode = EditMode.ShopItem;
+
         EditorGUILayout.EndHorizontal();
 
         // プレイヤーの初期方向を選択するためのフィールド
@@ -454,6 +460,22 @@ public class StageEditor : Editor
             EditorGUILayout.EndHorizontal();
         }
 
+        if (currentMode == EditMode.ShopItem)
+        {
+            string[] itemOptions =
+            {
+                "0 (20コイン)",
+                "1 (20コイン)",
+                "2 (26コイン)",
+                "3 (26コイン)",
+                "4 (32コイン)",
+            };
+            int[] itemValues = { 0, 1, 2, 3, 4 };
+
+            currentShopItemId = EditorGUILayout.IntPopup("Item番号:", currentShopItemId, itemOptions, itemValues);
+            currentShopItemId = StageSO.NormalizeShopItemId(currentShopItemId);
+        }
+
         // 現在の編集モードを表示
         string modeText = "";
         switch (currentMode)
@@ -468,6 +490,10 @@ public class StageEditor : Editor
             case EditMode.StairUp: modeText = "上階段を配置（上の階へ移動）"; break;
             case EditMode.StairDown: modeText = "下階段を配置（下の階へ移動）"; break;
             case EditMode.BrokenStairUp: modeText = "壊れた上階段を配置（通行不能）"; break;
+            case EditMode.Crate: modeText = "Crateを配置"; break;
+            case EditMode.ShopItem:
+                modeText = $"ショップItemマスを配置（ID:{currentShopItemId} / {StageSO.GetShopItemPriceById(currentShopItemId)}コイン）";
+                break;
             case EditMode.StairLink: modeText = "階段をクリックして接続設定（StairConnections）を追加・選択"; break;
         }
 
@@ -637,6 +663,52 @@ public class StageEditor : Editor
                     }
                 }
 
+                if (stage.ShopItemPositions != null)
+                {
+                    foreach (var pos in stage.ShopItemPositions)
+                    {
+                        if (pos.x == x && pos.y == y)
+                        {
+                            int itemId = stage.GetShopItemIdAt(pos);
+                            int price = stage.GetShopItemPriceAt(pos);
+
+                            Rect itemRect = new Rect(
+                                cellRect.x + CELL_SIZE * 0.15f,
+                                cellRect.y + CELL_SIZE * 0.15f,
+                                CELL_SIZE * 0.7f,
+                                CELL_SIZE * 0.7f
+                            );
+                            EditorGUI.DrawRect(itemRect, shopItemColor);
+
+                            GUIStyle idStyle = new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter,
+                                fontStyle = FontStyle.Bold,
+                                normal = { textColor = Color.black }
+                            };
+                            GUI.Label(itemRect, $"I{itemId}", idStyle);
+
+                            Rect priceRect = new Rect(
+                                cellRect.x + CELL_SIZE * 0.05f,
+                                cellRect.y + CELL_SIZE * 0.70f,
+                                CELL_SIZE * 0.9f,
+                                CELL_SIZE * 0.25f
+                            );
+                            GUIStyle priceStyle = new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter,
+                                fontStyle = FontStyle.Bold,
+                                fontSize = 9,
+                                normal = { textColor = Color.black }
+                            };
+                            if (price >= 0)
+                            {
+                                GUI.Label(priceRect, $"{price}", priceStyle);
+                            }
+                        }
+                    }
+                }
+
                 // Tutorial Index Drawing
                 if (cellType == CellType.Tutorial)
                 {
@@ -778,9 +850,12 @@ public class StageEditor : Editor
                 }
                 // 敵がその位置にいる場合は削除
                 stage.RemoveEnemyAt(clickPos);
-                
+
                 // Crateがその位置にいる場合は削除
                 stage.RemoveCrateAt(clickPos);
+
+                // Shop Itemがその位置にある場合は削除
+                stage.RemoveShopItemSlotAt(clickPos);
 
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();
@@ -813,6 +888,19 @@ public class StageEditor : Editor
             case EditMode.Crate:
                 // Crateを配置 (既にあれば無視される想定)
                 stage.AddCrate(new Vector2Int(x, y));
+                break;
+
+            case EditMode.ShopItem:
+                Vector2Int itemPos = new Vector2Int(x, y);
+                int existingItemId = stage.GetShopItemIdAt(itemPos);
+                if (existingItemId == currentShopItemId)
+                {
+                    stage.RemoveShopItemSlotAt(itemPos);
+                }
+                else
+                {
+                    stage.AddShopItemSlot(itemPos, currentShopItemId);
+                }
                 break;
 
             case EditMode.StairLink:
@@ -893,6 +981,10 @@ public class StageEditor : Editor
         EditorGUILayout.LabelField("プレイヤー (P)", GUILayout.Width(100));
         DrawColorBox(enemyColor);
         EditorGUILayout.LabelField("敵 (E)", GUILayout.Width(100));
+        DrawColorBox(crateColor);
+        EditorGUILayout.LabelField("Crate", GUILayout.Width(60));
+        DrawColorBox(shopItemColor);
+        EditorGUILayout.LabelField("Item", GUILayout.Width(60));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.EndVertical();

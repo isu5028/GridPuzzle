@@ -61,7 +61,63 @@ public class StageEnemySystem : IStageEnemySystem
             case EnemyType.Crystal: return gm.CrystalEnemyPrefab;
             case EnemyType.Ghost: return gm.GhostEnemyPrefab;
             case EnemyType.Bomb: return gm.BombEnemyPrefab;
+            case EnemyType.King: return gm.KingEnemyPrefab;
             default: return null!;
+        }
+    }
+
+    private bool IsCrystalStage(StageSO stage)
+    {
+        if (stage == null || stage.EnemyStartData == null) return false;
+
+        foreach (var enemyData in stage.EnemyStartData)
+        {
+            if (enemyData.EnemyType == EnemyType.Crystal) return true;
+        }
+
+        return false;
+    }
+
+    private bool ShouldSpawnInStage(StageSO stage, EnemyType enemyType)
+    {
+        if (!IsCrystalStage(stage)) return true;
+        return enemyType == EnemyType.Crystal;
+    }
+
+    private EnemyType ResolveEnemyTypeForSaveData(StageSO stage, EnemySaveData data)
+    {
+        if (data.enemyType != 0)
+        {
+            return (EnemyType)data.enemyType;
+        }
+
+        if (data.index >= 0 && data.index < stage.EnemyStartData.Count)
+        {
+            return stage.EnemyStartData[data.index].EnemyType;
+        }
+
+        return EnemyType.None;
+    }
+
+    private void EnforceCrystalOnlyStageEnemies(StageSO stage, List<Enemy> enemies)
+    {
+        if (!IsCrystalStage(stage) || enemies == null) return;
+
+        for (int i = enemies.Count - 1; i >= 0; i--)
+        {
+            Enemy enemy = enemies[i];
+            if (enemy == null)
+            {
+                enemies.RemoveAt(i);
+                continue;
+            }
+
+            if (enemy.Type != EnemyType.Crystal)
+            {
+                enemy.gameObject.SetActive(false);
+                Object.Destroy(enemy.gameObject);
+                enemies.RemoveAt(i);
+            }
         }
     }
 
@@ -163,12 +219,18 @@ public class StageEnemySystem : IStageEnemySystem
 
         foreach (var data in saveDataList)
         {
+            EnemyType enemyTypeToUse = ResolveEnemyTypeForSaveData(stage, data);
+            if (!ShouldSpawnInStage(stage, enemyTypeToUse))
+            {
+                continue;
+            }
+
             Enemy recycled = null;
             if (pendingEnemies != null)
             {
                 foreach(var p in pendingEnemies)
                 {
-                    if (p.CurrentPos.x == data.gridX && p.CurrentPos.y == data.gridY && (int)p.Type == data.enemyType)
+                    if (p.CurrentPos.x == data.gridX && p.CurrentPos.y == data.gridY && p.Type == enemyTypeToUse)
                     {
                         recycled = p;
                         break;
@@ -183,7 +245,14 @@ public class StageEnemySystem : IStageEnemySystem
 
                 recycled.SetHP(data.currentHP);
                 recycled.SetAIState(data.aiState);
-                if(data.isDead) recycled.ForceKillSilent();
+                if (enemyTypeToUse == EnemyType.Crystal)
+                {
+                    recycled.ReviveSilent();
+                }
+                else if(data.isDead)
+                {
+                    recycled.ForceKillSilent();
+                }
                 else recycled.ReviveSilent();
 
                 recycled.transform.SetParent(gm.Visualizer.GridParent);
@@ -192,16 +261,7 @@ public class StageEnemySystem : IStageEnemySystem
 
             Vector3 worldPos = gm.GridToWorldPosition(new Vector2Int(data.gridX, data.gridY));
 
-            GameObject prefab = null;
-            if (data.enemyType != 0)
-            {
-                 prefab = getEnemyPrefab((EnemyType)data.enemyType);
-            }
-            else
-            {
-                 if(data.index >= 0 && data.index < stage.EnemyStartData.Count)
-                    prefab = getEnemyPrefab(stage.EnemyStartData[data.index].EnemyType);
-            }
+            GameObject prefab = enemyTypeToUse != EnemyType.None ? getEnemyPrefab(enemyTypeToUse) : null;
 
             if (prefab != null)
             {
@@ -227,9 +287,16 @@ public class StageEnemySystem : IStageEnemySystem
                 newEnemy.EnemyID = string.IsNullOrEmpty(data.enemyID) ? $"{stage.name}_{data.index}" : data.enemyID;
                 newEnemy.SetHP(data.currentHP);
                 newEnemy.SetAIState(data.aiState);
-                if(data.isDead) newEnemy.ForceKillSilent();
+                if (enemyTypeToUse == EnemyType.Crystal)
+                {
+                    newEnemy.ReviveSilent();
+                }
+                else if(data.isDead)
+                {
+                    newEnemy.ForceKillSilent();
+                }
 
-                newEnemy.name = $"Enemy_{(EnemyType)data.enemyType}_{data.index}_Loaded";
+                newEnemy.name = $"Enemy_{enemyTypeToUse}_{data.index}_Loaded";
                 newEnemy.SetDirection((Direction)data.direction);
 
                 generatedEnemies.Add(newEnemy);
@@ -253,6 +320,7 @@ public class StageEnemySystem : IStageEnemySystem
         EnsureStageEnemiesLoaded(stage);
 
         List<Enemy> enemies = gm.StageEnemiesMap[stage];
+        EnforceCrystalOnlyStageEnemies(stage, enemies);
         gm.UnitManager.SetEnemies(enemies);
 
         foreach (var enemy in enemies)
@@ -261,6 +329,11 @@ public class StageEnemySystem : IStageEnemySystem
             enemy.WarpTo(enemy.CurrentPos, enemy.CurrentDirection);
             enemy.SetDissolveAmount(0f);
             enemy.UpdateDefeatedIcon();
+
+            if (enemy.Type == EnemyType.Crystal && enemy.IsDead)
+            {
+                enemy.ReviveSilent();
+            }
 
             if (enemy.IsDead)
             {
@@ -298,6 +371,11 @@ public class StageEnemySystem : IStageEnemySystem
 
         foreach (var enemyData in enemyDataList)
         {
+            if (!ShouldSpawnInStage(stage, enemyData.EnemyType))
+            {
+                continue;
+            }
+
             Vector3 worldPos = gm.GridToWorldPosition(enemyData.Position);
             GameObject prefab = getEnemyPrefab(enemyData.EnemyType);
 

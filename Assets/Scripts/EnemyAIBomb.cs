@@ -85,6 +85,14 @@ public class EnemyAIBomb : EnemyAI
 
         if (isExploded || enemy.IsDead) return;
 
+        // 高速モードで直前の被弾ノックバックと自ターン爆発が重なると、
+        // 見た目と実ダメージの不整合が起きるため、移動/演出中は完了待ちする。
+        if (enemy.IsBusy)
+        {
+            await UniTask.WaitUntil(() => !enemy.IsBusy || enemy.IsDead || isExploded);
+            if (isExploded || enemy.IsDead) return;
+        }
+
         if (isCountdownStarted)
         {
             if (enemy.CurrentAmmo.Value > 0)
@@ -126,6 +134,8 @@ public class EnemyAIBomb : EnemyAI
 
     private async UniTask Knockback(Enemy enemy, Vector2Int attackerPos)
     {
+        if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+
         Vector2Int currentPos = enemy.CurrentPos;
         Vector2Int diff = currentPos - attackerPos;
 
@@ -135,25 +145,130 @@ public class EnemyAIBomb : EnemyAI
             diff.y == 0 ? 0 : (diff.y > 0 ? 1 : -1)
         );
 
+        if (dirVec == Vector2Int.zero) return;
+
+        Direction knockbackDir = Utility.GetDirectionFromVector(dirVec);
+
         Vector2Int targetPos = currentPos + dirVec;
         StageSO stage = gridManager.GetStageOfEnemy(enemy);
 
-        // 移動可能かチェック（地形が歩ける 且つ ユニットがいない 且つ 階段ではない(複雑化を避けるため)）
+        // 移動可能かチェック（地形が歩ける 且つ ユニットがいない）
+        Unit targetOccupant = gridManager.GetUnitAtPosition(targetPos);
         bool isWalkable = gridManager.IsWalkableAt(stage, targetPos);
-        bool isOccupied = gridManager.GetUnitAtPosition(targetPos) != null;
-        CellType cell = gridManager.GetCellTypeAt(stage, targetPos);
-        bool isStair = (cell == CellType.StairUp || cell == CellType.StairDown);
+        bool isOccupied = targetOccupant != null;
 
-        if (isWalkable && !isOccupied && !isStair)
+        // ノックバック先が押し出し対象（Crate/Bomb）なら、連鎖押し出しを試みる
+        if (IsPushableByBombKnockback(targetOccupant))
+        {
+            List<Unit> unitsToPush = new List<Unit>();
+            Vector2Int checkPos = targetPos;
+            while (true)
+            {
+                Unit nextUnit = gridManager.GetUnitAtPosition(checkPos);
+                if (!IsPushableByBombKnockback(nextUnit)) break;
+
+                unitsToPush.Add(nextUnit);
+                checkPos += dirVec;
+            }
+
+            bool canPush = false;
+            if (gridManager.IsCellWalkable(checkPos))
+            {
+                canPush = true;
+            }
+            else if (!gridManager.IsPositionInBounds(checkPos))
+            {
+                // OOBへの押し出しは、境界壁が壊れており、遷移先も受け入れ可能な場合のみ
+                bool isCardinal = (dirVec.x == 0) ^ (dirVec.y == 0);
+                if (isCardinal && gridManager.IsWalkableAt(stage, checkPos))
+                {
+                    StageSO neighbor = gridManager.GetAdjacentStageFromBoundary(stage, checkPos);
+                    if (neighbor != null)
+                    {
+                        Vector2Int neighborEntry = GridCalculation.CalculateEntryPosition(neighbor, knockbackDir, checkPos);
+                        if (gridManager.IsWalkableAt(neighbor, neighborEntry) && gridManager.GetUnitAtPosition(neighborEntry) == null)
+                        {
+                            canPush = true;
+                        }
+                    }
+                }
+            }
+
+            if (canPush)
+            {
+                for (int i = unitsToPush.Count - 1; i >= 0; i--)
+                {
+                    Unit pushUnit = unitsToPush[i];
+                    Vector2Int unitCurrentPos = targetPos + dirVec * i;
+                    Vector2Int unitTargetPos = unitCurrentPos + dirVec;
+
+                    Direction pushToDirection = pushUnit is Crate ? knockbackDir : pushUnit.CurrentDirection;
+                    MoveCommand pushCommand = new MoveCommand(pushUnit, unitCurrentPos, unitTargetPos, pushUnit.CurrentDirection, pushToDirection, false);
+                    ExecuteKnockbackCommand(pushCommand);
+                }
+
+                MoveCommand moveCommand = new MoveCommand(enemy, currentPos, targetPos, enemy.CurrentDirection, enemy.CurrentDirection, false);
+                ExecuteKnockbackCommand(moveCommand);
+                await UniTask.WaitUntil(() => !enemy.IsMoving);
+
+                bool transitioned = await TryTransitionAfterKnockback(enemy, knockbackDir, targetPos);
+                if (!transitioned)
+                {
+                    UpdateVisuals();
+                }
+                return;
+            }
+        }
+
+        if (isWalkable && !isOccupied)
         {
             // MoveCommandを使用してUndoに対応させる
             MoveCommand moveCommand = new MoveCommand(enemy, currentPos, targetPos, enemy.CurrentDirection, enemy.CurrentDirection, false);
-            commandManager.ExecuteCommand(moveCommand);
+            ExecuteKnockbackCommand(moveCommand);
             await UniTask.WaitUntil(() => !enemy.IsMoving);
 
-            // 移動後に念のためアニメーションを維持（SetDirectionによって上書きされるのを防ぐ）
-            UpdateVisuals();
+            bool transitioned = await TryTransitionAfterKnockback(enemy, knockbackDir, targetPos);
+            if (!transitioned)
+            {
+                // 移動後に念のためアニメーションを維持（SetDirectionによって上書きされるのを防ぐ）
+                UpdateVisuals();
+            }
         }
+    }
+
+    private void ExecuteKnockbackCommand(ICommand command)
+    {
+        if (command == null) return;
+        if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+
+        commandManager.ExecuteCommandWithTurnFallback(command);
+    }
+
+    private async UniTask<bool> TryTransitionAfterKnockback(Enemy enemy, Direction moveDirection, Vector2Int expectedPos)
+    {
+        if (enemy == null || enemy.IsDead) return false;
+        if (commandManager.IsUndoing || commandManager.IsRedoing) return false;
+        if (enemy.CurrentPos != expectedPos) return false;
+
+        var transition = gridManager.GetEnemyStairDestination(enemy, expectedPos, moveDirection);
+        if (transition == null) return false;
+
+        if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+
+        if (enemy == null || enemy.IsDead) return false;
+        if (commandManager.IsUndoing || commandManager.IsRedoing) return false;
+        if (enemy.CurrentPos != expectedPos) return false;
+
+        await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, moveDirection);
+        return true;
+    }
+
+    private bool IsPushableByBombKnockback(Unit unit)
+    {
+        if (unit == null) return false;
+        if (unit is Crate) return true;
+        if (unit is Enemy enemy) return enemy.Type == EnemyType.Bomb;
+        return false;
     }
 
     private async UniTask Explode(Enemy enemy)
@@ -222,7 +337,7 @@ public class EnemyAIBomb : EnemyAI
         // 1. ユニット・Crateへのダメージ（爆発演出としてAttackCommandを実行）
         if (targetPositions.Count > 0)
         {
-            commandManager.ExecuteCommand(new AttackCommand(enemy, targetPositions.ToArray(), gridManager, true));
+            commandManager.ExecuteCommand(new AttackCommand(enemy, targetPositions.ToArray(), gridManager, true, true));
         }
 
         // 2. 壁の破壊を実行

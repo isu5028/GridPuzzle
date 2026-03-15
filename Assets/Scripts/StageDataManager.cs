@@ -30,12 +30,17 @@ public class StageDataManager
     private Dictionary<StageSO, HashSet<Vector2Int>> destroyedWalls = new Dictionary<StageSO, HashSet<Vector2Int>>();
     public Dictionary<StageSO, HashSet<Vector2Int>> DestroyedWalls => destroyedWalls;
 
+    // Stage -> Set of Permanently Destroyed Wall Positions (Undo/Reset/Warpで戻らない)
+    private Dictionary<StageSO, HashSet<Vector2Int>> permanentDestroyedWalls = new Dictionary<StageSO, HashSet<Vector2Int>>();
+    public Dictionary<StageSO, HashSet<Vector2Int>> PermanentDestroyedWalls => permanentDestroyedWalls;
+
     public void ClearAll()
     {
         stageEnemiesMap.Clear();
         loadedStageEnemyData.Clear();
         pendingStageEnemies.Clear();
         destroyedWalls.Clear();
+        permanentDestroyedWalls.Clear();
         stageCratesMap.Clear();
         stageCratesInitialized.Clear();
     }
@@ -52,5 +57,6 @@ public class StageDataManager
     public void ClearWalls()
     {
         destroyedWalls.Clear();
+        permanentDestroyedWalls.Clear();
     }
 }

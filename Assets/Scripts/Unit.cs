@@ -416,15 +416,23 @@ public abstract class Unit : MonoBehaviour
             }
             else if (!gridManager.IsPositionInBounds(checkPos))
             {
-                // OOBの場合、隣接ステージへの遷移が可能かチェック
-                StageSO neighbor = gridManager.GetAdjacentStageFromBoundary(gridManager.CurrentStageSO, checkPos);
-                if (neighbor != null)
+                // OOBへの押し出しは、現在ステージ側の境界壁が破壊されている場合のみ許可
+                if (!gridManager.IsWalkableAt(gridManager.CurrentStageSO, checkPos))
                 {
-                    // 遷移先ステージの対応する位置がWalkableか確認
-                    Vector2Int neighborEntry = GridCalculation.CalculateEntryPosition(neighbor, direction, checkPos);
-                    if (gridManager.IsWalkableAt(neighbor, neighborEntry) && gridManager.GetUnitAtPosition(neighborEntry) == null)
+                    canPush = false;
+                }
+                else
+                {
+                // OOBの場合、隣接ステージへの遷移が可能かチェック
+                    StageSO neighbor = gridManager.GetAdjacentStageFromBoundary(gridManager.CurrentStageSO, checkPos);
+                    if (neighbor != null)
                     {
-                        canPush = true;
+                        // 遷移先ステージの対応する位置がWalkableか確認
+                        Vector2Int neighborEntry = GridCalculation.CalculateEntryPosition(neighbor, direction, checkPos);
+                        if (gridManager.IsWalkableAt(neighbor, neighborEntry) && gridManager.GetUnitAtPosition(neighborEntry) == null)
+                        {
+                            canPush = true;
+                        }
                     }
                 }
             }

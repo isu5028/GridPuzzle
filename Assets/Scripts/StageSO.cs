@@ -22,6 +22,8 @@ public class StageSO : ScriptableObject
     [SerializeField] private Direction playerStartDirection = Direction.Right;
     [SerializeField] private List<EnemyStartData> enemyStartData = new List<EnemyStartData>();
     [SerializeField] private List<Vector2Int> crateStartPositions = new List<Vector2Int>();
+    [SerializeField] private List<Vector2Int> shopItemPositions = new List<Vector2Int>();
+    [SerializeField] private List<int> shopItemIds = new List<int>();
     [SerializeField] private List<TutorialIndexData> tutorialIndexData = new List<TutorialIndexData>();
 
     [Header("Adjacent Stages (平面マップ用)")]
@@ -89,6 +91,9 @@ public class StageSO : ScriptableObject
     public int Width => width;
     public int Height => height;
 
+    private static readonly int[] ShopItemPrices = { 15, 20, 25, 30, 35 };
+    public static int ShopItemTypeCount => ShopItemPrices.Length;
+
     // Derived from MapPosition
     public int FloorIndex => mapPosition.y;  // Y is Floor/Depth
     public int StairColumn => mapPosition.x; // X is Column
@@ -99,6 +104,8 @@ public class StageSO : ScriptableObject
     public List<EnemyStartData> EnemyStartData => enemyStartData;
     public List<TutorialIndexData> TutorialData => tutorialIndexData;
     public List<Vector2Int> CrateStartPositions => crateStartPositions;
+    public List<Vector2Int> ShopItemPositions => shopItemPositions;
+    public List<int> ShopItemIds => shopItemIds;
     public Direction PlayerStartDirection => playerStartDirection;
 
     // wallDataの初期化と取得・設定
@@ -196,6 +203,101 @@ public class StageSO : ScriptableObject
         crateStartPositions.Clear();
     }
 
+    public bool HasShopItemSlotAt(Vector2Int position)
+    {
+        return shopItemPositions.Contains(position);
+    }
+
+    public static int NormalizeShopItemId(int itemId)
+    {
+        return Mathf.Clamp(itemId, 0, ShopItemTypeCount - 1);
+    }
+
+    public static int GetShopItemPriceById(int itemId)
+    {
+        return ShopItemPrices[NormalizeShopItemId(itemId)];
+    }
+
+    public int GetShopItemIdAt(Vector2Int position)
+    {
+        int idx = shopItemPositions.IndexOf(position);
+        if (idx < 0 || idx >= shopItemIds.Count) return -1;
+        return NormalizeShopItemId(shopItemIds[idx]);
+    }
+
+    public int GetShopItemPriceAt(Vector2Int position)
+    {
+        int itemId = GetShopItemIdAt(position);
+        return itemId < 0 ? -1 : GetShopItemPriceById(itemId);
+    }
+
+    public void AddShopItemSlot(Vector2Int position)
+    {
+        AddShopItemSlot(position, 0);
+    }
+
+    public void AddShopItemSlot(Vector2Int position, int itemId)
+    {
+        itemId = NormalizeShopItemId(itemId);
+
+        int idx = shopItemPositions.IndexOf(position);
+        if (idx != -1)
+        {
+            while (shopItemIds.Count <= idx)
+            {
+                shopItemIds.Add(0);
+            }
+            shopItemIds[idx] = itemId;
+            return;
+        }
+
+        if (!shopItemPositions.Contains(position))
+        {
+            shopItemPositions.Add(position);
+            shopItemIds.Add(itemId);
+        }
+    }
+
+    public void RemoveShopItemSlotAt(Vector2Int position)
+    {
+        int idx = shopItemPositions.IndexOf(position);
+        if (idx == -1) return;
+
+        shopItemPositions.RemoveAt(idx);
+        if (idx >= 0 && idx < shopItemIds.Count)
+        {
+            shopItemIds.RemoveAt(idx);
+        }
+    }
+
+    public void ClearShopItemSlots()
+    {
+        shopItemPositions.Clear();
+        shopItemIds.Clear();
+    }
+
+    private void EnsureShopItemDataConsistency()
+    {
+        if (shopItemPositions == null) shopItemPositions = new List<Vector2Int>();
+        if (shopItemIds == null) shopItemIds = new List<int>();
+
+        while (shopItemIds.Count < shopItemPositions.Count)
+        {
+            int fallbackId = Mathf.Clamp(shopItemIds.Count, 0, ShopItemTypeCount - 1);
+            shopItemIds.Add(fallbackId);
+        }
+
+        if (shopItemIds.Count > shopItemPositions.Count)
+        {
+            shopItemIds.RemoveRange(shopItemPositions.Count, shopItemIds.Count - shopItemPositions.Count);
+        }
+
+        for (int i = 0; i < shopItemIds.Count; i++)
+        {
+            shopItemIds[i] = NormalizeShopItemId(shopItemIds[i]);
+        }
+    }
+
     private void OnValidate()
     {
         // widthやheightが変更された時にwallDataのサイズを調整
@@ -223,6 +325,9 @@ public class StageSO : ScriptableObject
 
         // EnemyListのIndex順をSetActionOrderに反映
         UpdateEnemyActionIndices();
+
+        // Shop Itemの位置リストとIDリストの整合性を維持
+        EnsureShopItemDataConsistency();
     }
 
     public void UpdateEnemyActionIndices()

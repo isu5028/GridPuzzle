@@ -13,6 +13,7 @@ public enum EnemyType
     Crystal,
     Ghost,
     Bomb,
+    King,
 }
 
 public enum CellType

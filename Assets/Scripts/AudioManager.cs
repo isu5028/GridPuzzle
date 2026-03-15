@@ -154,6 +154,9 @@ public class AudioManager : MonoBehaviour
         heal,
         damaged,
         explode,
+        solve,
+        king,
+        buy,
     }
 
     public enum BGMType
@@ -259,14 +262,19 @@ public class AudioManager : MonoBehaviour
 
     public void PlaySE(SEType seType)
     {
-        // デバウンスチェック：短時間に同じSEが再生されるのを防ぐ
         float currentTime = Time.time;
-        if (lastPlayedTime.TryGetValue(seType, out float lastTime))
+
+        // デバウンスチェック：短時間に同じSEが再生されるのを防ぐ
+        // ただしkingは文字送りで1文字ごとに鳴らすためデバウンスしない
+        if (seType != SEType.king)
         {
-            if (currentTime - lastTime < debounceTime)
+            if (lastPlayedTime.TryGetValue(seType, out float lastTime))
             {
-                // デバウンス期間内なのでスキップ
-                return;
+                if (currentTime - lastTime < debounceTime)
+                {
+                    // デバウンス期間内なのでスキップ
+                    return;
+                }
             }
         }
 
