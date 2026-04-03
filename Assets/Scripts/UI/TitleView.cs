@@ -55,7 +55,7 @@ public class TitleView : MonoBehaviour
     {
          if (index >= 0 && index < itemPositions.Length && cursor != null)
          {
-             cursor.position = itemPositions[index].position;
+             cursor.position = itemPositions[index].position + new Vector3(20, 0, 0);
          }
     }
 

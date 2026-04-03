@@ -51,7 +51,9 @@ public class StairTraversalSystem : IStairTraversalSystem
             CellType targetType = (cellType == CellType.StairUp) ? CellType.StairDown : CellType.StairUp;
             bool found = false;
 
-            if (gm.GetCellTypeAt(targetStage, stairPos) == targetType)
+            // 同座標チェック: StairUp を探す場合は BrokenStairUp も一致とみなす
+            CellType cellAtSamePos = gm.GetCellTypeAt(targetStage, stairPos);
+            if (cellAtSamePos == targetType || (targetType == CellType.StairUp && cellAtSamePos == CellType.BrokenStairUp))
             {
                 targetStairPos = stairPos;
                 found = true;
@@ -92,6 +94,13 @@ public class StairTraversalSystem : IStairTraversalSystem
         var destination = GetPlayerStairDestination(gm.UnitManager.Player, playerPos);
         if (destination == null)
         {
+            // 出口ステージの湋ぎ先なし階段はブロックされずゲームクリアになる
+            if (gm.CurrentStageSOInternal != null && gm.CurrentStageSOInternal.IsExitStage)
+            {
+                gm.TriggerGameClear();
+                return true;
+            }
+
             if (gm.BlockedPrefab != null) Object.Instantiate(gm.BlockedPrefab, gm.GridToWorldPosition(playerPos), Quaternion.identity, gm.Visualizer.GridParent);
             return false;
         }
@@ -341,8 +350,9 @@ public class StairTraversalSystem : IStairTraversalSystem
             CellType targetType = (cellType == CellType.StairUp) ? CellType.StairDown : CellType.StairUp;
             bool found = false;
 
-            // Try to find the matching stair at the SAME position first
-            if (gm.GetCellTypeAt(targetStage, stairPos) == targetType)
+            // 同座標チェック: StairUp を探す場合は BrokenStairUp も一致とみなす
+            CellType cellAtSamePos = gm.GetCellTypeAt(targetStage, stairPos);
+            if (cellAtSamePos == targetType || (targetType == CellType.StairUp && cellAtSamePos == CellType.BrokenStairUp))
             {
                 targetStairPos = stairPos;
                 found = true;
@@ -389,7 +399,9 @@ public class StairTraversalSystem : IStairTraversalSystem
         {
             for (int x = 0; x < stage.Width; x++)
             {
-                if (gm.GetCellTypeAt(stage, new Vector2Int(x, y)) == targetType)
+                CellType cell = gm.GetCellTypeAt(stage, new Vector2Int(x, y));
+                // StairUp を探す場合は BrokenStairUp も一致とみなす
+                if (cell == targetType || (targetType == CellType.StairUp && cell == CellType.BrokenStairUp))
                 {
                     return new Vector2Int(x, y);
                 }

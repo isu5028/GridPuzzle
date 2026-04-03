@@ -26,9 +26,10 @@ public class GridSaveSystem : ISaveSystem
             0,
             new List<StageEnemyData>(),
             BuildPermanentWallSaveData(),
+            gm.ShopSystem != null ? gm.ShopSystem.BuildShopPurchaseSaveData() : new List<StageShopData>(),
             saveType
         );
-        if (saveType == GameProgressManager.SaveType.Manual && gm.SaveFeedback != null)
+        if (gm.SaveFeedback != null)
         {
             gm.SaveFeedback.PlayFeedback();
         }
@@ -50,6 +51,12 @@ public class GridSaveSystem : ISaveSystem
         gm.PermanentDestroyedWalls.Clear();
         gm.LoadedStageEnemyData.Clear();
         ApplySavedPermanentWalls(GameProgressManager.Instance.SavedAllStagesWalls);
+
+        // ショップアイテム購入状況の復元
+        if (gm.ShopSystem != null)
+        {
+            gm.ShopSystem.RestoreShopPurchasesFromSaveData(GameProgressManager.Instance.SavedAllStagesShopPurchases);
+        }
 
         // Find current stage from save data
         var savedResetPos = GameProgressManager.Instance.GetCurrentMapPosition();

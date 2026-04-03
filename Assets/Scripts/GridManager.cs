@@ -159,6 +159,7 @@ public partial class GridManager : MonoBehaviour
     private bool isKingAutoUndoInProgress = false;
     public bool IsEventPlaying => isEventPlaying;
     public bool IsStairDialogOpen => uiManager.IsStairDialogOpen;
+    public bool IsShopItemReading => unitManager != null && unitManager.Player != null && unitManager.Player.IsShopItemReadMode;
 
     public bool IsPositionInBounds(Vector2Int pos)
     {
@@ -229,13 +230,28 @@ public partial class GridManager : MonoBehaviour
         PlayEndingSequence().Forget();
     }
 
+    /// <summary>
+    /// 出口ステージで階段を踏んだ際などに呼び出し、ゲームクリアエンディングを開始する
+    /// </summary>
+    internal void TriggerGameClear()
+    {
+        PlayEndingSequence().Forget();
+    }
+
     private async UniTaskVoid PlayEndingSequence()
     {
         isEventPlaying = true;
-
-        await uiManager.PlayEndingSequence();
-
-        isWaitingForTitleInput = true;
+        try
+        {
+            await uiManager.PlayEndingSequence();
+            isWaitingForTitleInput = true;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[GridManager] PlayEndingSequence failed: {e}");
+            isEventPlaying = false;
+            isWaitingForTitleInput = false;
+        }
     }
 
     private void HandleWipeOutHidden()
@@ -245,49 +261,56 @@ public partial class GridManager : MonoBehaviour
 
     private async UniTaskVoid TryHandleKingAutoUndo(Unit changedUnit)
     {
-        Enemy changedEnemy = changedUnit as Enemy;
-
-        if (isKingAutoUndoInProgress) return;
-        if (isWaitingForTitleInput) return;
-        if (turnManager == null || commandManager == null || unitManager == null) return;
-        if (commandManager.IsUndoing || commandManager.IsRedoing) return;
-        if (changedEnemy == null) return;
-        if (changedEnemy.Type != EnemyType.King) return;
-        if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
-        if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
-        if (!commandManager.CanUndo()) return;
-
-        isKingAutoUndoInProgress = true;
-        bool previousEventPlaying = isEventPlaying;
-        isEventPlaying = true;
-
         try
         {
-            int waitMs = Mathf.Max(0, kingAutoUndoDelayMs);
-            if (waitMs > 0)
-            {
-                await UniTask.Delay(waitMs);
-            }
+            Enemy changedEnemy = changedUnit as Enemy;
 
+            if (isKingAutoUndoInProgress) return;
+            if (isWaitingForTitleInput) return;
+            if (turnManager == null || commandManager == null || unitManager == null) return;
             if (commandManager.IsUndoing || commandManager.IsRedoing) return;
             if (changedEnemy == null) return;
+            if (changedEnemy.Type != EnemyType.King) return;
             if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
             if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
+            if (!commandManager.CanUndo()) return;
 
-            if (shopSystem != null)
+            isKingAutoUndoInProgress = true;
+            bool previousEventPlaying = isEventPlaying;
+            isEventPlaying = true;
+
+            try
             {
-                shopSystem.SetSuppressNextKingEnterDialogue(true);
-            }
+                int waitMs = Mathf.Max(0, kingAutoUndoDelayMs);
+                if (waitMs > 0)
+                {
+                    await UniTask.Delay(waitMs);
+                }
 
-            await turnManager.UndoTurn();
+                if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+                if (changedEnemy == null) return;
+                if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
+                if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
+
+                if (shopSystem != null)
+                {
+                    shopSystem.SetSuppressNextKingEnterDialogue(true);
+                }
+
+                await turnManager.UndoTurn();
+            }
+            finally
+            {
+                isKingAutoUndoInProgress = false;
+                if (!isWaitingForTitleInput)
+                {
+                    isEventPlaying = previousEventPlaying;
+                }
+            }
         }
-        finally
+        catch (Exception e)
         {
-            isKingAutoUndoInProgress = false;
-            if (!isWaitingForTitleInput)
-            {
-                isEventPlaying = previousEventPlaying;
-            }
+            Debug.LogError($"[GridManager] TryHandleKingAutoUndo failed: {e}");
         }
     }
 
@@ -526,6 +549,8 @@ public partial class GridManager : MonoBehaviour
     public void ClearUndoHistory()
     {
         commandManager.Warped();
+        // Undo/Redo履歴クリア後、Redo HUD表示を更新
+        turnManager.RefreshRedoFeedbackState();
     }
 
     /// <summary>
@@ -1521,6 +1546,24 @@ public partial class GridManager : MonoBehaviour
     {
         if (gridVisualizer == null) return;
         gridVisualizer.HideShopPrompt();
+    }
+
+    public void ShowShopItemHint(int itemId)
+    {
+        if (uiManager == null) return;
+        uiManager.ShowShopItemHint(itemId);
+    }
+
+    public void HideShopItemHint()
+    {
+        if (uiManager == null) return;
+        uiManager.HideShopItemHint();
+    }
+
+    public void HideShopItemHintImmediate()
+    {
+        if (uiManager == null) return;
+        uiManager.HideShopItemHintImmediate();
     }
 
     public void TriggerCurrentShopItemPriceShake(Vector2Int pos)

@@ -18,6 +18,14 @@ public class StageWallData
 }
 
 [System.Serializable]
+public class StageShopData
+{
+    public int stageX;
+    public int stageY;
+    public List<Vector2IntData> purchasedPositions;
+}
+
+[System.Serializable]
 public class SaveData
 {
     public int resetMapX;
@@ -45,6 +53,7 @@ public class SaveData
     public List<EnemySaveData> enemyList = new List<EnemySaveData>();
     public List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
     public List<StageWallData> allStagesWalls = new List<StageWallData>();
+    public List<StageShopData> allStagesShopPurchases = new List<StageShopData>();
 
     // --- オプション設定 ---
     // オプションはOptionSaveDataで管理するため削除

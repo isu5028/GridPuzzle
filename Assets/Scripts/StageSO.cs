@@ -43,6 +43,11 @@ public class StageSO : ScriptableObject
     [SerializeField] private List<StairConnectionData> stairConnections = new List<StairConnectionData>();
     public List<StairConnectionData> StairConnections => stairConnections;
 
+    [Header("Exit Stage")]
+    [Tooltip("出口ステージとしてマークする。繋ぎ先のない階段を踏んでもブロックされず、ゲームクリアになる")]
+    [SerializeField] private bool isExitStage = false;
+    public bool IsExitStage => isExitStage;
+
     public StageSO NorthStage => upStage;
     public StageSO SouthStage => downStage;
     public StageSO EastStage => rightStage;

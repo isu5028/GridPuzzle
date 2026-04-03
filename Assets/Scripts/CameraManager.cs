@@ -88,6 +88,8 @@ public class CameraManager : MonoBehaviour
 
     void LateUpdate()
     {
+        if (mainCamera == null) return;
+
         // シェイク中は位置を更新
         if (isShaking)
         {
@@ -165,7 +167,7 @@ public class CameraManager : MonoBehaviour
         {
             shakeCancellationTokenSource.Cancel();
             shakeCancellationTokenSource.Dispose();
-            //shakeCancellationTokenSource = null;
+            shakeCancellationTokenSource = null;
         }
 
         // Initialize for new shake
@@ -223,6 +225,18 @@ public class CameraManager : MonoBehaviour
         isShaking = false;
         currentShakeMagnitude = 0f;
 
+    }
+
+    private void OnDestroy()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+
+        if (shakeCancellationTokenSource != null)
+        {
+            shakeCancellationTokenSource.Cancel();
+            shakeCancellationTokenSource.Dispose();
+            shakeCancellationTokenSource = null;
+        }
     }
 
     public void ApplyResolutionSettings(Vector2Int resolution)

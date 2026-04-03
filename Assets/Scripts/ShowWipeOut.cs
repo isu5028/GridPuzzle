@@ -23,10 +23,16 @@ public class ShowWipeOut : MonoBehaviour
     private Vector3 originalPos;
     private Vector3 hiddenOffset;
 
-    private void OnDestroy()
+    private void CancelAutoHide()
     {
         autoHideCts?.Cancel();
         autoHideCts?.Dispose();
+        autoHideCts = null;
+    }
+
+    private void OnDestroy()
+    {
+        CancelAutoHide();
     }
 
     private void Start()
@@ -64,7 +70,7 @@ public class ShowWipeOut : MonoBehaviour
         animator.Play(inAnimation.name);
         updateEndTime = Time.time + inAnimation.length;
 
-        autoHideCts?.Cancel();
+        CancelAutoHide();
         autoHideCts = new CancellationTokenSource();
 
         if (wipeoutTransform != null)
@@ -87,7 +93,7 @@ public class ShowWipeOut : MonoBehaviour
 
     public void Hide()
     {
-        autoHideCts?.Cancel();
+        CancelAutoHide();
         animator.Play(outAnimation.name);
         updateEndTime = Time.time + outAnimation.length;
         OnHide?.Invoke();

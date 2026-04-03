@@ -364,6 +364,29 @@ public class StageEditor : Editor
         EditorGUILayout.PropertyField(leftStageProp, new GUIContent("West"));
 
         EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(10);
+
+        // --- 出口ステージ設定 ---
+        EditorGUILayout.LabelField("出口ステージ設定", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
+
+        SerializedProperty isExitStageProp = serializedObject.FindProperty("isExitStage");
+        EditorGUILayout.PropertyField(isExitStageProp, new GUIContent("Is Exit Stage",
+            "ONにすると、繋ぎ先のない階段を踏んでもブロックされず、ゲームクリアになります。\n" +
+            "また、全ショップアイテム購入済みのときのみKingが出現します。"));
+
+        if (isExitStageProp.boolValue)
+        {
+            EditorGUILayout.HelpBox(
+                "出口ステージ：\n" +
+                "・繋ぎ先なし階段 → ゲームクリア\n" +
+                "・King → 全ショップ購入済み時のみ出現\n" +
+                "・Kingのセリフは出口専用のものが使用されます",
+                MessageType.Info);
+        }
+
+        EditorGUILayout.EndVertical();
     }
 
     private void DrawEditModeSelector()

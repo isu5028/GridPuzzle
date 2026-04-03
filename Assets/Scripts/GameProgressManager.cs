@@ -62,7 +62,33 @@ public class GameProgressManager : MonoBehaviour
     public void RegisterStagesForClearCheck(StageSO[] stages)
     {
         registeredStages = stages;
+        EnsureKingCoinSharedIdMigration();
         RecheckAllStagesClearStatus();
+    }
+
+    private void EnsureKingCoinSharedIdMigration()
+    {
+        if (defeatedEnemies == null || defeatedEnemies.Count == 0) return;
+        if (defeatedEnemies.Contains(Enemy.KingCoinSharedID)) return;
+        if (registeredStages == null) return;
+
+        foreach (var stage in registeredStages)
+        {
+            if (stage == null || stage.IsExitStage || stage.EnemyStartData == null) continue;
+
+            for (int i = 0; i < stage.EnemyStartData.Count; i++)
+            {
+                var esd = stage.EnemyStartData[i];
+                if (esd.EnemyType != EnemyType.King || !esd.DropsCoin) continue;
+
+                string legacyKingId = $"{stage.name}_{i}";
+                if (defeatedEnemies.Contains(legacyKingId))
+                {
+                    defeatedEnemies.Add(Enemy.KingCoinSharedID);
+                    return;
+                }
+            }
+        }
     }
 
     private void RecheckAllStagesClearStatus()
@@ -88,6 +114,7 @@ public class GameProgressManager : MonoBehaviour
     public List<EnemySaveData> SavedEnemyList { get; private set; } = new List<EnemySaveData>();
     public List<StageEnemyData> SavedAllStagesEnemies { get; private set; } = new List<StageEnemyData>();
     public List<StageWallData> SavedAllStagesWalls { get; private set; } = new List<StageWallData>();
+    public List<StageShopData> SavedAllStagesShopPurchases { get; private set; } = new List<StageShopData>();
     public Vector2Int SavedResetMapPos { get; private set; } = Vector2Int.zero;
     public int SavedPlayerHP { get; private set; } = 0;
 
@@ -473,7 +500,11 @@ public class GameProgressManager : MonoBehaviour
             bool belongsToThisStage = false;
             for (int i = 0; i < stage.EnemyStartData.Count; i++)
             {
-                if (enemyId == $"{stage.name}_{i}")
+                var esd = stage.EnemyStartData[i];
+                string idToCheck = (!stage.IsExitStage && esd.EnemyType == EnemyType.King && esd.DropsCoin)
+                    ? Enemy.KingCoinSharedID
+                    : $"{stage.name}_{i}";
+                if (enemyId == idToCheck)
                 {
                     belongsToThisStage = true;
                     break;
@@ -499,7 +530,11 @@ public class GameProgressManager : MonoBehaviour
 
         for (int i = 0; i < stage.EnemyStartData.Count; i++)
         {
-            if (!IsEnemyDefeated($"{stage.name}_{i}"))
+            var esd = stage.EnemyStartData[i];
+            string idToCheck = (!stage.IsExitStage && esd.EnemyType == EnemyType.King && esd.DropsCoin)
+                ? Enemy.KingCoinSharedID
+                : $"{stage.name}_{i}";
+            if (!IsEnemyDefeated(idToCheck))
             {
                 return false;
             }
@@ -604,7 +639,7 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
-    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, List<StageWallData> allStagesWalls, SaveType saveType)
+    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, List<StageWallData> allStagesWalls, List<StageShopData> allStagesShopPurchases, SaveType saveType)
     {
         SaveData data = new SaveData();
 
@@ -631,6 +666,31 @@ public class GameProgressManager : MonoBehaviour
         foreach (var pos in hierarchicalClearedCells)
         {
             data.hierarchicalClearedCells.Add(new Vector2IntData(pos));
+        }
+
+        // ショップアイテム購入状況
+        data.allStagesShopPurchases = new List<StageShopData>();
+        if (allStagesShopPurchases != null)
+        {
+            foreach (var shopData in allStagesShopPurchases)
+            {
+                if (shopData == null) continue;
+
+                StageShopData copy = new StageShopData
+                {
+                    stageX = shopData.stageX,
+                    stageY = shopData.stageY,
+                    purchasedPositions = new List<Vector2IntData>()
+                };
+                if (shopData.purchasedPositions != null)
+                {
+                    foreach (var pos in shopData.purchasedPositions)
+                    {
+                        if (pos != null) copy.purchasedPositions.Add(new Vector2IntData(pos.ToVector2Int()));
+                    }
+                }
+                data.allStagesShopPurchases.Add(copy);
+            }
         }
 
         // ステージごとの壁破壊状態（恒久破壊）
@@ -726,6 +786,7 @@ public class GameProgressManager : MonoBehaviour
             SavedEnemyList = new List<EnemySaveData>();
             SavedAllStagesEnemies = new List<StageEnemyData>();
             SavedAllStagesWalls = new List<StageWallData>();
+            SavedAllStagesShopPurchases = new List<StageShopData>();
             SavedPlayerHP = 0;
 
             Coins.Value = data.coins;
@@ -735,6 +796,7 @@ public class GameProgressManager : MonoBehaviour
             {
                 foreach (var id in data.defeatedEnemies) defeatedEnemies.Add(id);
             }
+            EnsureKingCoinSharedIdMigration();
 
             // GameSettingsの復元
             // オプションはLoadOptions()で管理するため、ここでは復元しない
@@ -803,6 +865,31 @@ public class GameProgressManager : MonoBehaviour
                     }
 
                     SavedAllStagesWalls.Add(copy);
+                }
+            }
+
+            // ショップアイテム購入状況の復元
+            SavedAllStagesShopPurchases = new List<StageShopData>();
+            if (data.allStagesShopPurchases != null)
+            {
+                foreach (var shopData in data.allStagesShopPurchases)
+                {
+                    if (shopData == null) continue;
+
+                    StageShopData copy = new StageShopData
+                    {
+                        stageX = shopData.stageX,
+                        stageY = shopData.stageY,
+                        purchasedPositions = new List<Vector2IntData>()
+                    };
+                    if (shopData.purchasedPositions != null)
+                    {
+                        foreach (var pos in shopData.purchasedPositions)
+                        {
+                            if (pos != null) copy.purchasedPositions.Add(new Vector2IntData(pos.ToVector2Int()));
+                        }
+                    }
+                    SavedAllStagesShopPurchases.Add(copy);
                 }
             }
 

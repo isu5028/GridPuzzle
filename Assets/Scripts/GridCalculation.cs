@@ -109,7 +109,7 @@ public static class GridCalculation
 
     public static Vector2Int FindStairUpPosition(StageSO stage)
     {
-        if (stage == null) return stage.PlayerStartPosition;
+        if (stage == null) return Vector2Int.zero;
 
         // ステージ内でStairUpセルを探す
         for (int y = 0; y < stage.Height; y++)

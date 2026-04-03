@@ -61,4 +61,7 @@ public interface IShopSystem
     void OnUnitStateChanged(Unit unit);
     void OnShopItemPurchased(StageSO stage, Vector2Int pos, int itemId, int price);
     void SetSuppressNextKingEnterDialogue(bool suppress);
+    List<StageShopData> BuildShopPurchaseSaveData();
+    void RestoreShopPurchasesFromSaveData(List<StageShopData> savedData);
+    bool AreAllShopItemsPurchasedAcrossAllShopStages();
 }

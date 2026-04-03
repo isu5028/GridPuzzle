@@ -420,17 +420,9 @@ public class WorldMapPresenter : MonoBehaviour
         // ワープ先の位置を決定
         Vector2Int targetPos;
         Direction targetDir;
-        if (isHub)
-        {
-            targetPos = targetStage.PlayerStartPosition;
-            targetDir = targetStage.PlayerStartDirection;
-        }
-        else
-        {
-            // 上り階段の位置を取得
-            targetPos = GridCalculation.FindStairUpPosition(targetStage);
-            targetDir = targetStage.PlayerStartDirection;
-        }
+        // ハブ・ダンジョン問わず、上り階段 (BrokenStairUp を含む) の位置を優先し、なければ PlayerStartPosition へ
+        targetPos = GridCalculation.FindStairUpPosition(targetStage);
+        targetDir = targetStage.PlayerStartDirection;
 
         // MapViewフェードアウトとステージ移動アニメーションを並行実行（HP回復もコマンド内で処理）
         await UniTask.WhenAll(

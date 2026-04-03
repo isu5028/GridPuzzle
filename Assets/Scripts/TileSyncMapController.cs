@@ -20,10 +20,16 @@ public class TileSyncMapController : MonoBehaviour
     private float updateEndTime;
     private CancellationTokenSource autoHideCts;
 
-    private void OnDestroy()
+    private void CancelAutoHide()
     {
         autoHideCts?.Cancel();
         autoHideCts?.Dispose();
+        autoHideCts = null;
+    }
+
+    private void OnDestroy()
+    {
+        CancelAutoHide();
     }
 
     private void Start()
@@ -64,7 +70,7 @@ public class TileSyncMapController : MonoBehaviour
         }
         updateEndTime = Time.time + inAnimation.length;
 
-        autoHideCts?.Cancel();
+        CancelAutoHide();
         autoHideCts = new CancellationTokenSource();
 
         if (parentTransform != null)
@@ -75,7 +81,7 @@ public class TileSyncMapController : MonoBehaviour
 
     public void Hide()
     {
-        autoHideCts?.Cancel();
+        CancelAutoHide();
         animator.Play(outAnimation.name);
         updateEndTime = Time.time + outAnimation.length;
     }

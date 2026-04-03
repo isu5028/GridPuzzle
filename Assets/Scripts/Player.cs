@@ -17,8 +17,11 @@ public class Player : Unit
     private InputAction inputUndo = null!;
     private InputAction inputRedo = null!;
     private InputAction inputReset = null!;
+    private InputAction inputOption = null!;
 
     private bool isProcessingAction = false;
+    private bool isShopItemReadMode = false;
+    private int shopItemReadModeEnteredFrame = -1;
 
     private bool isInputBlocked = false;
     private StageSO lastShopPriceShakeStage;
@@ -35,6 +38,7 @@ public class Player : Unit
         inputUndo = InputSystem.actions.FindAction("Undo");
         inputRedo = InputSystem.actions.FindAction("Redo");
         inputReset = InputSystem.actions.FindAction("Reset");
+        inputOption = InputSystem.actions.FindAction("Option");
     }
 
     public void WarpToNewStage(Vector2Int newPos, Direction newDir)
@@ -50,6 +54,7 @@ public class Player : Unit
         isProcessingAction = false;
         isMoving = false;
 
+        ExitShopItemReadMode(immediate: true);
         BlockInputTemporarily().Forget();
     }
 
@@ -70,6 +75,7 @@ public class Player : Unit
                 turnManager.IsPlayerTurn &&
                 !isInputBlocked &&
                 !isProcessingAction &&
+                !isShopItemReadMode &&
                 !turnManager.IsOptionOpen &&
                 !gridManager.IsTransitioning &&
                 !gridManager.IsEventPlaying &&
@@ -78,6 +84,48 @@ public class Player : Unit
                 !turnManager.IsMapOpen
             )
             .Share();
+
+        Observable.EveryUpdate()
+            .Where(_ =>
+                isShopItemReadMode &&
+                Time.frameCount > shopItemReadModeEnteredFrame &&
+                turnManager.IsPlayerTurn &&
+                !turnManager.IsMapOpen &&
+                !turnManager.IsOptionOpen &&
+                !gridManager.IsTransitioning &&
+                !gridManager.IsEventPlaying &&
+                !gridManager.IsStairDialogOpen &&
+                (inputAttack.triggered || inputUndo.triggered || inputOption.triggered))
+            .Subscribe(_ =>
+            {
+                ExitShopItemReadMode();
+                AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+                // 同フレームに canInputStream 側で同じキーが拾われないよう一時ブロック
+                BlockInputTemporarily().Forget();
+            })
+            .AddTo(this);
+
+        // 読取中に移動入力があればヒントを閉じてそのまま移動
+        Observable.EveryUpdate()
+            .Where(_ =>
+                isShopItemReadMode &&
+                !isDead &&
+                turnManager.IsPlayerTurn &&
+                !isProcessingAction &&
+                !isMoving &&
+                !turnManager.IsMapOpen &&
+                !turnManager.IsOptionOpen &&
+                !gridManager.IsTransitioning &&
+                !gridManager.IsEventPlaying &&
+                !gridManager.IsStairDialogOpen)
+            .Select(_ => inputMove.ReadValue<Vector2>())
+            .Where(v => v != Vector2.zero)
+            .Subscribe(inputValue =>
+            {
+                ExitShopItemReadMode();
+                HandleMoveInput(inputValue);
+            })
+            .AddTo(this);
 
         // --- Undo処理 ---
         // 死亡していてもUndoは可能にする（isDeadチェックを通さない）
@@ -254,10 +302,30 @@ public class Player : Unit
 
     protected override async void OnActionComplete()
     {
+        if (turnManager == null)
+        {
+            isProcessingAction = false;
+            isMoving = false;
+            return;
+        }
+
         turnManager.OnPlayerActionComplete().Forget();
 
-        // 敵のターンが終わるまで入力をブロック
-        await UniTask.WaitUntil(() => turnManager.IsPlayerTurn);
+        try
+        {
+            // 敵のターンが終わるまで入力をブロック
+            await UniTask.WaitUntil(
+                () => turnManager == null || turnManager.IsPlayerTurn,
+                cancellationToken: this.GetCancellationTokenOnDestroy());
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Player] OnActionComplete failed: {e}");
+        }
 
         isProcessingAction = false;
         isMoving = false;
@@ -275,7 +343,7 @@ public class Player : Unit
     {
         if (gridManager == null) return false;
 
-        bool consumed = gridManager.TryInteractCurrentStageShopItem(currentPos, out bool purchasedNow, out bool readMode, out _, out _);
+        bool consumed = gridManager.TryInteractCurrentStageShopItem(currentPos, out bool purchasedNow, out bool readMode, out int itemId, out _);
         if (!consumed) return false;
 
         if (purchasedNow)
@@ -287,6 +355,7 @@ public class Player : Unit
         }
         else if (readMode)
         {
+            EnterShopItemReadMode(itemId);
             if (AudioManager.Instance != null)
             {
                 AudioManager.Instance.PlaySE(AudioManager.SEType.tap);
@@ -310,9 +379,55 @@ public class Player : Unit
         return true;
     }
 
+    public bool IsShopItemReadMode => isShopItemReadMode;
+
+    private void EnterShopItemReadMode(int itemId)
+    {
+        if (gridManager == null) return;
+
+        isShopItemReadMode = true;
+        shopItemReadModeEnteredFrame = Time.frameCount;
+        gridManager.ShowShopItemHint(itemId);
+        gridManager.HideShopPrompt();
+    }
+
+    private void ExitShopItemReadMode(bool immediate = false)
+    {
+        if (!isShopItemReadMode) return;
+
+        isShopItemReadMode = false;
+        shopItemReadModeEnteredFrame = -1;
+
+        if (gridManager != null)
+        {
+            if (immediate)
+            {
+                gridManager.HideShopItemHintImmediate();
+            }
+            else
+            {
+                gridManager.HideShopItemHint();
+            }
+        }
+    }
+
     private void UpdateShopPrompt()
     {
         if (gridManager == null) return;
+
+        bool canShowPrompt =
+            turnManager != null &&
+            turnManager.IsPlayerTurn &&
+            !isInputBlocked &&
+            !isProcessingAction &&
+            !isMoving &&
+            !isDead &&
+            !isShopItemReadMode &&
+            !gridManager.IsTransitioning &&
+            !gridManager.IsEventPlaying &&
+            !gridManager.IsStairDialogOpen &&
+            !turnManager.IsMapOpen &&
+            !turnManager.IsOptionOpen;
 
         StageSO currentStage = gridManager.CurrentStageSO;
         bool enteredNewCellOrStage = !hasLastShopPriceShakePos
@@ -323,11 +438,7 @@ public class Player : Unit
         lastShopPriceShakePos = currentPos;
         hasLastShopPriceShakePos = true;
 
-        if (isDead ||
-            gridManager.IsTransitioning ||
-            gridManager.IsEventPlaying ||
-            gridManager.IsStairDialogOpen ||
-            (turnManager != null && (turnManager.IsMapOpen || turnManager.IsOptionOpen)))
+        if (!canShowPrompt)
         {
             gridManager.HideShopPrompt();
             return;
@@ -361,6 +472,7 @@ public class Player : Unit
         if (gridManager != null)
         {
             gridManager.HideShopPrompt();
+            gridManager.HideShopItemHintImmediate();
         }
     }
 

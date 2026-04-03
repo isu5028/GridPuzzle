@@ -577,6 +577,7 @@ public class GridVisualizer : MonoBehaviour
         kingPromptText.fontSize = shopPromptFontSize;
         kingPromptText.color = shopPromptTextColor;
         kingPromptText.enableAutoSizing = false;
+        kingPromptText.enableWordWrapping = false;
         kingPromptText.raycastTarget = false;
         kingPromptText.text = string.Empty;
 		kingPromptText.color = shopPromptTextColor;

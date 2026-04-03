@@ -48,6 +48,17 @@ public class TurnManager : MonoBehaviour
         // 最初のターン開始時スナップショット
         commandManager.CaptureTurnStart(unitManager.Player, unitManager.Enemies);
         snapshotCapturedThisTurn = true;
+
+        // Redo不可能な初期状態を反映
+        RefreshRedoFeedbackState();
+    }
+
+    /// <summary>
+    /// Redoの可否に応じてREDO HUDのIcon/Characterの透明度を更新する
+    /// </summary>
+    public void RefreshRedoFeedbackState()
+    {
+        redoFeedback.SetIconCharacterAlpha(commandManager.CanRedo() ? 1f : 0f);
     }
 
     public void SetMapState(bool isOpen)
@@ -96,8 +107,15 @@ public class TurnManager : MonoBehaviour
             // 高速モードかつ階段移動がないなら、待たずに直ちに敵のターンを開始し同時行動させる
             if (!isFastMode || crateOnStair)
             {
-                await UniTask.WaitUntil(() => !gridManager.UnitManager.IsAnyCrateMoving());
-                await UniTask.WaitUntil(() => !gridManager.HasActiveAsyncTransitions);
+                await WaitUntilOrTimeout(
+                    () => !gridManager.UnitManager.IsAnyCrateMoving(),
+                    8000,
+                    "[TurnManager] Timeout while waiting crate movement to settle.");
+
+                await WaitUntilOrTimeout(
+                    () => !gridManager.HasActiveAsyncTransitions,
+                    8000,
+                    "[TurnManager] Timeout while waiting async transitions to settle.");
             }
 
             if (!skipEnemyTurn)
@@ -106,6 +124,8 @@ public class TurnManager : MonoBehaviour
             }
 
             commandManager.CompleteTurn();
+            // プレイヤー行動後はredoRecordsがクリアされるため表示を更新
+            RefreshRedoFeedbackState();
 
             // UnitManagerへの状態変更通知
             unitManager.NotifyUnitStateChanged();
@@ -161,6 +181,8 @@ public class TurnManager : MonoBehaviour
             unitManager.NotifyUnitStateChanged();
             undoFeedback.PlayFeedback();
         }
+        // Undo後はRedoが可能になる可能性があるため表示を更新
+        RefreshRedoFeedbackState();
     }
 
     public async UniTask RedoTurn()
@@ -173,6 +195,8 @@ public class TurnManager : MonoBehaviour
             unitManager.NotifyUnitStateChanged();
             redoFeedback.PlayFeedback();
         }
+        // Redo後は残りRedoが変化するため表示を更新
+        RefreshRedoFeedbackState();
     }
 
     public void ResetTurn()
@@ -184,5 +208,21 @@ public class TurnManager : MonoBehaviour
         // Resetで敵が復活するので通知
         unitManager.NotifyUnitStateChanged();
         resetFeedback.PlayFeedback();
+        // Reset後はredoRecordsがクリアされるため表示を更新
+        RefreshRedoFeedbackState();
+    }
+
+    private static async UniTask<bool> WaitUntilOrTimeout(System.Func<bool> condition, int timeoutMs, string timeoutMessage)
+    {
+        if (condition()) return true;
+
+        int completedIndex = await UniTask.WhenAny(
+            UniTask.WaitUntil(condition),
+            UniTask.Delay(timeoutMs));
+
+        if (completedIndex == 0) return true;
+
+        Debug.LogWarning(timeoutMessage);
+        return false;
     }
 }

@@ -191,7 +191,7 @@ public class OptionView : MonoBehaviour
 
     public void UpdateGameSpeedDisplay(OptionModel.GameSpeedType speed, int direction = 0)
     {
-        string key = speed == OptionModel.GameSpeedType.Normal ? "OPTION_GAME_SPEED_NORMAL" : "OPTION_GAME_SPEED_FAST";
+        string key = speed == OptionModel.GameSpeedType.Slow ? "OPTION_GAME_SPEED_NORMAL" : "OPTION_GAME_SPEED_FAST";
         SetLocalizedText(gameSpeedText, "StringTable", key);
         SetLocalizedText(maskedGameSpeedText, "StringTable", key);
 

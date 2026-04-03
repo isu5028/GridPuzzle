@@ -75,6 +75,20 @@ public class HUDFeedback : MonoBehaviour
         if (text != null) text.gameObject.SetActive(isVisible);
     }
 
+    /// <summary>
+    /// IconとCharacterのみアルファを設定する（テキストは変更しない）
+    /// currentColor のアルファも更新し、PlayFeedback 後の復元色に反映する
+    /// </summary>
+    public void SetIconCharacterAlpha(float alpha)
+    {
+        Color cc = currentColor;
+        cc.a = alpha;
+        currentColor = cc;
+
+        if (icon != null) { Color c = icon.color; c.a = alpha; icon.color = c; }
+        if (character != null) { Color c = character.color; c.a = alpha; character.color = c; }
+    }
+
     public void PlayFeedback()
     {
         PlayFeedbackAsync().Forget();

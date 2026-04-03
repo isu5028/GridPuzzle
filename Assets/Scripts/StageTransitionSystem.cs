@@ -93,9 +93,10 @@ public partial class StageTransitionSystem : IStageTransitionSystem
 
     public void WarpToStageAtStairUp(StageSO stage)
     {
-        // Simple fallback to default start pos
         if (stage == null) return;
-        gm.LoadStageWithCustomStart(stage, stage.PlayerStartPosition, stage.PlayerStartDirection);
+        // 上り階段 (BrokenStairUp を含む) の位置を優先し、なければ PlayerStartPosition へ
+        Vector2Int stairPos = stage.GetStairUpPosition() ?? stage.PlayerStartPosition;
+        gm.LoadStageWithCustomStart(stage, stairPos, stage.PlayerStartDirection);
     }
 
     public async UniTask WarpToStageAtStairUpAsync(StageSO stage)

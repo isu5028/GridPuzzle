@@ -106,10 +106,7 @@ public class TitlePresenter : MonoBehaviour
 
         if (model.HasSaveData())
         {
-            // Open Load Selection
-            isMenuOpen = false;
-            // Hide Title View -> Open Load View
-            OpenLoadSelectionAsync().Forget();
+            ContinueGameAsync().Forget();
         }
         else
         {
@@ -118,22 +115,41 @@ public class TitlePresenter : MonoBehaviour
         }
     }
 
-    private async UniTaskVoid OpenLoadSelectionAsync()
+    private async UniTaskVoid ContinueGameAsync()
     {
-        // Hide Title Menu
-        // Open Load Menu
-        // If Load Menu Cancelled -> Show Title Menu
+        isMenuOpen = false;
 
-        bool loaded = await loadPresenter.OpenAsync(
-            view.HideAsync(),
-            () => view.ShowAsync()
-        );
-
-        if (!loaded)
+        GameProgressManager.SaveType? targetType = ResolveContinueSaveType();
+        if (!targetType.HasValue)
         {
-            isMenuOpen = true; // Return to title control
+            AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+            isMenuOpen = true;
+            RefreshView();
+            return;
         }
-        // If loaded, the scene will change from presenter, so do nothing.
+
+        if (transitionOut != null)
+        {
+            await transitionOut.AnimateAsync();
+        }
+
+        GameProgressManager.Instance.NextLoadType = targetType.Value;
+        SceneManager.LoadScene("InGame");
+    }
+
+    private static GameProgressManager.SaveType? ResolveContinueSaveType()
+    {
+        if (GameProgressManager.Instance.GetSaveData(GameProgressManager.SaveType.Auto) != null)
+        {
+            return GameProgressManager.SaveType.Auto;
+        }
+
+        if (GameProgressManager.Instance.GetSaveData(GameProgressManager.SaveType.Manual) != null)
+        {
+            return GameProgressManager.SaveType.Manual;
+        }
+
+        return null;
     }
 
     private async UniTaskVoid StartNewGameAsync()

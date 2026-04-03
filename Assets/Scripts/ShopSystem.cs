@@ -83,6 +83,26 @@ public class ShopSystem : IShopSystem
     private const string SoldOutLine   = "なんと！売り切れてもうたわ";
     private const string SoldOutLineEn = "Wow! You cleaned me right out!";
 
+    // 出口ステージでのKing台詞
+    private static readonly string[] ExitIdleLines =
+    {
+        "ほんまおおきに",
+        "また遊んでな",
+        "たのしんでくれた？",
+        "もっとおもろいもんつくって待ってるで",
+    };
+
+    private static readonly string[] ExitIdleLinesEn =
+    {
+        "Thanks a million!",
+        "Catch you next time!",
+        "Did ya have fun?",
+        "I'll be cooking up something even cooler for next time!",
+    };
+
+    private const string ExitEnterLine   = "見送ったるわ";
+    private const string ExitEnterLineEn = "Here to see you off!";
+
     private static bool IsEnglish => GameSettings.Language == 0;
 
     public ShopSystem(GridManager gridManager)
@@ -200,7 +220,7 @@ public class ShopSystem : IShopSystem
         Enemy king = FindCurrentStageKingEnemy();
         StageSO stage = gm.CurrentStageSOInternal;
 
-        if (king == null || stage == null || !IsShopStage(stage))
+        if (king == null || stage == null || !IsKingDialogueStage(stage))
         {
             ClearCurrentKingDialogueState();
             return;
@@ -222,7 +242,10 @@ public class ShopSystem : IShopSystem
             }
             else
             {
-                ShowKingDialogue(IsEnglish ? EnterLineEn : EnterLine);
+                string enterLine = stage.IsExitStage
+                    ? (IsEnglish ? ExitEnterLineEn : ExitEnterLine)
+                    : (IsEnglish ? EnterLineEn : EnterLine);
+                ShowKingDialogue(enterLine);
             }
             TrackKingHp(king);
         }
@@ -243,10 +266,18 @@ public class ShopSystem : IShopSystem
         kingDialogSilentTimer += deltaTime;
         if (kingDialogSilentTimer < KingIdleDialogDelaySeconds) return;
 
-        bool soldOut = AreAllShopItemsPurchased(stage);
-        string[] idleLines = soldOut
-            ? (IsEnglish ? IdleLinesSoldOutEn : IdleLinesSoldOut)
-            : (IsEnglish ? IdleLinesNotSoldOutEn : IdleLinesNotSoldOut);
+        string[] idleLines;
+        if (stage.IsExitStage)
+        {
+            idleLines = IsEnglish ? ExitIdleLinesEn : ExitIdleLines;
+        }
+        else
+        {
+            bool soldOut = AreAllShopItemsPurchased(stage);
+            idleLines = soldOut
+                ? (IsEnglish ? IdleLinesSoldOutEn : IdleLinesSoldOut)
+                : (IsEnglish ? IdleLinesNotSoldOutEn : IdleLinesNotSoldOut);
+        }
         string nextLine = PickRandomLine(idleLines, lastShownKingDialogueText);
         if (!string.IsNullOrEmpty(nextLine))
         {
@@ -259,7 +290,7 @@ public class ShopSystem : IShopSystem
         bool shouldSuppressEnterDialogue = suppressNextKingEnterDialogue;
         suppressNextKingEnterDialogue = false;
 
-        if (stage == null || !IsShopStage(stage))
+        if (stage == null || !IsKingDialogueStage(stage))
         {
             ClearCurrentKingDialogueState();
             return;
@@ -274,7 +305,10 @@ public class ShopSystem : IShopSystem
         }
         else
         {
-            ShowKingDialogue(IsEnglish ? EnterLineEn : EnterLine);
+            string enterLine = stage.IsExitStage
+                ? (IsEnglish ? ExitEnterLineEn : ExitEnterLine)
+                : (IsEnglish ? EnterLineEn : EnterLine);
+            ShowKingDialogue(enterLine);
         }
 
         if (currentKingEnemy != null)
@@ -322,6 +356,69 @@ public class ShopSystem : IShopSystem
         suppressNextKingEnterDialogue = suppress;
     }
 
+    public List<StageShopData> BuildShopPurchaseSaveData()
+    {
+        var result = new List<StageShopData>();
+        foreach (var kvp in purchasedShopItemsByStage)
+        {
+            StageSO stage = kvp.Key;
+            HashSet<Vector2Int> positions = kvp.Value;
+            if (stage == null || positions == null || positions.Count == 0) continue;
+
+            var data = new StageShopData
+            {
+                stageX = stage.MapPosition.x,
+                stageY = stage.MapPosition.y,
+                purchasedPositions = new List<Vector2IntData>()
+            };
+            foreach (var pos in positions)
+            {
+                data.purchasedPositions.Add(new Vector2IntData(pos));
+            }
+            result.Add(data);
+        }
+        return result;
+    }
+
+    public void RestoreShopPurchasesFromSaveData(List<StageShopData> savedData)
+    {
+        purchasedShopItemsByStage.Clear();
+        if (savedData == null) return;
+
+        foreach (var stageData in savedData)
+        {
+            if (stageData == null || stageData.purchasedPositions == null) continue;
+
+            StageSO stage = FindStageByMapPosInternal(stageData.stageX, stageData.stageY);
+            if (stage == null) continue;
+
+            if (!purchasedShopItemsByStage.ContainsKey(stage))
+            {
+                purchasedShopItemsByStage[stage] = new HashSet<Vector2Int>();
+            }
+            foreach (var posData in stageData.purchasedPositions)
+            {
+                purchasedShopItemsByStage[stage].Add(posData.ToVector2Int());
+            }
+        }
+    }
+
+    private StageSO FindStageByMapPosInternal(int x, int y)
+    {
+        if (gm.StageSOs != null)
+        {
+            foreach (var s in gm.StageSOs)
+            {
+                if (s != null && s.MapPosition.x == x && s.MapPosition.y == y) return s;
+            }
+        }
+        if (gm.WorldMapSO != null)
+        {
+            return gm.WorldMapSO.GetStageByMapPosition(new Vector2Int(x, y));
+        }
+        return null;
+    }
+
     private Enemy FindCurrentStageKingEnemy()
     {
         if (gm == null || gm.UnitManager == null) return null;
@@ -353,6 +450,39 @@ public class ShopSystem : IShopSystem
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 全ショップステージの全アイテムを購入済みかどうかを返す
+    /// </summary>
+    public bool AreAllShopItemsPurchasedAcrossAllShopStages()
+    {
+        var allStages = gm.WorldMapSO != null
+            ? (System.Collections.Generic.IEnumerable<StageSO>)gm.WorldMapSO.GetAllStages()
+            : gm.StageSOs ?? System.Linq.Enumerable.Empty<StageSO>();
+
+        bool foundAtLeastOne = false;
+        foreach (var s in allStages)
+        {
+            if (s == null) continue;
+            if (!IsShopStage(s)) continue;
+            if (s.ShopItemPositions == null || s.ShopItemPositions.Count == 0) continue;
+            foundAtLeastOne = true;
+            if (!AreAllShopItemsPurchased(s)) return false;
+        }
+        return foundAtLeastOne;
+    }
+
+    /// <summary>
+    /// Kingが对話を表示するステージかどうか（ショップまたは出口ステージ）
+    /// </summary>
+    private bool IsKingDialogueStage(StageSO stage)
+    {
+        if (stage == null) return false;
+        if (IsShopStage(stage)) return true;
+        // 出口ステージにKingが存在する場合
+        if (stage.IsExitStage && FindCurrentStageKingEnemy() != null) return true;
+        return false;
     }
 
     private void ShowKingDialogue(string line, bool playSmileAnimation = false)

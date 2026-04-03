@@ -225,6 +225,12 @@ public class StageEnemySystem : IStageEnemySystem
                 continue;
             }
 
+            bool dropsCoinConfigured = false;
+            if (data.index >= 0 && data.index < stage.EnemyStartData.Count)
+            {
+                dropsCoinConfigured = stage.EnemyStartData[data.index].DropsCoin;
+            }
+
             Enemy recycled = null;
             if (pendingEnemies != null)
             {
@@ -255,6 +261,9 @@ public class StageEnemySystem : IStageEnemySystem
                 }
                 else recycled.ReviveSilent();
 
+                ApplySharedKingCoinIdentity(stage, recycled, enemyTypeToUse, dropsCoinConfigured);
+                recycled.UpdateDefeatedIcon();
+
                 recycled.transform.SetParent(gm.Visualizer.GridParent);
                 continue;
             }
@@ -278,13 +287,12 @@ public class StageEnemySystem : IStageEnemySystem
                         maxHPToUse = 3;
                  }
 
-                bool dropsCoinToUse = false;
-                 if (data.index >= 0 && data.index < stage.EnemyStartData.Count)
-                     dropsCoinToUse = stage.EnemyStartData[data.index].DropsCoin;
+                bool dropsCoinToUse = dropsCoinConfigured;
 
                 var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse, data.ammo, dropsCoinToUse);
 
                 newEnemy.EnemyID = string.IsNullOrEmpty(data.enemyID) ? $"{stage.name}_{data.index}" : data.enemyID;
+                ApplySharedKingCoinIdentity(stage, newEnemy, enemyTypeToUse, dropsCoinConfigured);
                 newEnemy.SetHP(data.currentHP);
                 newEnemy.SetAIState(data.aiState);
                 if (enemyTypeToUse == EnemyType.Crystal)
@@ -298,6 +306,7 @@ public class StageEnemySystem : IStageEnemySystem
 
                 newEnemy.name = $"Enemy_{enemyTypeToUse}_{data.index}_Loaded";
                 newEnemy.SetDirection((Direction)data.direction);
+                newEnemy.UpdateDefeatedIcon();
 
                 generatedEnemies.Add(newEnemy);
             }
@@ -313,9 +322,23 @@ public class StageEnemySystem : IStageEnemySystem
     public void PrepareEnemiesForStage(StageSO stage)
     {
         // Robustness: Ensure enemies from ALL other stages are deactivated.
-        // This prevents "Ghost" enemies (e.g. from Undo operations or crossed boundaries)
-        // from remaining visible if they were active but not tracked by UnitManager.
         DeactivateAllEnemiesExcept(stage);
+
+        // 出口ステージは訪問ごとにショップ購入状態を反映するため常に再生成する
+        if (stage != null && stage.IsExitStage && gm.StageEnemiesMap.ContainsKey(stage))
+        {
+            var existingList = gm.StageEnemiesMap[stage];
+            foreach (var e in existingList)
+            {
+                if (e != null)
+                {
+                    e.gameObject.SetActive(false);
+                    Object.Destroy(e.gameObject);
+                }
+            }
+            gm.StageEnemiesMap.Remove(stage);
+            gm.LoadedStageEnemyData.Remove(stage);
+        }
 
         EnsureStageEnemiesLoaded(stage);
 
@@ -376,18 +399,57 @@ public class StageEnemySystem : IStageEnemySystem
                 continue;
             }
 
+            // 出口ステージのKingは全ショップアイテム購入済のときのみ出現
+            if (stage.IsExitStage && enemyData.EnemyType == EnemyType.King)
+            {
+                if (gm.ShopSystem == null || !gm.ShopSystem.AreAllShopItemsPurchasedAcrossAllShopStages())
+                {
+                    count++;
+                    continue;
+                }
+            }
+
             Vector3 worldPos = gm.GridToWorldPosition(enemyData.Position);
             GameObject prefab = getEnemyPrefab(enemyData.EnemyType);
 
             var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder, enemyData.Ammo, enemyData.DropsCoin);
             enemyScript.name = $"Enemy_{enemyData.EnemyType}_{count}";
             enemyScript.EnemyID = $"{stage.name}_{count}";
+            ApplySharedKingCoinIdentity(stage, enemyScript, enemyData.EnemyType, enemyData.DropsCoin);
+            enemyScript.UpdateDefeatedIcon();
+
             count++;
 
             enemyScript.SetDirection(enemyData.Direction);
             generatedEnemies.Add(enemyScript);
         }
         return generatedEnemies;
+    }
+
+    private static void ApplySharedKingCoinIdentity(StageSO stage, Enemy enemy, EnemyType enemyType, bool dropsCoinConfigured)
+    {
+        if (stage == null || enemy == null) return;
+        if (enemyType != EnemyType.King) return;
+
+        // 出口Kingは常に「既に一度倒されている」扱い
+        // 1) 専用IDを付与
+        // 2) 敗北済みに即登録
+        // 3) コインドロップを無効化
+        if (stage.IsExitStage)
+        {
+            enemy.EnemyID = Enemy.ExitKingAlwaysDefeatedID;
+            enemy.SetDropsCoin(false);
+            GameProgressManager.Instance.MarkEnemyDefeated(Enemy.ExitKingAlwaysDefeatedID);
+            return;
+        }
+
+        // ShopのコインドロップKingは共有IDで管理
+        // これによりShop内で「既にコインを落としたか」の状態を一貫させる
+        bool shouldShareCoinState = dropsCoinConfigured;
+        if (!shouldShareCoinState) return;
+
+        enemy.EnemyID = Enemy.KingCoinSharedID;
+        enemy.SetDropsCoin(true);
     }
 
     private Enemy InstantiateAndInitializeEnemy(GameObject prefab, Vector3 worldPos, Vector2Int gridPos, Direction dir, int maxHp, int order, int ammo = -1, bool dropsCoin = false)

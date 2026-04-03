@@ -57,7 +57,7 @@ public class OptionPresenter : MonoBehaviour
     void Update()
     {
         // オプション開閉（最優先で処理）
-        if (view.InputOption.triggered && !isAnimating && !gridManager.IsEventPlaying)
+        if (view.InputOption.triggered && !isAnimating && !gridManager.IsEventPlaying && !gridManager.IsShopItemReading)
         {
             if (isSubMenuOpen)
             {
@@ -235,6 +235,7 @@ public class OptionPresenter : MonoBehaviour
 
         switch (model.CurrentItem)
         {
+            /*
             case OptionModel.ItemType.Save:
                 view.BlinkCursorAsync().Forget();
                 HandleSaveAsync().Forget();
@@ -244,6 +245,7 @@ public class OptionPresenter : MonoBehaviour
                 view.BlinkCursorAsync().Forget();
                 HandleLoadAsync().Forget();
                 break;
+            */
 
             case OptionModel.ItemType.Close:
                 view.BlinkCursorAsync().Forget();
@@ -296,7 +298,7 @@ public class OptionPresenter : MonoBehaviour
 
     private void ApplyGameSpeed()
     {
-        GameSettings.GameSpeed = model.GameSpeed == OptionModel.GameSpeedType.Normal ? 0 : 1;
+        GameSettings.GameSpeed = model.GameSpeed == OptionModel.GameSpeedType.Slow ? 0 : 1;
     }
 
     private void ApplyLanguage()

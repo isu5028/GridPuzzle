@@ -24,6 +24,18 @@ public class Enemy : Unit
 
     public string EnemyID { get; set; }
 
+    /// <summary>
+    /// Shopステージ・出口ステージ共通の固定共有ID。
+    /// このIDで「初回コインドロップ済み」を管理する。
+    /// </summary>
+    public const string KingCoinSharedID = "__king_coin_shared__";
+
+    /// <summary>
+    /// 出口ステージのKing専用ID。
+    /// 常に「既に倒されたことがある」扱いにするために使用する。
+    /// </summary>
+    public const string ExitKingAlwaysDefeatedID = "__exit_king_always_defeated__";
+
     protected override System.Collections.Generic.IEnumerable<TextMeshPro> GetAdditionalTextsToFade()
     {
         if (ammoText != null)
@@ -131,7 +143,7 @@ public class Enemy : Unit
     {
         maxAmmo = value;
         if (currentAmmo.Value < 0) currentAmmo.Value = value;
-        
+
         if (ammoText != null && value >= 0)
         {
             ammoText.text = currentAmmo.Value.ToString();

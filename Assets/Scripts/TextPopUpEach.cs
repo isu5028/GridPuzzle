@@ -14,6 +14,13 @@ public class TextPopUpEach : MonoBehaviour
     Vector3 hiddenPosition;
     System.Threading.CancellationTokenSource _cts;
 
+    private void CancelAndDisposeCts()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+    }
+
     void Start()
     {
         originalPosition = text.transform.localPosition;
@@ -37,7 +44,7 @@ public class TextPopUpEach : MonoBehaviour
 
     public void Show()
     {
-        _cts?.Cancel();
+        CancelAndDisposeCts();
         _cts = new System.Threading.CancellationTokenSource();
         ShowAsync(_cts.Token).Forget();
     }
@@ -130,7 +137,13 @@ public class TextPopUpEach : MonoBehaviour
     {
         DOTween.To(() => text.transform.localPosition, x => text.transform.localPosition = x, hiddenPosition, duration).SetEase(Ease.OutQuad);
         await UniTask.Delay((int)(duration * 1000));
-        _cts?.Cancel();
+        CancelAndDisposeCts();
+
+    }
+
+    private void OnDestroy()
+    {
+        CancelAndDisposeCts();
 
     }
 }
