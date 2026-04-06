@@ -131,10 +131,10 @@ TextureImporter:
       name: Space
       rect:
         serializedVersion: 2
-        x: 1
-        y: 108
-        width: 40
-        height: 7
+        x: 0
+        y: 107
+        width: 42
+        height: 9
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -153,10 +153,10 @@ TextureImporter:
       name: Esc
       rect:
         serializedVersion: 2
-        x: 1
-        y: 99
-        width: 24
-        height: 7
+        x: 0
+        y: 97
+        width: 26
+        height: 9
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -175,10 +175,10 @@ TextureImporter:
       name: Tab
       rect:
         serializedVersion: 2
-        x: 1
-        y: 90
-        width: 22
-        height: 7
+        x: 0
+        y: 87
+        width: 24
+        height: 9
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -197,12 +197,12 @@ TextureImporter:
       name: WideKeys_0
       rect:
         serializedVersion: 2
-        x: 1
-        y: 81
-        width: 35
-        height: 7
+        x: 0
+        y: 77
+        width: 37
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -219,12 +219,12 @@ TextureImporter:
       name: WideKeys_1
       rect:
         serializedVersion: 2
-        x: 1
-        y: 73
-        width: 6
-        height: 6
+        x: 0
+        y: 68
+        width: 8
+        height: 8
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []

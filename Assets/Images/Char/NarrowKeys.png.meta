@@ -149,12 +149,12 @@ TextureImporter:
       name: W
       rect:
         serializedVersion: 2
-        x: 1
-        y: 41
-        width: 8
-        height: 7
+        x: 0
+        y: 92
+        width: 10
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -171,12 +171,12 @@ TextureImporter:
       name: A
       rect:
         serializedVersion: 2
-        x: 1
-        y: 33
-        width: 8
-        height: 7
+        x: 0
+        y: 82
+        width: 10
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -193,12 +193,12 @@ TextureImporter:
       name: S
       rect:
         serializedVersion: 2
-        x: 1
-        y: 25
-        width: 8
-        height: 7
+        x: 0
+        y: 72
+        width: 10
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -215,12 +215,12 @@ TextureImporter:
       name: D
       rect:
         serializedVersion: 2
-        x: 1
-        y: 17
-        width: 8
-        height: 7
+        x: 0
+        y: 62
+        width: 10
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -237,12 +237,12 @@ TextureImporter:
       name: Z
       rect:
         serializedVersion: 2
-        x: 1
-        y: 9
-        width: 8
-        height: 7
+        x: 0
+        y: 52
+        width: 10
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -259,12 +259,12 @@ TextureImporter:
       name: R
       rect:
         serializedVersion: 2
-        x: 1
-        y: 1
-        width: 7
-        height: 7
+        x: 0
+        y: 42
+        width: 9
+        height: 9
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -273,6 +273,72 @@ TextureImporter:
       bones: []
       spriteID: f3837b41e0e7bf547ae0e20fc1a6e731
       internalID: -856525126
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: X
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 32
+        width: 9
+        height: 9
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b857c70c2361bd341a927bc050eafea7
+      internalID: 245520733
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Q
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 22
+        width: 10
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ebc3c8b66ffe3744d87e53e332a30b22
+      internalID: 1868277594
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: E
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 12
+        width: 9
+        height: 9
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f80b3268835be0a47b6de3309bbde1de
+      internalID: 1408170577
       vertices: []
       indices: 
       edges: []
@@ -293,9 +359,12 @@ TextureImporter:
     nameFileIdTable:
       A: 85641849
       D: 337581136
+      E: 1408170577
+      Q: 1868277594
       R: -856525126
       S: 1952615506
       W: -488983696
+      X: 245520733
       Z: 2045503873
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
