@@ -28,6 +28,8 @@ MonoBehaviour:
     Ammo: -1
     DropsCoin: 0
   crateStartPositions: []
+  shopItemPositions: []
+  shopItemIds: 
   tutorialIndexData: []
   upStage: {fileID: 11400000, guid: ff0a5a6f7e995e9478d7029b1b1c3ded, type: 2}
   downStage: {fileID: 0}
@@ -36,5 +38,6 @@ MonoBehaviour:
   defaultUpStage: {fileID: 11400000, guid: 4214a7250f7bce94b892455538b571e4, type: 2}
   defaultDownStage: {fileID: 0}
   stairConnections: []
+  isExitStage: 0
   PlayerMaxHP: 2
   PlayerStartOrder: 0

@@ -23,7 +23,7 @@ MonoBehaviour:
   - Position: {x: 8, y: 5}
     Direction: 2
     EnemyType: 1
-    MaxHP: 3
+    MaxHP: 4
     SetActionOrder: 1
     Ammo: -1
     DropsCoin: 0
@@ -31,6 +31,8 @@ MonoBehaviour:
   - {x: 9, y: 3}
   - {x: 9, y: 2}
   - {x: 10, y: 2}
+  shopItemPositions: []
+  shopItemIds: 
   tutorialIndexData: []
   upStage: {fileID: 11400000, guid: 6d2aba265d604904a889b03f2aa9fa35, type: 2}
   downStage: {fileID: 11400000, guid: 5d9aeefcba155fa488797d665aeb6bc2, type: 2}
@@ -39,5 +41,6 @@ MonoBehaviour:
   defaultUpStage: {fileID: 11400000, guid: 7f2459b0b41bd5247b6d8c8e78eb1a02, type: 2}
   defaultDownStage: {fileID: 11400000, guid: 7eec84eb1e9d0204487b2374f172d6f1, type: 2}
   stairConnections: []
+  isExitStage: 0
   PlayerMaxHP: 2
   PlayerStartOrder: 0

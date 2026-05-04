@@ -27,7 +27,7 @@ MonoBehaviour:
     SetActionOrder: 1
     Ammo: 5
     DropsCoin: 0
-  - Position: {x: 7, y: 3}
+  - Position: {x: 7, y: 2}
     Direction: 2
     EnemyType: 7
     MaxHP: 2
@@ -45,5 +45,6 @@ MonoBehaviour:
   defaultUpStage: {fileID: 11400000, guid: d71adf4714954f74ba3f4459fba739dc, type: 2}
   defaultDownStage: {fileID: 11400000, guid: a2f742dd9ea20ca48a2a82dac886c2ce, type: 2}
   stairConnections: []
+  isExitStage: 0
   PlayerMaxHP: 2
   PlayerStartOrder: 0
