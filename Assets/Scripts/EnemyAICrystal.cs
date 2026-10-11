@@ -15,6 +15,7 @@ public class EnemyAICrystal : EnemyAI
         if (PaletteManager.Instance != null)
         {
             PaletteManager.Instance.NextPalette();
+            SteamAchievementHelper.TryUnlockChangeColorAchievement();
         }
 
         // Camera Shake (Similar to Player Attack)

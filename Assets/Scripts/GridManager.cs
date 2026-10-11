@@ -235,7 +235,30 @@ public partial class GridManager : MonoBehaviour
     /// </summary>
     internal void TriggerGameClear()
     {
+        bool clearAllCondition = currentStageSO != null
+            && currentStageSO.IsExitStage
+            && shopSystem != null
+            && shopSystem.AreAllShopItemsPurchasedAcrossAllShopStages()
+            && IsExitStageKingPresent();
+
+        SteamAchievementHelper.TryUnlockClearAchievements(clearAllCondition);
         PlayEndingSequence().Forget();
+    }
+
+    private bool IsExitStageKingPresent()
+    {
+        if (currentStageSO == null || !currentStageSO.IsExitStage) return false;
+        if (unitManager == null || unitManager.Enemies == null) return false;
+
+        foreach (var enemy in unitManager.Enemies)
+        {
+            if (enemy != null && !enemy.IsDead && enemy.Type == EnemyType.King)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async UniTaskVoid PlayEndingSequence()
@@ -765,8 +788,30 @@ public partial class GridManager : MonoBehaviour
     #endregion
 
     #region Wall Management
+    private bool IsInStageBounds(StageSO stage, Vector2Int pos)
+    {
+        return pos.x >= 0 && pos.x < stage.Width && pos.y >= 0 && pos.y < stage.Height;
+    }
+
+    private bool IsBreakableWallCoordinate(StageSO stage, Vector2Int pos)
+    {
+        if (IsInStageBounds(stage, pos) || IsBoundaryCoordinate(stage, pos))
+        {
+            return true;
+        }
+
+        bool inRenderedBorderX = pos.x >= -1 && pos.x <= stage.Width;
+        bool inRenderedBorderY = pos.y >= -1 && pos.y <= stage.Height;
+        return inRenderedBorderX && inRenderedBorderY;
+    }
+
     public void BreakWall(StageSO stage, Vector2Int pos, bool permanent = false)
     {
+        if (stage == null || !IsBreakableWallCoordinate(stage, pos))
+        {
+            return;
+        }
+
         if (!DestroyedWalls.ContainsKey(stage))
         {
             DestroyedWalls[stage] = new HashSet<Vector2Int>();
@@ -804,26 +849,26 @@ public partial class GridManager : MonoBehaviour
             // Do NOT break inner walls (Real Walls) automatically, so units might crash into them.
 
             // Left Neighbor Interactions: Breaking Left Boundary (-1) -> Breaks Neighbor's Right Boundary (Width)
-            if (pos.x == -1)
+            if (pos.x == -1 && pos.y >= 0 && pos.y < stage.Height)
             {
                 // 隣接ステージの境界壁が破壊される = 現在ステージ側も境界エフェクト（PropagateBreakが呼ぶ）
                 PropagateBreak(stage, Direction.Left, pos.y, permanent);
             }
 
             // Right Neighbor Interactions: Breaking Right Boundary (Width) -> Breaks Neighbor's Left Boundary (-1)
-            if (pos.x == stage.Width)
+            if (pos.x == stage.Width && pos.y >= 0 && pos.y < stage.Height)
             {
                 PropagateBreak(stage, Direction.Right, pos.y, permanent);
             }
 
             // Down Neighbor Interactions: Breaking Bottom Boundary (-1) -> Breaks Neighbor's Top Boundary (Height)
-            if (pos.y == -1)
+            if (pos.y == -1 && pos.x >= 0 && pos.x < stage.Width)
             {
                 PropagateBreak(stage, Direction.Down, pos.x, permanent);
             }
 
             // Up Neighbor Interactions: Breaking Top Boundary (Height) -> Breaks Neighbor's Bottom Boundary (-1)
-            if (pos.y == stage.Height)
+            if (pos.y == stage.Height && pos.x >= 0 && pos.x < stage.Width)
             {
                 PropagateBreak(stage, Direction.Up, pos.x, permanent);
             }
@@ -871,6 +916,7 @@ public partial class GridManager : MonoBehaviour
 
     private bool IsStage67PatternAreaCell(StageSO stage, Vector2Int pos)
     {
+        /*
         if (stage == null || stage.MapPosition != stage67MapPosition) return false;
 
         int topY = stage.Height - 1 - stage67PatternTopFromTop;
@@ -880,10 +926,13 @@ public partial class GridManager : MonoBehaviour
             && pos.x < stage67PatternLeft + stage67PatternWidth
             && pos.y >= bottomY
             && pos.y <= topY;
+            */
+            return false;
     }
 
     private void EvaluateStage67WallPuzzle(StageSO stage)
     {
+        /*
         if (stage == null || stage.MapPosition != stage67MapPosition) return;
 
         bool matchedA = MatchesStage67Pattern(stage, stage67PatternA);
@@ -913,10 +962,12 @@ public partial class GridManager : MonoBehaviour
         {
             BreakRightOuterBoundaryPermanently(stage);
         }
+        */
     }
 
     private void MarkStage67PatternCompleted(StageSO stage, bool isPatternA)
     {
+        /*
         Vector2Int flagPos = isPatternA ? stage67PatternACompletedFlagPos : stage67PatternBCompletedFlagPos;
         if (IsPermanentDestroyedWall(stage, flagPos)) return;
 
@@ -927,16 +978,21 @@ public partial class GridManager : MonoBehaviour
             DestroyedWalls[stage] = new HashSet<Vector2Int>();
         }
         DestroyedWalls[stage].Add(flagPos);
+        */
     }
 
     private bool IsStage67PatternCompleted(StageSO stage, bool isPatternA)
     {
+        /*
         Vector2Int flagPos = isPatternA ? stage67PatternACompletedFlagPos : stage67PatternBCompletedFlagPos;
         return IsPermanentDestroyedWall(stage, flagPos);
+        */
+        return false;
     }
 
     private bool IsStage67RightmostColumnUnlocked(StageSO stage)
     {
+        /*
         int x = stage.Width - 1;
         for (int y = 0; y < stage.Height; y++)
         {
@@ -946,12 +1002,13 @@ public partial class GridManager : MonoBehaviour
                 return false;
             }
         }
-
+*/
         return true;
     }
 
     private bool IsStage67RightOuterBoundaryUnlocked(StageSO stage)
     {
+        /*
         int boundaryX = stage.Width;
         for (int y = 0; y < stage.Height; y++)
         {
@@ -960,12 +1017,13 @@ public partial class GridManager : MonoBehaviour
                 return false;
             }
         }
-
+*/
         return true;
     }
 
     private bool MatchesStage67Pattern(StageSO stage, bool[,] patternWallMask)
     {
+        /*
         if (stage.Width <= stage67PatternLeft + stage67PatternWidth - 1) return false;
         if (stage.Height <= stage67PatternTopFromTop + stage67PatternHeight - 1) return false;
 
@@ -984,7 +1042,7 @@ public partial class GridManager : MonoBehaviour
                 }
             }
         }
-
+*/
         return true;
     }
 
@@ -1026,12 +1084,13 @@ public partial class GridManager : MonoBehaviour
 
         if (didBreak)
         {
-            TriggerStage67SolveFeedback();
+            //TriggerStage67SolveFeedback();
         }
     }
 
     private void TriggerStage67SolveFeedback()
     {
+        /*
         if (AudioManager.Instance != null)
         {
             AudioManager.Instance.PlaySE(AudioManager.SEType.solve);
@@ -1042,6 +1101,7 @@ public partial class GridManager : MonoBehaviour
             // パズル解決演出として強めの揺れ
             CameraManager.Instance.ShakeCamera(0.5f, 12.0f, 30f, new Vector2(1f, 1f));
         }
+        */
     }
 
     private StageSO GetOrCreateAdjacentStage(StageSO currentStage, Direction dir)
@@ -1079,6 +1139,11 @@ public partial class GridManager : MonoBehaviour
 
     public void RestoreWall(StageSO stage, Vector2Int pos)
     {
+        if (stage == null || !IsBreakableWallCoordinate(stage, pos))
+        {
+            return;
+        }
+
         if (IsPermanentDestroyedWall(stage, pos))
         {
             return;
@@ -1103,10 +1168,10 @@ public partial class GridManager : MonoBehaviour
                 }
 
                 // --- Recursive Restore for Adjacent Stage (Virtual Walls ONLY) ---
-                if (pos.x == -1) PropagateRestore(stage, Direction.Left, pos.y);
-                if (pos.x == stage.Width) PropagateRestore(stage, Direction.Right, pos.y);
-                if (pos.y == -1) PropagateRestore(stage, Direction.Down, pos.x);
-                if (pos.y == stage.Height) PropagateRestore(stage, Direction.Up, pos.x);
+                if (pos.x == -1 && pos.y >= 0 && pos.y < stage.Height) PropagateRestore(stage, Direction.Left, pos.y);
+                if (pos.x == stage.Width && pos.y >= 0 && pos.y < stage.Height) PropagateRestore(stage, Direction.Right, pos.y);
+                if (pos.y == -1 && pos.x >= 0 && pos.x < stage.Width) PropagateRestore(stage, Direction.Down, pos.x);
+                if (pos.y == stage.Height && pos.x >= 0 && pos.x < stage.Width) PropagateRestore(stage, Direction.Up, pos.x);
             }
         }
     }

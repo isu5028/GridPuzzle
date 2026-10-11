@@ -155,6 +155,38 @@ MonoBehaviour:
     m_Key: STAIR_MOVE
     m_Metadata:
       m_Items: []
+  - m_Id: 30899128402305024
+    m_Key: STAIR_BLOCKED
+    m_Metadata:
+      m_Items: []
+  - m_Id: 30989257947078656
+    m_Key: RESET_ENEMY
+    m_Metadata:
+      m_Items: []
+  - m_Id: 35893236892033024
+    m_Key: HINT_TITLE
+    m_Metadata:
+      m_Items: []
+  - m_Id: 35893318685155328
+    m_Key: HINT_1
+    m_Metadata:
+      m_Items: []
+  - m_Id: 35893392446185472
+    m_Key: HINT_2
+    m_Metadata:
+      m_Items: []
+  - m_Id: 35893516526280704
+    m_Key: HINT_3
+    m_Metadata:
+      m_Items: []
+  - m_Id: 35893533836173312
+    m_Key: HINT_4
+    m_Metadata:
+      m_Items: []
+  - m_Id: 35893534977024000
+    m_Key: HINT_5
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

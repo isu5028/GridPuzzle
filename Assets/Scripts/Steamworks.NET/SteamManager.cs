@@ -96,12 +96,18 @@ public class SteamManager : MonoBehaviour {
 			// Once you get a Steam AppID assigned by Valve, you need to replace AppId_t.Invalid with it and
 			// remove steam_appid.txt from the game depot. eg: "(AppId_t)480" or "new AppId_t(480)".
 			// See the Valve documentation for more information: https://partner.steamgames.com/doc/sdk/api#initialization_and_shutdown
-			if (SteamAPI.RestartAppIfNecessary(AppId_t.Invalid)) {
+			//
+			// GRIDCRYPT_STEAM_BUILD:
+			//   Enable this define only for Steam-distributed builds.
+			//   Non-Steam builds skip RestartAppIfNecessary to avoid app relaunch behavior.
+			#if GRIDCRYPT_STEAM_BUILD
+			if (SteamAPI.RestartAppIfNecessary(new AppId_t(4542250))) {
 				Debug.Log("[Steamworks.NET] Shutting down because RestartAppIfNecessary returned true. Steam will restart the application.");
 
 				Application.Quit();
 				return;
 			}
+			#endif
 		}
 		catch (System.DllNotFoundException e) { // We catch this exception here, as it will be the first occurrence of it.
 			Debug.LogError("[Steamworks.NET] Could not load [lib]steam_api.dll/so/dylib. It's likely not in the correct location. Refer to the README for more details.\n" + e, this);

@@ -6,6 +6,8 @@ Shader "Custom/DitherDissolve"
         _DitherPattern ("Dither Pattern (optional)", 2D) = "white" {}
         _DissolveAmount ("Dissolve Amount", Range(0, 1)) = 0
         _PatternScale ("Block Size (Pixels)", Float) = 1
+        _DitherAspect ("Dither Aspect Compensation", Float) = 1
+        _UseScreenSpaceDither ("Use Screen Space Dither", Float) = 0
         _UseTexture ("Use Texture Pattern", Float) = 0
 
         [Header(Sweep Settings)]
@@ -32,6 +34,7 @@ Shader "Custom/DitherDissolve"
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
+                float4 color : COLOR;
             };
 
             struct v2f
@@ -39,6 +42,7 @@ Shader "Custom/DitherDissolve"
                 float2 uv : TEXCOORD0;
                 float4 vertex : SV_POSITION;
                 float4 screenPos : TEXCOORD1;
+                float4 color : COLOR;
             };
 
             sampler2D _MainTex;
@@ -47,6 +51,8 @@ Shader "Custom/DitherDissolve"
             float4 _MainTex_ST;
             float _DissolveAmount;
             float _PatternScale;
+            float _DitherAspect;
+            float _UseScreenSpaceDither;
             float _UseTexture;
             float _SweepDirection;
             float _SweepSpread;
@@ -113,44 +119,68 @@ Shader "Custom/DitherDissolve"
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.screenPos = ComputeScreenPos(o.vertex);
+                o.color = v.color;
                 return o;
             }
 
             fixed4 frag (v2f i) : SV_Target
             {
-                fixed4 col = tex2D(_MainTex, i.uv);
+                fixed4 col = tex2D(_MainTex, i.uv) * i.color;
 
                 // アスペクト比 (Width / Height)
                 float aspect = _MainTex_TexelSize.z / _MainTex_TexelSize.w;
 
                 // ブロックサイズ（1つの正方形のピクセル数）
                 float blockSize = max(1.0, _PatternScale);
+                float ditherAspect = max(0.0001, _DitherAspect);
 
-                // 画像のピクセル座標に変換
-                float2 pixelPos = i.uv * _MainTex_TexelSize.zw;
+                // 画像のピクセル座標に変換（テクスチャ空間）
+                float2 texturePixelPos = i.uv * _MainTex_TexelSize.zw;
+                // 非等方スケール時でもディザセルを正方形に保つため、X軸のみ補正
+                texturePixelPos.x *= ditherAspect;
+
+                // ディザ座標を決定
+                // - テクスチャ空間: スプライト拡大時にディザも拡大される
+                // - スクリーン空間: スプライト拡大の影響を受けず、画面ピクセル基準で一定
+                float2 ditherPos = texturePixelPos;
+                bool useScreenSpaceDither = (_UseScreenSpaceDither > 0.5);
+                if (useScreenSpaceDither)
+                {
+                    float invW = 1.0 / max(0.0001, i.screenPos.w);
+                    float2 screenUV = i.screenPos.xy * invW;
+                    ditherPos = screenUV * _ScreenParams.xy;
+                }
 
                 // 座標をブロック単位で丸める（量子化）
                 // これにより、blockSize x blockSize の範囲内で全ての計算結果が同一になり、
                 // 中途半端に削れた形が出ず、綺麗な正方形だけで構成されるようになります。
-                float2 blockPos = floor(pixelPos / blockSize) * blockSize;
-                float2 quantizedUV = blockPos / _MainTex_TexelSize.zw;
+                float2 blockPos = floor(ditherPos / blockSize) * blockSize;
+
+                // スイープ方向はUVベースを維持（テクスチャ空間時のみ量子化座標を使用）
+                float2 sweepUV = i.uv;
+                if (!useScreenSpaceDither)
+                {
+                    sweepUV = blockPos / _MainTex_TexelSize.zw;
+                }
 
                 float threshold;
                 if (_UseTexture > 0.5)
                 {
-                    // テクスチャ使用時（テクスチャの1ピクセルをblockSizeに拡大して適用）
-                    threshold = tex2D(_DitherPattern, quantizedUV * (_MainTex_TexelSize.zw / 64.0)).r;
+                    // テクスチャ使用時（64x64単位で繰り返し）
+                    float2 patternUV = frac(blockPos / (blockSize * 64.0));
+                    threshold = tex2D(_DitherPattern, patternUV).r;
                 }
                 else
                 {
                     // Bayer Matrixを使用
                     // ブロックのインデックスから 0-63 の位置を決定
-                    int2 bayerIndex = int2(floor(blockPos / blockSize)) % 8;
+                    float2 blockIndex = floor(blockPos / blockSize);
+                    float2 bayerPos = frac(blockIndex / 8.0) * 8.0;
+                    int2 bayerIndex = int2(floor(bayerPos));
                     threshold = BayerMatrix8x8[bayerIndex.y * 8 + bayerIndex.x];
                 }
 
-                // スイープグラデーションも量子化した座標を使用
-                float sweepGradient = GetSweepGradient(quantizedUV, aspect);
+                float sweepGradient = GetSweepGradient(sweepUV, aspect);
 
                 // ディゾルブ進行度を計算（量子化されているので一定の範囲が同時に変化する）
                 float localDissolve = _DissolveAmount * (1.0 + _SweepSpread) - sweepGradient * _SweepSpread;

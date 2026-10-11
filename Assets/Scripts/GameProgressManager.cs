@@ -485,6 +485,7 @@ public class GameProgressManager : MonoBehaviour
             defeatedEnemies.Add(enemyId);
             Coins.Value++;
             TotalCoins.Value++;
+            SteamAchievementHelper.TryUnlockCoinAchievements(TotalCoins.Value);
             CheckStageClearOnDefeat(enemyId);
         }
     }
@@ -791,6 +792,7 @@ public class GameProgressManager : MonoBehaviour
 
             Coins.Value = data.coins;
             TotalCoins.Value = data.totalCoins;
+            SteamAchievementHelper.TryUnlockCoinAchievements(TotalCoins.Value);
             defeatedEnemies.Clear();
             if (data.defeatedEnemies != null)
             {
