@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System.IO;
+using UniRx;
 
 public class GameProgressManager : MonoBehaviour
 {
@@ -30,6 +31,7 @@ public class GameProgressManager : MonoBehaviour
     private Vector2Int currentMapPosition;
     private HashSet<Vector2Int> clearedPositions = new HashSet<Vector2Int>();
     private HashSet<Vector2Int> visitedPositions = new HashSet<Vector2Int>();
+    public HashSet<Vector2Int> VisitedPositions => visitedPositions;
     private int mapHeight = 8;
     private int mapWidth = 12;
     private string ManualSaveFilePath => Application.persistentDataPath + "/manualsavefile.json";
@@ -50,11 +52,69 @@ public class GameProgressManager : MonoBehaviour
     public Vector2Int SavedPlayerGridPos { get; private set; } = Vector2Int.zero;
     public Direction SavedPlayerDirection { get; private set; } = Direction.Right;
 
+    // コインと倒した敵の情報
+    public ReactiveProperty<int> Coins { get; private set; } = new ReactiveProperty<int>(0);
+    public ReactiveProperty<int> TotalCoins { get; private set; } = new ReactiveProperty<int>(0);
+    private HashSet<string> defeatedEnemies = new HashSet<string>();
+
+    private StageSO[] registeredStages;
+
+    public void RegisterStagesForClearCheck(StageSO[] stages)
+    {
+        registeredStages = stages;
+        EnsureKingCoinSharedIdMigration();
+        RecheckAllStagesClearStatus();
+    }
+
+    private void EnsureKingCoinSharedIdMigration()
+    {
+        if (defeatedEnemies == null || defeatedEnemies.Count == 0) return;
+        if (defeatedEnemies.Contains(Enemy.KingCoinSharedID)) return;
+        if (registeredStages == null) return;
+
+        foreach (var stage in registeredStages)
+        {
+            if (stage == null || stage.IsExitStage || stage.EnemyStartData == null) continue;
+
+            for (int i = 0; i < stage.EnemyStartData.Count; i++)
+            {
+                var esd = stage.EnemyStartData[i];
+                if (esd.EnemyType != EnemyType.King || !esd.DropsCoin) continue;
+
+                string legacyKingId = $"{stage.name}_{i}";
+                if (defeatedEnemies.Contains(legacyKingId))
+                {
+                    defeatedEnemies.Add(Enemy.KingCoinSharedID);
+                    return;
+                }
+            }
+        }
+    }
+
+    private void RecheckAllStagesClearStatus()
+    {
+        if (registeredStages == null) return;
+
+        foreach (var stage in registeredStages)
+        {
+            if (stage == null) continue;
+            if (IsStageFullyDefeated(stage))
+            {
+                Vector2Int mapPos = stage.MapPosition;
+                if (!IsHierarchicalCellCleared(mapPos))
+                {
+                    MarkHierarchicalCellAsCleared(mapPos);
+                }
+            }
+        }
+    }
+
     // セーブデータが存在したかどうかのフラグ
     public bool HasLoadedData { get; private set; } = false;
     public List<EnemySaveData> SavedEnemyList { get; private set; } = new List<EnemySaveData>();
     public List<StageEnemyData> SavedAllStagesEnemies { get; private set; } = new List<StageEnemyData>();
     public List<StageWallData> SavedAllStagesWalls { get; private set; } = new List<StageWallData>();
+    public List<StageShopData> SavedAllStagesShopPurchases { get; private set; } = new List<StageShopData>();
     public Vector2Int SavedResetMapPos { get; private set; } = Vector2Int.zero;
     public int SavedPlayerHP { get; private set; } = 0;
 
@@ -84,6 +144,9 @@ public class GameProgressManager : MonoBehaviour
         SetCellType(0, 0, WorldMapCellType.CurrentUnCleared);
         visitedPositions.Add(new Vector2Int(0, 0));
         currentMapPosition = Vector2Int.zero;
+
+        // 階層マップも初期化
+        InitHierarchicalMap();
     }
 
     public void ResetStageCleared()
@@ -113,6 +176,13 @@ public class GameProgressManager : MonoBehaviour
         visitedPositions.Clear();
         InitializeMapData();
         currentMapPosition = Vector2Int.zero;
+
+        Coins.Value = 0;
+        TotalCoins.Value = 0;
+        defeatedEnemies.Clear();
+
+        // 階層マップも初期化
+        InitHierarchicalMap();
     }
 
     public bool UpdateStageStatus(Vector2Int position, bool isCurrent, bool isCleared, WorldMapSO worldMap = null)
@@ -390,7 +460,174 @@ public class GameProgressManager : MonoBehaviour
         visitedPositions.Clear();
         InitializeMapData();
         currentMapPosition = Vector2Int.zero;
+
+        Coins.Value = 0;
+        TotalCoins.Value = 0;
+        defeatedEnemies.Clear();
     }
+
+    public void ClearDefeatedEnemies()
+    {
+        defeatedEnemies.Clear();
+    }
+
+    public bool IsEnemyDefeated(string enemyId)
+    {
+        if (string.IsNullOrEmpty(enemyId)) return false;
+        return defeatedEnemies.Contains(enemyId);
+    }
+
+    public void MarkEnemyDefeated(string enemyId)
+    {
+        if (string.IsNullOrEmpty(enemyId)) return;
+        if (!defeatedEnemies.Contains(enemyId))
+        {
+            defeatedEnemies.Add(enemyId);
+            Coins.Value++;
+            TotalCoins.Value++;
+            SteamAchievementHelper.TryUnlockCoinAchievements(TotalCoins.Value);
+            CheckStageClearOnDefeat(enemyId);
+        }
+    }
+
+    private void CheckStageClearOnDefeat(string enemyId)
+    {
+        if (registeredStages == null) return;
+
+        foreach (var stage in registeredStages)
+        {
+            if (stage == null || stage.EnemyStartData == null) continue;
+
+            bool belongsToThisStage = false;
+            for (int i = 0; i < stage.EnemyStartData.Count; i++)
+            {
+                var esd = stage.EnemyStartData[i];
+                string idToCheck = (!stage.IsExitStage && esd.EnemyType == EnemyType.King && esd.DropsCoin)
+                    ? Enemy.KingCoinSharedID
+                    : $"{stage.name}_{i}";
+                if (enemyId == idToCheck)
+                {
+                    belongsToThisStage = true;
+                    break;
+                }
+            }
+            if (!belongsToThisStage) continue;
+
+            if (IsStageFullyDefeated(stage))
+            {
+                Vector2Int mapPos = stage.MapPosition;
+                if (!IsHierarchicalCellCleared(mapPos))
+                {
+                    MarkHierarchicalCellAsCleared(mapPos);
+                }
+            }
+            break;
+        }
+    }
+
+    public bool IsStageFullyDefeated(StageSO stage)
+    {
+        if (stage == null || stage.EnemyStartData == null || stage.EnemyStartData.Count == 0) return false;
+
+        for (int i = 0; i < stage.EnemyStartData.Count; i++)
+        {
+            var esd = stage.EnemyStartData[i];
+            string idToCheck = (!stage.IsExitStage && esd.EnemyType == EnemyType.King && esd.DropsCoin)
+                ? Enemy.KingCoinSharedID
+                : $"{stage.name}_{i}";
+            if (!IsEnemyDefeated(idToCheck))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    #region Hierarchical Map
+    // 階層マップで解放されたセル
+    private HashSet<Vector2Int> hierarchicalUnlockedCells = new HashSet<Vector2Int>();
+    // 階層マップでクリア済みのセル（永続的）
+    private HashSet<Vector2Int> hierarchicalClearedCells = new HashSet<Vector2Int>();
+
+    [System.Serializable]
+    public class HierarchicalMapData
+    {
+        public List<Vector2Int> unlockedCells = new List<Vector2Int>();
+        public List<Vector2Int> clearedCells = new List<Vector2Int>();
+    }
+
+    public HierarchicalMapData GetHierarchicalMapData()
+    {
+        var data = new HierarchicalMapData();
+        data.unlockedCells.AddRange(hierarchicalUnlockedCells);
+        data.clearedCells.AddRange(hierarchicalClearedCells);
+        return data;
+    }
+
+    public void UnlockHierarchicalCell(Vector2Int pos)
+    {
+        if (!hierarchicalUnlockedCells.Contains(pos))
+        {
+            hierarchicalUnlockedCells.Add(pos);
+            // 訪問済みとしても登録
+            visitedPositions.Add(pos);
+        }
+    }
+
+    public void MarkHierarchicalCellAsCleared(Vector2Int pos)
+    {
+        if (!hierarchicalClearedCells.Contains(pos))
+        {
+            hierarchicalClearedCells.Add(pos);
+        }
+        UnlockHierarchicalCell(pos);
+    }
+
+    /// <summary>
+    /// ステージがクリア済みかどうかを確認する
+    /// </summary>
+    public bool IsHierarchicalCellCleared(Vector2Int pos)
+    {
+        return hierarchicalClearedCells.Contains(pos);
+    }
+
+    /// <summary>
+    /// 解放済みセルのColumnから、マップで表示可能なレイヤー数を返す。
+    /// Column 0-2のみ → 1、Column 3-5到達 → 2、Column 6-8到達 → 3
+    /// </summary>
+    public int GetUnlockedLayerCount()
+    {
+        int maxLayer = 0;
+        foreach (var pos in hierarchicalUnlockedCells)
+        {
+            int layer = pos.x / 3;
+            if (layer > maxLayer) maxLayer = layer;
+        }
+        return maxLayer + 1;
+    }
+
+    public void InitHierarchicalMap()
+    {
+        hierarchicalUnlockedCells.Clear();
+        hierarchicalClearedCells.Clear();
+        // ハブは常に解放
+        hierarchicalUnlockedCells.Add(new Vector2Int(1, 0));
+    }
+
+    /// <summary>
+    /// 階段を降りた際に対応するセルを解放する
+    /// </summary>
+    /// <param name="column">階段の列（0, 1, 2）</param>
+    /// <param name="depth">降りた深さ（1-8）</param>
+    public void UnlockCellByStairDescent(int column, int depth)
+    {
+        if (column < 0 || column > 8) return;
+        if (depth < 0 || depth > 8) return;
+
+        Vector2Int cellPos = new Vector2Int(column, depth);
+        UnlockHierarchicalCell(cellPos);
+    }
+    #endregion
 
     #region save
     public void DeleteSaveFile(SaveType saveType)
@@ -403,45 +640,89 @@ public class GameProgressManager : MonoBehaviour
         }
     }
 
-    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, List<StageWallData> allStagesWalls, SaveType saveType)
+    public void SaveProgress(Vector2Int playerGridPos, Direction playerDir, List<Enemy> enemies, Vector2Int resetMapPos, int playerHP, List<StageEnemyData> allStagesEnemies, List<StageWallData> allStagesWalls, List<StageShopData> allStagesShopPurchases, SaveType saveType)
     {
         SaveData data = new SaveData();
 
-        // 1. ワールドマップ情報の保存
-        data.currentMapX = currentMapPosition.x;
-        data.currentMapY = currentMapPosition.y;
+        // 現在ステージ情報（再開位置）
+        data.currentMapX = resetMapPos.x;
+        data.currentMapY = resetMapPos.y;
+        data.resetMapX = resetMapPos.x;
+        data.resetMapY = resetMapPos.y;
 
-        // 2. ステージ内情報の保存
-        data.playerGridX = playerGridPos.x;
-        data.playerGridY = playerGridPos.y;
-        data.playerDirection = (int)playerDir; // Enumをintにキャスト
-
-        // 3. リストの変換
+        // 到達・クリア情報
         foreach (var pos in clearedPositions) data.clearedList.Add(new Vector2IntData(pos));
         foreach (var pos in visitedPositions) data.visitedList.Add(new Vector2IntData(pos));
 
-        for (int i = 0; i < enemies.Count; i++)
+        // コイン情報などを保存
+        data.coins = Coins.Value;
+        data.totalCoins = TotalCoins.Value;
+        data.defeatedEnemies = new List<string>(defeatedEnemies);
+
+        // 階層マップ情報
+        foreach (var pos in hierarchicalUnlockedCells)
         {
-            var enemy = enemies[i];
-            var enemyData = new EnemySaveData
-            {
-                index = i,
-                gridX = enemy.CurrentPos.x,
-                gridY = enemy.CurrentPos.y,
-                direction = (int)enemy.CurrentDirection,
-                isDead = enemy.IsDead,
-                currentHP = 1 // もしHPの概念があるなら enemy.CurrentHP
-            };
-            data.enemyList.Add(enemyData);
+            data.hierarchicalUnlockedCells.Add(new Vector2IntData(pos));
+        }
+        foreach (var pos in hierarchicalClearedCells)
+        {
+            data.hierarchicalClearedCells.Add(new Vector2IntData(pos));
         }
 
-        // 4. 全ステージの敵情報
-        data.allStagesEnemies = new List<StageEnemyData>(allStagesEnemies);
-        data.allStagesWalls = new List<StageWallData>(allStagesWalls);
+        // ショップアイテム購入状況
+        data.allStagesShopPurchases = new List<StageShopData>();
+        if (allStagesShopPurchases != null)
+        {
+            foreach (var shopData in allStagesShopPurchases)
+            {
+                if (shopData == null) continue;
 
-        data.resetMapX = resetMapPos.x;
-        data.resetMapY = resetMapPos.y;
-        data.playerHP = playerHP;
+                StageShopData copy = new StageShopData
+                {
+                    stageX = shopData.stageX,
+                    stageY = shopData.stageY,
+                    purchasedPositions = new List<Vector2IntData>()
+                };
+                if (shopData.purchasedPositions != null)
+                {
+                    foreach (var pos in shopData.purchasedPositions)
+                    {
+                        if (pos != null) copy.purchasedPositions.Add(new Vector2IntData(pos.ToVector2Int()));
+                    }
+                }
+                data.allStagesShopPurchases.Add(copy);
+            }
+        }
+
+        // ステージごとの壁破壊状態（恒久破壊）
+        data.allStagesWalls = new List<StageWallData>();
+        if (allStagesWalls != null)
+        {
+            foreach (var stageWall in allStagesWalls)
+            {
+                if (stageWall == null) continue;
+
+                StageWallData copy = new StageWallData
+                {
+                    stageX = stageWall.stageX,
+                    stageY = stageWall.stageY,
+                    destroyedWalls = new List<Vector2IntData>()
+                };
+
+                if (stageWall.destroyedWalls != null)
+                {
+                    foreach (var pos in stageWall.destroyedWalls)
+                    {
+                        if (pos != null)
+                        {
+                            copy.destroyedWalls.Add(new Vector2IntData(pos.ToVector2Int()));
+                        }
+                    }
+                }
+
+                data.allStagesWalls.Add(copy);
+            }
+        }
 
         // GameSettingsの内容を保存
         // オプションはGameProgressManager.SaveOptions()で個別保存するためここでは保存しない
@@ -461,7 +742,7 @@ public class GameProgressManager : MonoBehaviour
         string filePath = saveType == SaveType.Manual ? ManualSaveFilePath : AutoSaveFilePath;
         File.WriteAllText(filePath, encryptedJson);
 
-        Debug.Log($"Saved: Map({data.currentMapX},{data.currentMapY}) Player({data.playerGridX},{data.playerGridY})");
+        Debug.Log($"Saved: StageMap({data.currentMapX},{data.currentMapY}) Coins({data.coins}) Defeated({data.defeatedEnemies.Count})");
     }
 
     public void LoadProgress(SaveType saveType)
@@ -485,22 +766,39 @@ public class GameProgressManager : MonoBehaviour
             string encryptedJson = File.ReadAllText(filePath);
             string json = EncryptionUtils.Decrypt(encryptedJson);
             SaveData data = JsonUtility.FromJson<SaveData>(json);
+            if (data == null)
+            {
+                throw new System.Exception("SaveData deserialize failed.");
+            }
 
             // データの復元
             ResetEntireProgress();
-            currentMapPosition = new Vector2Int(data.currentMapX, data.currentMapY);
 
-            // ★追加: ステージ内プレイヤー情報の復元
-            SavedPlayerGridPos = new Vector2Int(data.playerGridX, data.playerGridY);
-            SavedPlayerDirection = (Direction)data.playerDirection;
-            SavedPlayerDirection = (Direction)data.playerDirection;
-            SavedEnemyList = data.enemyList;
-            SavedAllStagesEnemies = data.allStagesEnemies;
-            SavedAllStagesWalls = data.allStagesWalls ?? new List<StageWallData>(); // Handle legacy saves
-            SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
-            SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
-            SavedResetMapPos = new Vector2Int(data.resetMapX, data.resetMapY);
-            SavedPlayerHP = data.playerHP;
+            Vector2Int stagePos = new Vector2Int(data.currentMapX, data.currentMapY);
+            if (stagePos == Vector2Int.zero && (data.resetMapX != 0 || data.resetMapY != 0))
+            {
+                stagePos = new Vector2Int(data.resetMapX, data.resetMapY);
+            }
+
+            currentMapPosition = stagePos;
+            SavedResetMapPos = stagePos;
+            SavedPlayerGridPos = Vector2Int.zero;
+            SavedPlayerDirection = Direction.Right;
+            SavedEnemyList = new List<EnemySaveData>();
+            SavedAllStagesEnemies = new List<StageEnemyData>();
+            SavedAllStagesWalls = new List<StageWallData>();
+            SavedAllStagesShopPurchases = new List<StageShopData>();
+            SavedPlayerHP = 0;
+
+            Coins.Value = data.coins;
+            TotalCoins.Value = data.totalCoins;
+            SteamAchievementHelper.TryUnlockCoinAchievements(TotalCoins.Value);
+            defeatedEnemies.Clear();
+            if (data.defeatedEnemies != null)
+            {
+                foreach (var id in data.defeatedEnemies) defeatedEnemies.Add(id);
+            }
+            EnsureKingCoinSharedIdMigration();
 
             // GameSettingsの復元
             // オプションはLoadOptions()で管理するため、ここでは復元しない
@@ -513,10 +811,95 @@ public class GameProgressManager : MonoBehaviour
             */
 
             HasLoadedData = true;
-            Debug.Log($"Loaded: Map({data.currentMapX},{data.currentMapY}) Player({data.playerGridX},{data.playerGridY})");
+            Debug.Log($"Loaded: StageMap({stagePos.x},{stagePos.y}) Coins({Coins.Value}) Defeated({defeatedEnemies.Count})");
 
-            foreach (var item in data.clearedList) clearedPositions.Add(item.ToVector2Int());
-            foreach (var item in data.visitedList) visitedPositions.Add(item.ToVector2Int());
+            if (data.clearedList != null)
+            {
+                foreach (var item in data.clearedList) clearedPositions.Add(item.ToVector2Int());
+            }
+            if (data.visitedList != null)
+            {
+                foreach (var item in data.visitedList) visitedPositions.Add(item.ToVector2Int());
+            }
+
+            // 階層マップ情報の復元
+            hierarchicalUnlockedCells.Clear();
+            hierarchicalClearedCells.Clear();
+
+            if (data.hierarchicalUnlockedCells != null)
+            {
+                foreach (var item in data.hierarchicalUnlockedCells)
+                {
+                    hierarchicalUnlockedCells.Add(item.ToVector2Int());
+                }
+            }
+
+            if (data.hierarchicalClearedCells != null)
+            {
+                foreach (var item in data.hierarchicalClearedCells)
+                {
+                    hierarchicalClearedCells.Add(item.ToVector2Int());
+                }
+            }
+
+            if (data.allStagesWalls != null)
+            {
+                foreach (var wallData in data.allStagesWalls)
+                {
+                    if (wallData == null) continue;
+
+                    StageWallData copy = new StageWallData
+                    {
+                        stageX = wallData.stageX,
+                        stageY = wallData.stageY,
+                        destroyedWalls = new List<Vector2IntData>()
+                    };
+
+                    if (wallData.destroyedWalls != null)
+                    {
+                        foreach (var pos in wallData.destroyedWalls)
+                        {
+                            if (pos != null)
+                            {
+                                copy.destroyedWalls.Add(new Vector2IntData(pos.ToVector2Int()));
+                            }
+                        }
+                    }
+
+                    SavedAllStagesWalls.Add(copy);
+                }
+            }
+
+            // ショップアイテム購入状況の復元
+            SavedAllStagesShopPurchases = new List<StageShopData>();
+            if (data.allStagesShopPurchases != null)
+            {
+                foreach (var shopData in data.allStagesShopPurchases)
+                {
+                    if (shopData == null) continue;
+
+                    StageShopData copy = new StageShopData
+                    {
+                        stageX = shopData.stageX,
+                        stageY = shopData.stageY,
+                        purchasedPositions = new List<Vector2IntData>()
+                    };
+                    if (shopData.purchasedPositions != null)
+                    {
+                        foreach (var pos in shopData.purchasedPositions)
+                        {
+                            if (pos != null) copy.purchasedPositions.Add(new Vector2IntData(pos.ToVector2Int()));
+                        }
+                    }
+                    SavedAllStagesShopPurchases.Add(copy);
+                }
+            }
+
+            // ハブは常に解放
+            if (!hierarchicalUnlockedCells.Contains(new Vector2Int(1, 0)))
+            {
+                hierarchicalUnlockedCells.Add(new Vector2Int(1, 0));
+            }
 
             RebuildMapData();
         }
@@ -588,24 +971,35 @@ public class GameProgressManager : MonoBehaviour
     #region Option Save
     public void SaveOptions()
     {
-        OptionSaveData data = new OptionSaveData();
-        data.screenMode = GameSettings.screenMode;
-        data.resolutionWidth = GameSettings.Resolution.x;
-        data.resolutionHeight = GameSettings.Resolution.y;
-        data.gameSpeed = GameSettings.GameSpeed;
-        data.language = GameSettings.Language;
-        data.bgmVolume = GameSettings.BgmVolume;
-        data.seVolume = GameSettings.SeVolume;
+        try
+        {
+            OptionSaveData data = new OptionSaveData();
+            data.screenMode = GameSettings.screenMode;
+            data.resolutionWidth = GameSettings.Resolution.x;
+            data.resolutionHeight = GameSettings.Resolution.y;
+            data.gameSpeed = GameSettings.GameSpeed;
+            data.language = GameSettings.Language;
+            data.bgmVolume = GameSettings.BgmVolume;
+            data.seVolume = GameSettings.SeVolume;
 
-        string json = JsonUtility.ToJson(data);
-        string encryptedJson = EncryptionUtils.Encrypt(json); // Use existing encryption
-        File.WriteAllText(OptionSaveFilePath, encryptedJson);
-        Debug.Log("Options Saved.");
+            string json = JsonUtility.ToJson(data);
+            string encryptedJson = EncryptionUtils.Encrypt(json); // Use existing encryption
+            File.WriteAllText(OptionSaveFilePath, encryptedJson);
+            Debug.Log("Options Saved.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("Save Options Error: " + e.Message);
+        }
     }
 
     public void LoadOptions()
     {
-        if (!File.Exists(OptionSaveFilePath)) return;
+        if (!File.Exists(OptionSaveFilePath))
+        {
+            GameSettings.ApplySettings();
+            return;
+        }
 
         try
         {

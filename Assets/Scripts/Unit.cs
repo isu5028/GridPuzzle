@@ -4,6 +4,7 @@ using DG.Tweening;
 using TMPro;
 using System.Threading;
 using UniRx;
+using System.Collections.Generic;
 
 public abstract class Unit : MonoBehaviour
 {
@@ -13,16 +14,29 @@ public abstract class Unit : MonoBehaviour
     [SerializeField] private float flashDuration = 0.15f;
     [SerializeField] private Vector2Int[] attackTargetPos = null!;
     [SerializeField] protected Transform spriteTransform = null!;
-    [SerializeField] private TextMeshPro hpText = null!;
-    [SerializeField] private TextMeshPro orderText = null!;
-    [SerializeField] private Transform hpTransform = null!;
+    [SerializeField] protected TextMeshPro hpText = null!;
+    [SerializeField] protected TextMeshPro orderText = null!;
+
+    protected virtual System.Collections.Generic.IEnumerable<TextMeshPro> GetAdditionalTextsToFade()
+    {
+        yield break;
+    }
+    protected virtual System.Collections.Generic.IEnumerable<Transform> GetAdditionalTransformsToFade()
+    {
+        yield break;
+    }
+    [SerializeField] protected Transform hpTransform = null!;
     [SerializeField] private Transform orderTransform = null!;
     [SerializeField] private ColorFlash colorFlash = null!;
     [SerializeField] private HPSpriteAnimation hpSpriteAnimation = null!;
     [SerializeField] protected OrderSpriteAnimation orderSpriteAnimation = null!;
+    [SerializeField] protected Transform defeatedIconTransform = null!; // 追加：倒された敵のアイコン
     [SerializeField] private Transform maskTransform = null!;
     [SerializeField] private Transform maskedTransform = null!;
     [SerializeField] protected UnitAnimator unitAnimator = null!;
+
+    [Header("Death Animation")]
+    [SerializeField] private Shader dissolveShader = null!;  // DitherDissolveシェーダーを設定
 
     // Public Accessor for Animator
     public UnitAnimator UnitAnimator => unitAnimator;
@@ -46,6 +60,7 @@ public abstract class Unit : MonoBehaviour
     private Vector3 maskedOriginalPos;
     private Vector3 hpOriginalPos;
     private Vector3 orderOriginalPos;
+    private Vector3 defeatedIconOriginalPos;
 
     [SerializeField] protected int maxHP = 3;
     protected ReactiveProperty<int> hp = new ReactiveProperty<int>(3);
@@ -59,6 +74,10 @@ public abstract class Unit : MonoBehaviour
     public bool IsDead => isDead;
 
     private CancellationTokenSource dieCancellationTokenSource;
+
+    // 動的に生成したマテリアル（Dissolveアニメーション用）
+    private Material dissolveMaterial;  // メインスプライト用
+    private List<Material> dissolveMaterials = new List<Material>();  // HP/Order関連用
 
     public void SetHP(int value)
     {
@@ -76,7 +95,7 @@ public abstract class Unit : MonoBehaviour
         // UniRx Subscribe
         hp.Subscribe(x =>
         {
-            if(hpText != null) hpText.text = x.ToString();
+            UpdateHPText(x);
         }).AddTo(this);
     }
 
@@ -86,10 +105,203 @@ public abstract class Unit : MonoBehaviour
 
         maskOriginalPos = maskTransform.localPosition;
         maskedOriginalPos = maskedTransform.localPosition;
-        hpOriginalPos = hpTransform.localPosition;
-        orderOriginalPos = orderTransform.localPosition;
+        hpOriginalPos = hpTransform != null ? hpTransform.localPosition : Vector3.zero;
+        orderOriginalPos = orderTransform != null ? orderTransform.localPosition : Vector3.zero;
+        defeatedIconOriginalPos = defeatedIconTransform != null ? defeatedIconTransform.localPosition : Vector3.zero;
+
+        // DitherDissolveシェーダーからマテリアルを動的に生成
+        if (dissolveShader != null)
+        {
+            // メインスプライトにdissolveMaterialを適用
+            SpriteRenderer spriteRenderer = spriteTransform.GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
+            {
+                dissolveMaterial = CreateAndApplyDissolveMaterial(spriteRenderer);
+
+                // ColorFlashにdissolveMaterialを通知（フラッシュ後に正しいマテリアルに戻るように）
+                ColorFlash colorFlashComponent = spriteTransform.GetComponent<ColorFlash>();
+                if (colorFlashComponent != null)
+                {
+                    colorFlashComponent.SetOriginalMaterial(dissolveMaterial);
+                }
+            }
+
+            // HP関連のSpriteRendererにもdissolveMaterialを適用
+            if (hpTransform != null)
+            {
+                foreach (var sr in hpTransform.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    Material mat = CreateAndApplyDissolveMaterial(sr);
+                    dissolveMaterials.Add(mat);
+                }
+            }
+
+            // Order関連のSpriteRendererにもdissolveMaterialを適用
+            if (orderTransform != null)
+            {
+                foreach (var sr in orderTransform.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    Material mat = CreateAndApplyDissolveMaterial(sr);
+                    dissolveMaterials.Add(mat);
+                }
+            }
+
+            // Defeated Icon関連のSpriteRendererにもdissolveMaterialを適用
+            if (defeatedIconTransform != null)
+            {
+                foreach (var sr in defeatedIconTransform.GetComponentsInChildren<SpriteRenderer>())
+                {
+                    Material mat = CreateAndApplyDissolveMaterial(sr);
+                    dissolveMaterials.Add(mat);
+                }
+            }
+
+            foreach (var t in GetAdditionalTransformsToFade())
+            {
+                if (t != null)
+                {
+                    foreach (var sr in t.GetComponentsInChildren<SpriteRenderer>())
+                    {
+                        Material mat = CreateAndApplyDissolveMaterial(sr);
+                        dissolveMaterials.Add(mat);
+                    }
+                }
+            }
+
+            // TextMeshProにもdissolveMaterialを適用
+            if (hpText != null)
+            {
+                Material mat = CreateAndApplyDissolveMaterialForTMP(hpText);
+                if (mat != null) dissolveMaterials.Add(mat);
+            }
+            if (orderText != null)
+            {
+                Material mat = CreateAndApplyDissolveMaterialForTMP(orderText);
+                if (mat != null) dissolveMaterials.Add(mat);
+            }
+
+            foreach (var t in GetAdditionalTextsToFade())
+            {
+                if (t != null)
+                {
+                    Material mat = CreateAndApplyDissolveMaterialForTMP(t);
+                    if (mat != null) dissolveMaterials.Add(mat);
+                }
+            }
+        }
+        else
+        {
+            // dissolveShaderがnullの場合でも、既存のマテリアルにDissolveAmountがあればリセット
+            EnsureDissolveAmountReset();
+        }
 
         visualsInitialized = true;
+    }
+
+    /// <summary>
+    /// SpriteRenderer用のdissolveMaterialを作成して適用
+    /// </summary>
+    private Material CreateAndApplyDissolveMaterial(SpriteRenderer sr)
+    {
+        Material mat = new Material(dissolveShader);
+        if (sr.sprite != null)
+        {
+            mat.SetTexture("_MainTex", sr.sprite.texture);
+        }
+        mat.SetFloat("_DissolveAmount", 0f);
+        sr.material = mat;
+        return mat;
+    }
+
+    /// <summary>
+    /// 既存のマテリアルにDissolveAmountプロパティがあれば0にリセットする（dissolveShaderがnullの場合のフォールバック）
+    /// </summary>
+    private void EnsureDissolveAmountReset()
+    {
+        SpriteRenderer spriteRenderer = spriteTransform.GetComponent<SpriteRenderer>();
+        if (spriteRenderer != null && spriteRenderer.material != null)
+        {
+            if (spriteRenderer.material.HasProperty("_DissolveAmount"))
+            {
+                // インスタンスマテリアルを作成してDissolveAmountを0にリセット
+                if (dissolveMaterial == null)
+                {
+                    dissolveMaterial = spriteRenderer.material;
+                }
+                dissolveMaterial.SetFloat("_DissolveAmount", 0f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// TextMeshPro用のdissolveMaterialを作成して適用
+    /// </summary>
+    private Material CreateAndApplyDissolveMaterialForTMP(TextMeshPro tmp)
+    {
+        if (tmp == null) return null;
+        // TMPは複雑なので、fontMaterialにDissolve効果を追加するのは難しい
+        // 代わりにTMPのアルファを操作するか、親のCanvasGroupを使う方法もある
+        // ここではシンプルにnullを返し、DieAsyncでアルファ操作を行う
+        return null;
+    }
+
+    /// <summary>
+    /// DitherDissolveでフェードアウト（見えなくする）
+    /// </summary>
+    /// <param name="duration">アニメーション時間</param>
+    /// <param name="goingDown">trueなら上から下へ、falseなら下から上へスイープ</param>
+    public async UniTask FadeOutAsync(float duration = 0.3f, bool goingDown = true)
+    {
+        if (dissolveMaterial == null) return;
+
+        // スイープ方向を設定（0=BottomLeft, 1=BottomRight, 2=TopRight, 3=TopLeft）
+        // goingDown: 上から下へ → 2 (TopRight to BottomLeft)
+        // goingUp: 下から上へ → 0 (BottomLeft to TopRight)
+        float sweepDirection = goingDown ? 2f : 0f;
+        dissolveMaterial.SetFloat("_SweepDirection", sweepDirection);
+
+        await DOTween.To(() => dissolveMaterial.GetFloat("_DissolveAmount"),
+                         x => dissolveMaterial.SetFloat("_DissolveAmount", x),
+                         1f,
+                         duration)
+                     .SetEase(Ease.InQuad)
+                     .SetTarget(dissolveMaterial)
+                     .AsyncWaitForCompletion();
+    }
+
+    /// <summary>
+    /// DitherDissolveでフェードイン（見えるようにする）
+    /// </summary>
+    /// <param name="duration">アニメーション時間</param>
+    /// <param name="goingDown">trueなら上から下へ、falseなら下から上へスイープ</param>
+    public async UniTask FadeInAsync(float duration = 0.3f, bool goingDown = true)
+    {
+        if (dissolveMaterial == null) return;
+
+        // スイープ方向を設定（フェードインは逆方向からスイープ）
+        // goingDown: 下から上へ復帰 → 0 (BottomLeft to TopRight)
+        // goingUp: 上から下へ復帰 → 2 (TopRight to BottomLeft)
+        float sweepDirection = goingDown ? 0f : 2f;
+        dissolveMaterial.SetFloat("_SweepDirection", sweepDirection);
+
+        await DOTween.To(() => dissolveMaterial.GetFloat("_DissolveAmount"),
+                         x => dissolveMaterial.SetFloat("_DissolveAmount", x),
+                         0f,
+                         duration)
+                     .SetEase(Ease.OutQuad)
+                     .SetTarget(dissolveMaterial)
+                     .AsyncWaitForCompletion();
+    }
+
+    /// <summary>
+    /// DissolveAmountを即座に設定（アニメーションなし）
+    /// </summary>
+    public void SetDissolveAmount(float amount)
+    {
+        if (dissolveMaterial != null)
+        {
+            dissolveMaterial.SetFloat("_DissolveAmount", amount);
+        }
     }
 
     public virtual void ApplyDeadStateVisual()
@@ -101,13 +313,27 @@ public abstract class Unit : MonoBehaviour
 
         // アニメーション停止
         spriteTransform.DOKill();
-        hpTransform.DOKill();
-        orderTransform.DOKill();
+        if (hpTransform != null) hpTransform.DOKill();
+        if (orderTransform != null) orderTransform.DOKill();
+        if (defeatedIconTransform != null) defeatedIconTransform.DOKill();
 
-        // 死亡時の位置へ移動（DieAsyncと同じ状態にする）
-        spriteTransform.localPosition = new Vector3(spriteTransform.localPosition.x, -50.0f, spriteTransform.localPosition.z);
-        hpTransform.localPosition = new Vector3(hpOriginalPos.x, hpOriginalPos.y - 50.0f, hpOriginalPos.z);
-        orderTransform.localPosition = new Vector3(orderOriginalPos.x, orderOriginalPos.y - 50.0f, orderOriginalPos.z);
+        // DitherDissolveのDissolveAmountを1に設定（完全に消えた状態）
+        if (dissolveMaterial != null)
+        {
+            dissolveMaterial.SetFloat("_DissolveAmount", 1f);
+        }
+        foreach (var mat in dissolveMaterials)
+        {
+            if (mat != null) mat.SetFloat("_DissolveAmount", 1f);
+        }
+
+        // TextMeshProのアルファを0に
+        if (hpText != null) hpText.alpha = 0f;
+        if (orderText != null) orderText.alpha = 0f;
+        foreach (var t in GetAdditionalTextsToFade())
+        {
+            if (t != null) t.alpha = 0f;
+        }
 
         unitAnimator.SetDeath();
     }
@@ -133,10 +359,10 @@ public abstract class Unit : MonoBehaviour
         unitAnimator.SetDirection(currentDirection);
         maxHP = maxHp;
         hp.Value = maxHp;
-        if (hpText != null) hpText.text = maxHp.ToString();
+        UpdateHPText(maxHp);
 
         order = startOrder;
-        orderText.text = (order + 1).ToString();
+        UpdateOrderText(order);
     }
 
 
@@ -149,7 +375,7 @@ public abstract class Unit : MonoBehaviour
     public void SetOrder(int order)
     {
         this.order = order;
-        if(orderText != null) orderText.text = (order + 1).ToString();
+        UpdateOrderText(order);
     }
 
     public void SetOrderText(string text)
@@ -170,15 +396,83 @@ public abstract class Unit : MonoBehaviour
         Vector2Int directionVector = Utility.GetVectorFromDirection(direction);
         Vector2Int targetPos = currentPos + directionVector;
 
+        Unit targetOccupant = gridManager.GetUnitAtPosition(targetPos);
+        if (targetOccupant is Crate)
+        {
+            List<Crate> cratesToPush = new List<Crate>();
+            Vector2Int checkPos = targetPos;
+            while (gridManager.GetUnitAtPosition(checkPos) is Crate nextCrate)
+            {
+                cratesToPush.Add(nextCrate);
+                checkPos += directionVector;
+            }
+
+            // checkPos is now the first free cell after all crates.
+            // Handle case where that free cell is OOB (boundary transition possible)
+            bool canPush = false;
+            if (gridManager.IsCellWalkable(checkPos))
+            {
+                canPush = true;
+            }
+            else if (!gridManager.IsPositionInBounds(checkPos))
+            {
+                // OOBへの押し出しは、現在ステージ側の境界壁が破壊されている場合のみ許可
+                if (!gridManager.IsWalkableAt(gridManager.CurrentStageSO, checkPos))
+                {
+                    canPush = false;
+                }
+                else
+                {
+                // OOBの場合、隣接ステージへの遷移が可能かチェック
+                    StageSO neighbor = gridManager.GetAdjacentStageFromBoundary(gridManager.CurrentStageSO, checkPos);
+                    if (neighbor != null)
+                    {
+                        // 遷移先ステージの対応する位置がWalkableか確認
+                        Vector2Int neighborEntry = GridCalculation.CalculateEntryPosition(neighbor, direction, checkPos);
+                        if (gridManager.IsWalkableAt(neighbor, neighborEntry) && gridManager.GetUnitAtPosition(neighborEntry) == null)
+                        {
+                            canPush = true;
+                        }
+                    }
+                }
+            }
+
+            if (canPush)
+            {
+                // 遠い方から順番に移動コマンドを発行
+                for (int i = cratesToPush.Count - 1; i >= 0; i--)
+                {
+                    Vector2Int crateCurrentPos = targetPos + directionVector * i;
+                    Vector2Int crateTargetPos = crateCurrentPos + directionVector;
+                    MoveCommand pushCommand = new MoveCommand(cratesToPush[i], crateCurrentPos, crateTargetPos, cratesToPush[i].CurrentDirection, direction, false);
+                    commandManager.ExecuteCommand(pushCommand);
+                }
+
+                MoveCommand selfMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
+                commandManager.ExecuteCommand(selfMoveCommand);
+                return true;
+            }
+
+            // 押せない場合
+            unitAnimator.SetDirection(direction);
+            OnMoveFailed();
+            return false;
+        }
+
         Vector2Int[] attackPos = new Vector2Int[attackTargetPos.Length];
         for (int i = 0; i < attackTargetPos.Length; i++)
         {
             attackPos[i] = currentPos + Utility.RotateVector(attackTargetPos[i], currentDirection);
-            if (gridManager.GetUnitAtPosition(attackPos[i]) != null)
+            Unit targetUnit = gridManager.GetUnitAtPosition(attackPos[i]);
+            if (targetUnit != null)
             {
-                unitAnimator.SetDirection(direction);
-                TryAttack();
-                return false;
+                bool isCrate = targetUnit is Crate;
+                if (!isCrate)
+                {
+                    unitAnimator.SetDirection(direction);
+                    TryAttack();
+                    return false;
+                }
             }
         }
 
@@ -190,8 +484,8 @@ public abstract class Unit : MonoBehaviour
         }
 
         // コマンドを作成して実行
-        MoveCommand moveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
-        commandManager.ExecuteCommand(moveCommand);
+        MoveCommand finalMoveCommand = new MoveCommand(this, currentPos, targetPos, currentDirection, direction);
+        commandManager.ExecuteCommand(finalMoveCommand);
         return true;
     }
 
@@ -199,7 +493,10 @@ public abstract class Unit : MonoBehaviour
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
-        transform.DOLocalMove(gridManager.GridToWorldPosition(position), moveDuration).SetEase(Ease.OutCubic).OnComplete(() => isMoving = false) ;
+        transform.DOMove(gridManager.GridToWorldPosition(position), moveDuration).SetEase(Ease.OutCubic).OnComplete(() => {
+            isMoving = false;
+            OnMoveComplete();
+        });
         unitAnimator.SetDirection(direction);
         currentPos = position;
         currentDirection = direction;
@@ -208,6 +505,12 @@ public abstract class Unit : MonoBehaviour
 
     public void TryAttack()
     {
+        Debug.Log($"[Unit.TryAttack] Called on InstanceID: {this.GetInstanceID()}, gameObject: {gameObject.name}");
+
+        // SetActive(false)された後にUniRx購読が同フレームで発火しても実行しない
+        // （リセット時に旧プレイヤーが新しい敵にゴースト攻撃するのを防ぐ）
+        if (!gameObject.activeInHierarchy) return;
+
         Vector2Int[] attackPos = new Vector2Int[attackTargetPos.Length];
         for (int i = 0; i < attackTargetPos.Length; i++)
         {
@@ -221,15 +524,19 @@ public abstract class Unit : MonoBehaviour
     {
     }
 
+    protected virtual void OnMoveComplete()
+    {
+    }
+
     protected virtual void OnMoveFailed()
     {
     }
 
-    public void Attack(Vector2Int[] targetPosition, int recoilDamage = 0)
+    public void Attack(Vector2Int[] targetPosition, int recoilDamage = 0, bool breaksCrate = false)
     {
         if (gameObject.activeInHierarchy)
         {
-            AttackAsync(targetPosition, recoilDamage).Forget();
+            AttackAsync(targetPosition, recoilDamage, breaksCrate).Forget();
         }
         else
         {
@@ -239,7 +546,14 @@ public abstract class Unit : MonoBehaviour
                 Unit targetUnit = gridManager.GetUnitAtPosition(pos);
                 if (targetUnit != null)
                 {
-                    targetUnit.TakeDamage(1, currentPos, false);
+                    if (targetUnit is Crate crate)
+                    {
+                        if (breaksCrate) crate.BreakCrate(currentPos);
+                    }
+                    else
+                    {
+                        targetUnit.TakeDamage(1, currentPos, false);
+                    }
                 }
             }
             if (recoilDamage > 0)
@@ -249,7 +563,7 @@ public abstract class Unit : MonoBehaviour
         }
     }
 
-    private async UniTask AttackAsync(Vector2Int[] targetPosition, int recoilDamage)
+    private async UniTask AttackAsync(Vector2Int[] targetPosition, int recoilDamage, bool breaksCrate)
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
@@ -268,13 +582,33 @@ public abstract class Unit : MonoBehaviour
             .Append(spriteTransform.DOLocalMove(attackLocalPos, attackDuration * 0.3f).SetEase(Ease.InQuad))
             .AppendCallback(() =>
             {
+                Debug.Log($"[Unit.AttackAsync Callback] Called by {name} (Active: {gameObject?.activeInHierarchy}), Target Pos: {targetPosition[0]}");
+
+                if (this == null || !gameObject.activeInHierarchy)
+                {
+                    Debug.Log($"[Unit.AttackAsync Callback] Cancelled because attacker {name} is null or inactive.");
+                    return;
+                }
+
                 foreach (var pos in targetPosition)
                 {
                     Unit targetUnit = gridManager.GetUnitAtPosition(pos);
                     if (targetUnit != null)
                     {
-                        targetUnit.TakeDamage(1, currentPos);
-                        if (this is Player) CameraManager.Instance.ShakeCamera(0.4f, 8.0f, 20f, Utility.GetVectorFromDirection(currentDirection));
+                        if (targetUnit is Crate crate)
+                        {
+                            if (breaksCrate) crate.BreakCrate(currentPos);
+                        }
+                        else
+                        {
+                            Debug.Log($"[Unit.AttackAsync Callback] Attacking {targetUnit.name} at {pos}");
+                            targetUnit.TakeDamage(1, currentPos);
+                            if (this is Player) CameraManager.Instance.ShakeCamera(0.4f, 8.0f, 20f, Utility.GetVectorFromDirection(currentDirection));
+                        }
+                    }
+                    else
+                    {
+                        Debug.Log($"[Unit.AttackAsync Callback] No target found at {pos}");
                     }
                 }
                 if (recoilDamage > 0)
@@ -284,7 +618,8 @@ public abstract class Unit : MonoBehaviour
 
                 if(!commandManager.IsUndoing) AudioManager.Instance.PlaySE(AudioManager.SEType.attack);
             })
-            .Append(spriteTransform.DOLocalMove(originalLocalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad));
+            .Append(spriteTransform.DOLocalMove(originalLocalPos, attackDuration * 0.7f).SetEase(Ease.OutQuad))
+            .SetLink(gameObject, DG.Tweening.LinkBehaviour.KillOnDisable); // SetActive(false)で即座に停止
 
         await attackSequence.AsyncWaitForCompletion();
 
@@ -292,12 +627,30 @@ public abstract class Unit : MonoBehaviour
         OnActionComplete();
     }
 
-    public void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
+    public virtual void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
     {
-        //Debug.Log($"[Unit] TakeDamage: {name} (Active:{gameObject.activeInHierarchy}) HP {hp.Value} -> {hp.Value - damage}");
-        Vector2 knockbackDirection = ((Vector2)currentPos - (Vector2)attackerPos).normalized;
+        Debug.Log($"[Unit.TakeDamage] {name} took {damage} damage from {attackerPos}! Current HP: {hp.Value}");
+
+        // 方向を計算（横・縦を判定して正規化）
+        Vector2Int diff = currentPos - attackerPos;
+        Vector2 shakeDirection;
+        if (Mathf.Abs(diff.x) >= Mathf.Abs(diff.y))
+        {
+            // 横方向の揺れ
+            shakeDirection = new Vector2(diff.x >= 0 ? 1f : -1f, 0f);
+        }
+        else
+        {
+            // 縦方向の揺れ
+            shakeDirection = new Vector2(0f, diff.y >= 0 ? 1f : -1f);
+        }
 
         hp.Value -= damage;
+
+        if (this is Player)
+        {
+            AudioManager.Instance.PlaySE(AudioManager.SEType.damaged);
+        }
 
         if (gameObject.activeInHierarchy)
         {
@@ -305,21 +658,21 @@ public abstract class Unit : MonoBehaviour
         }
 
         // Force Visual Update even if inactive
-        if (hpText != null) hpText.text = hp.Value.ToString();
+        UpdateHPText(hp.Value);
 
         if(hp.Value <= 0)
         {
             unitAnimator.SetDeath();
             hp.Value = 0;
             Die(attackerPos);
-            if(gameObject.activeInHierarchy && shakeCamera) CameraManager.Instance.ShakeCamera(0.5f, 5.0f, 30f, knockbackDirection);
+            if(gameObject.activeInHierarchy && shakeCamera) CameraManager.Instance.ShakeCamera(0.5f, 5.0f, 30f, shakeDirection);
         }
         else
         {
             if (gameObject.activeInHierarchy)
             {
                 colorFlash.AnimateToColor(Utility.mainColors[2], flashDuration);
-                if(this is Player && shakeCamera) CameraManager.Instance.ShakeCamera(0.3f, 2.0f, 50f, knockbackDirection);
+                if(this is Player && shakeCamera) CameraManager.Instance.ShakeCamera(0.3f, 2.0f, 50f, shakeDirection);
             }
         }
     }
@@ -330,6 +683,12 @@ public abstract class Unit : MonoBehaviour
         if (this is Player)
         {
             AudioManager.Instance.SetMasterLowPassFilter(500);
+        }
+
+        // 死亡時に即座に状態変化を通知（全滅判定を即時行うため）
+        if (gridManager != null)
+        {
+             gridManager.UnitManager.NotifyUnitStateChanged(this);
         }
 
         if (gameObject.activeInHierarchy)
@@ -360,13 +719,61 @@ public abstract class Unit : MonoBehaviour
             await UniTask.Delay((int)(flashDuration * 1000), cancellationToken: token);
             await UniTask.Delay(200, cancellationToken: token);
 
-            spriteTransform.DOLocalMoveY(-50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
-            await UniTask.Delay(100, cancellationToken: token);
-            // ここでOriginalPosからの相対移動を行っているが、Revive時にOriginalPosへ戻す際に
-            // spriteTransformのpositionがゼロリセットされた後にローカル座標系がずれていないか注意
-            hpTransform.DOLocalMoveY(hpOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
-            await UniTask.Delay(50, cancellationToken: token);
-            orderTransform.DOLocalMoveY(orderOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
+            // DitherDissolveアニメーション
+            float duration = 0.5f;
+
+            // メインスプライト
+            if (dissolveMaterial != null)
+            {
+                DOTween.To(() => dissolveMaterial.GetFloat("_DissolveAmount"),
+                           x => dissolveMaterial.SetFloat("_DissolveAmount", x),
+                           1f,
+                           duration)
+                       .SetEase(Ease.InQuad)
+                       .SetTarget(dissolveMaterial)  // DOTween.Kill(dissolveMaterial)で停止できるように
+                       .SetLink(gameObject);
+            }
+
+            // HP/Order関連のスプライト
+            foreach (var mat in dissolveMaterials)
+            {
+                if (mat != null)
+                {
+                    DOTween.To(() => mat.GetFloat("_DissolveAmount"),
+                               x => mat.SetFloat("_DissolveAmount", x),
+                               1f,
+                               duration)
+                           .SetEase(Ease.InQuad)
+                           .SetTarget(mat)  // DOTween.Kill(mat)で停止できるように
+                           .SetLink(gameObject);
+                }
+            }
+
+            // TextMeshProのアルファをフェードアウト
+            if (hpText != null)
+            {
+                DOTween.To(() => hpText.alpha, x => hpText.alpha = x, 0f, duration)
+                       .SetEase(Ease.InQuad)
+                       .SetTarget(hpText)  // DOTween.Kill(hpText)で停止できるように
+                       .SetLink(gameObject);
+            }
+            if (orderText != null)
+            {
+                DOTween.To(() => orderText.alpha, x => orderText.alpha = x, 0f, duration)
+                       .SetEase(Ease.InQuad)
+                       .SetTarget(orderText)  // DOTween.Kill(orderText)で停止できるように
+                       .SetLink(gameObject);
+            }
+            foreach (var t in GetAdditionalTextsToFade())
+            {
+                if (t != null)
+                {
+                    DOTween.To(() => t.alpha, x => t.alpha = x, 0f, duration)
+                           .SetEase(Ease.InQuad)
+                           .SetTarget(t)  // DOTween.Kill(t)で停止できるように
+                           .SetLink(gameObject);
+                }
+            }
         }
         catch (System.OperationCanceledException)
         {
@@ -380,6 +787,7 @@ public abstract class Unit : MonoBehaviour
     // Undo時の復活処理
     public virtual void Revive()
     {
+        gameObject.SetActive(true);
         isDead = false;
         if (this is Player)
         {
@@ -395,9 +803,28 @@ public abstract class Unit : MonoBehaviour
 
         // 実行中のDOTweenアニメーションをキル
         spriteTransform.DOKill();
-        hpTransform.DOKill();
-        orderTransform.DOKill();
+        if (hpTransform != null) hpTransform.DOKill();
+        if (orderTransform != null) orderTransform.DOKill();
+        if (defeatedIconTransform != null) defeatedIconTransform.DOKill();
         maskTransform.DOKill();
+
+        // マテリアルのDOTween（DissolveAmountアニメーション）もキル
+        if (dissolveMaterial != null)
+        {
+            DOTween.Kill(dissolveMaterial);
+        }
+        foreach (var mat in dissolveMaterials)
+        {
+            if (mat != null) DOTween.Kill(mat);
+        }
+
+        // TextMeshProのDOTweenもキル
+        if (hpText != null) DOTween.Kill(hpText);
+        if (orderText != null) DOTween.Kill(orderText);
+        foreach (var t in GetAdditionalTextsToFade())
+        {
+            if (t != null) DOTween.Kill(t);
+        }
 
         spriteTransform.localPosition = Vector3.zero;
         unitAnimator.SetDirection(currentDirection);
@@ -405,14 +832,36 @@ public abstract class Unit : MonoBehaviour
         maskTransform.localPosition = maskOriginalPos;
         maskedTransform.localPosition = maskedOriginalPos;
 
-        if (hpOriginalPos == Vector3.zero && hpTransform.localPosition != Vector3.zero)
+        // DitherDissolveのDissolveAmountを0にリセット（表示状態に戻す）
+        if (dissolveMaterial != null)
+        {
+            dissolveMaterial.SetFloat("_DissolveAmount", 0f);
+        }
+        foreach (var mat in dissolveMaterials)
+        {
+            if (mat != null) mat.SetFloat("_DissolveAmount", 0f);
+        }
+
+        // TextMeshProのアルファを1に戻す
+        if (hpText != null) hpText.alpha = 1f;
+        if (orderText != null) orderText.alpha = 1f;
+        foreach (var t in GetAdditionalTextsToFade())
+        {
+            if (t != null) t.alpha = 1f;
+        }
+
+        if (hpOriginalPos == Vector3.zero && hpTransform != null && hpTransform.localPosition != Vector3.zero)
              hpOriginalPos = hpTransform.localPosition;
 
-        if (orderOriginalPos == Vector3.zero && orderTransform.localPosition != Vector3.zero)
+        if (orderOriginalPos == Vector3.zero && orderTransform != null && orderTransform.localPosition != Vector3.zero)
              orderOriginalPos = orderTransform.localPosition;
 
-        hpTransform.localPosition = hpOriginalPos;
-        orderTransform.localPosition = orderOriginalPos;
+        if (defeatedIconOriginalPos == Vector3.zero && defeatedIconTransform != null && defeatedIconTransform.localPosition != Vector3.zero)
+             defeatedIconOriginalPos = defeatedIconTransform.localPosition;
+
+        if (hpTransform != null) hpTransform.localPosition = hpOriginalPos;
+        if (orderTransform != null) orderTransform.localPosition = orderOriginalPos;
+        if (defeatedIconTransform != null) defeatedIconTransform.localPosition = defeatedIconOriginalPos;
     }
 
     private async UniTask KnockbackAsync(Vector2Int attackerPos)
@@ -425,6 +874,16 @@ public abstract class Unit : MonoBehaviour
 
         spriteTransform.DOMove(originalPos + knockbackOffset, moveDuration * 0.5f).SetEase(Ease.InCubic);
         maskTransform.DOLocalMove(maskOriginalPos + knockbackOffset, moveDuration * 0.5f).SetEase(Ease.InCubic);
+    }
+
+    protected virtual void UpdateHPText(int value)
+    {
+        if (hpText != null) hpText.text = value.ToString();
+    }
+
+    protected virtual void UpdateOrderText(int value)
+    {
+        if (orderText != null) orderText.text = (value + 1).ToString();
     }
 
     private void OnDestroy()

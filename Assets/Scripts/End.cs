@@ -14,6 +14,13 @@ public class End : MonoBehaviour
     private Vector3 returnOriginalPos;
     private Vector3 hiddenOffset = new Vector3(0, 200, 0);
 
+    private void CancelAndDisposeCts()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        cts = null;
+    }
+
     void Start()
     {
         thanksOriginalPos = textThanks.transform.localPosition;
@@ -31,7 +38,7 @@ public class End : MonoBehaviour
 
     public void Show()
     {
-        cts?.Cancel();
+        CancelAndDisposeCts();
         cts = new CancellationTokenSource();
         ShowAsync(cts.Token).Forget();
     }
@@ -46,5 +53,10 @@ public class End : MonoBehaviour
         await UniTask.Delay((int)(duration * 500), cancellationToken: token).SuppressCancellationThrow();
         textReturn.transform.DOLocalMoveY(returnOriginalPos.y + hiddenOffset.y, duration).SetEase(Ease.OutCubic);
         await UniTask.Delay((int)(duration * 500), cancellationToken: token).SuppressCancellationThrow();
+    }
+
+    private void OnDestroy()
+    {
+        CancelAndDisposeCts();
     }
 }

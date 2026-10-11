@@ -37,9 +37,14 @@ public class EnemyAIChaser : EnemyAI
         // isTraversable条件: マップ内通行可能 かつ 他の敵がいない
         List<Vector2Int> path = AStarPathfinder.FindPath(currentPos, playerPos, (pos) =>
         {
+            // プレイヤー自身の位置はパス探索の最終目的地なので、地形だけを確認する
+            if (pos == playerPos)
+            {
+                return gridManager.IsWalkableAt(gridManager.CurrentStageSO, pos);
+            }
+
             if (!gridManager.IsCellWalkable(pos)) return false;
-            // 他の敵がいる場合は障害物とみなす
-            // IsEnemyAtPositionはPlayerに対してfalseを返すので、ターゲット（Player）地点は通行可能と判定される
+            // IsCellWalkableでユニット判定はされているが念のため
             if (IsEnemyAtPosition(pos)) return false;
             return true;
         });
@@ -53,24 +58,57 @@ public class EnemyAIChaser : EnemyAI
             MoveCommand moveCommand = new MoveCommand(enemy, currentPos, nextPos, currentDirection, moveDirection);
             commandManager.ExecuteCommand(moveCommand);
             if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+
+            // 階段遷移チェック
+            var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, moveDirection);
+            if (transition != null)
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, moveDirection);
+            }
         }
         else
         {
-            // 移動できない場合（経路がない、囲まれているなど）は待機または空振り
-            // プレイヤーの方を向いて威嚇（攻撃モーション）
-            Direction attackDirection = GetDirectionToTarget(currentPos, playerPos);
-            if (attackDirection != currentDirection) enemy.SetDirection(attackDirection);
-            if(GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
-            enemy.TryAttack();
-            await UniTask.WaitUntil(() => !enemy.IsMoving);
+            // 経路探索失敗時、足元が階段ならワープを試行
+            var transition = gridManager.GetEnemyStairDestination(enemy, currentPos, currentDirection);
+            if (transition != null)
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, currentDirection);
+                return;
+            }
+            // 移動できない場合（経路がない、囲まれているなど）
+            // 攻撃できるユニットがいれば攻撃し、いなければ何もしない
+            bool attacked = false;
+            foreach (var dir in Utility.SearchOrder)
+            {
+                Vector2Int attackTargetPos = currentPos + Utility.GetVectorFromDirection(dir);
+                Unit targetUnit = gridManager.GetUnitAtPosition(attackTargetPos);
+
+                // もし何かしらのユニット（Crate以外で他の敵などのUnitであれば）がいれば攻撃
+                if (targetUnit != null && !(targetUnit is Crate))
+                {
+                    if (dir != currentDirection) enemy.SetDirection(dir);
+                    if (GameSettings.GameSpeed == 1) await UniTask.Delay((int)fastSpeedAttackDelayMs);
+                    enemy.TryAttack();
+                    await UniTask.WaitUntil(() => !enemy.IsMoving);
+                    attacked = true;
+                    break;
+                }
+            }
+
+            if (!attacked)
+            {
+                // 攻撃対象がいない場合は何もしない（待機）
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(100);
+            }
         }
     }
 
     private bool IsPlayerInAttackRange(Enemy enemy, Vector2Int playerPos)
     {
         Vector2Int currentPos = enemy.CurrentPos;
-        Direction[] directions = new Direction[] { Direction.Up, Direction.Down, Direction.Left, Direction.Right };
-        foreach (var dir in directions)
+        foreach (var dir in Utility.SearchOrder)
         {
             Vector2Int checkPos = currentPos + Utility.GetVectorFromDirection(dir);
             if (checkPos == playerPos)

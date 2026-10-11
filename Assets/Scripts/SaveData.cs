@@ -18,16 +18,32 @@ public class StageWallData
 }
 
 [System.Serializable]
+public class StageShopData
+{
+    public int stageX;
+    public int stageY;
+    public List<Vector2IntData> purchasedPositions;
+}
+
+[System.Serializable]
 public class SaveData
 {
     public int resetMapX;
     public int resetMapY;
     public string saveTime; // 保存日時
+    public int coins; // 所持コイン数
+    public int totalCoins; // 累計コイン数
+    public List<string> defeatedEnemies = new List<string>(); // 倒した敵のIDリスト
+
     // --- ワールドマップ情報 ---
     public int currentMapX; // ワールドマップ上のX
     public int currentMapY; // ワールドマップ上のY
     public List<Vector2IntData> clearedList = new List<Vector2IntData>();
     public List<Vector2IntData> visitedList = new List<Vector2IntData>();
+
+    // --- 階層マップ情報 ---
+    public List<Vector2IntData> hierarchicalUnlockedCells = new List<Vector2IntData>();
+    public List<Vector2IntData> hierarchicalClearedCells = new List<Vector2IntData>();
 
     // --- ステージ内のプレイヤー情報 ---
     public int playerGridX;
@@ -37,6 +53,7 @@ public class SaveData
     public List<EnemySaveData> enemyList = new List<EnemySaveData>();
     public List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
     public List<StageWallData> allStagesWalls = new List<StageWallData>();
+    public List<StageShopData> allStagesShopPurchases = new List<StageShopData>();
 
     // --- オプション設定 ---
     // オプションはOptionSaveDataで管理するため削除
@@ -79,4 +96,5 @@ public class EnemySaveData
     public int maxHP;
     public int index;
     public int ammo; // Added for Ranged Enemy Ammo persistence
+    public string enemyID; // 一意のID
 }

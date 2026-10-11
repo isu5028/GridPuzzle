@@ -18,6 +18,14 @@ public class ColorFlash : MonoBehaviour
         originalMaterial = spriteRenderer.material;
     }
 
+    /// <summary>
+    /// 外部からoriginalMaterialを設定する（UnitがdissolveMaterialを設定した後に呼び出す）
+    /// </summary>
+    public void SetOriginalMaterial(Material material)
+    {
+        originalMaterial = material;
+    }
+
     public void AnimateToColor(Color targetColor, float duration = -1f)
     {
         if (duration < 0) duration = animationDuration;
@@ -35,11 +43,18 @@ public class ColorFlash : MonoBehaviour
 
     private async UniTask ColorTransition(Color targetColor, float duration, CancellationToken cancellationToken)
     {
+        // ローカル変数でこのトランジション専用のマテリアルを管理
+        // （共有フィールドinstanceMaterialを使うと、キャンセル時に次のトランジションの
+        //  マテリアルを誤ってnullにするrace conditionが発生するため）
+        Material localMaterial = null;
         try
         {
-            // マテリアルのインスタンスを作成して適用
-            instanceMaterial = new Material(baseMaterial);
-            spriteRenderer.material = instanceMaterial;
+            if (baseMaterial == null) return;
+
+            // このトランジション専用のマテリアルインスタンスを作成して適用
+            localMaterial = new Material(baseMaterial);
+            instanceMaterial = localMaterial;
+            spriteRenderer.material = localMaterial;
 
             float elapsedTime = 0f;
 
@@ -50,13 +65,13 @@ public class ColorFlash : MonoBehaviour
                 float t = Mathf.Clamp01(elapsedTime / duration);
                 t = 1;
 
-                instanceMaterial.SetColor("_TargetColor", targetColor);
-                instanceMaterial.SetFloat("_BlendAmount", t);
+                localMaterial.SetColor("_TargetColor", targetColor);
+                localMaterial.SetFloat("_BlendAmount", t);
 
                 await UniTask.Yield(cancellationToken);
             }
 
-            instanceMaterial.SetFloat("_BlendAmount", 0f);
+            localMaterial.SetFloat("_BlendAmount", 0f);
         }
         catch (System.OperationCanceledException)
         {
@@ -64,8 +79,21 @@ public class ColorFlash : MonoBehaviour
         }
         finally
         {
-            // マテリアルを破棄して元に戻す
-            CleanupMaterial();
+            // このトランジション専用のマテリアルのみを破棄する
+            // instanceMaterial == localMaterial で比較することで、
+            // 次のトランジションがinstanceMaterialを上書きした後でも安全に動作する
+            if (localMaterial != null)
+            {
+                if (instanceMaterial == localMaterial)
+                {
+                    // 自分が最新のトランジション → 元のマテリアルに戻す
+                    if (spriteRenderer != null)
+                        spriteRenderer.material = originalMaterial;
+                    instanceMaterial = null;
+                }
+                // else: 新しいトランジションが開始済みのため、そちらに任せる
+                Destroy(localMaterial);
+            }
         }
     }
 
@@ -73,7 +101,8 @@ public class ColorFlash : MonoBehaviour
     {
         if (instanceMaterial != null)
         {
-            spriteRenderer.material = originalMaterial;
+            if (spriteRenderer != null)
+                spriteRenderer.material = originalMaterial;
             Destroy(instanceMaterial);
             instanceMaterial = null;
         }

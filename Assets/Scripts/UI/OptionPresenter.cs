@@ -57,7 +57,7 @@ public class OptionPresenter : MonoBehaviour
     void Update()
     {
         // オプション開閉（最優先で処理）
-        if (view.InputOption.triggered && !isAnimating && !gridManager.IsEventPlaying)
+        if (view.InputOption.triggered && !isAnimating && !gridManager.IsEventPlaying && !gridManager.IsShopItemReading)
         {
             if (isSubMenuOpen)
             {
@@ -90,8 +90,8 @@ public class OptionPresenter : MonoBehaviour
         // 上下左右の入力
         Vector2 moveInput = view.InputMove.ReadValue<Vector2>();
 
-        // 入力がない場合は即座にクールダウンをリセット
-        if (moveInput == Vector2.zero)
+        // 入力がない場合（デッドゾーン考慮）
+        if (moveInput.sqrMagnitude < 0.25f)
         {
             ResetInputAcceleration();
             isProcessingInput = false; // クールダウンもリセット
@@ -99,7 +99,7 @@ public class OptionPresenter : MonoBehaviour
         }
 
         // 入力クールダウン処理
-        if (isProcessingInput && Time.time - lastInputTime > inputCooldown)
+        if (isProcessingInput && Time.unscaledTime - lastInputTime > inputCooldown)
         {
             isProcessingInput = false;
         }
@@ -133,7 +133,7 @@ public class OptionPresenter : MonoBehaviour
     private void SetInputCooldown(Direction currentInput, bool enableAcceleration)
     {
         isProcessingInput = true;
-        lastInputTime = Time.time;
+        lastInputTime = Time.unscaledTime;
         lastDirection = currentInput;
 
         if (enableAcceleration)
@@ -235,6 +235,7 @@ public class OptionPresenter : MonoBehaviour
 
         switch (model.CurrentItem)
         {
+            /*
             case OptionModel.ItemType.Save:
                 view.BlinkCursorAsync().Forget();
                 HandleSaveAsync().Forget();
@@ -244,6 +245,7 @@ public class OptionPresenter : MonoBehaviour
                 view.BlinkCursorAsync().Forget();
                 HandleLoadAsync().Forget();
                 break;
+            */
 
             case OptionModel.ItemType.Close:
                 view.BlinkCursorAsync().Forget();
@@ -296,7 +298,7 @@ public class OptionPresenter : MonoBehaviour
 
     private void ApplyGameSpeed()
     {
-        GameSettings.GameSpeed = model.GameSpeed == OptionModel.GameSpeedType.Normal ? 0 : 1;
+        GameSettings.GameSpeed = model.GameSpeed == OptionModel.GameSpeedType.Slow ? 0 : 1;
     }
 
     private void ApplyLanguage()
@@ -333,10 +335,8 @@ public class OptionPresenter : MonoBehaviour
             await UniTask.WaitUntil(() => turnManager.IsPlayerTurn && !turnManager.IsProcessingTurn);
         }
 
-        gridManager.SaveGame(GameProgressManager.SaveType.Manual);
-        AudioManager.Instance?.PlaySE(AudioManager.SEType.decide);
-        Debug.Log("Game Saved via Option");
-        // "Saved" ポップアップなどを出すならここ
+        AudioManager.Instance?.PlaySE(AudioManager.SEType.cancel);
+        Debug.Log("Manual save is disabled. Progress is saved only on reset and map warp.");
     }
 
     private async UniTaskVoid HandleLoadAsync()

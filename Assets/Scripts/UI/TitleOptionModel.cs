@@ -40,8 +40,8 @@ public class TitleOptionModel
     public int CurrentResolutionIndex { get; private set; } = 0;
     public Vector2Int CurrentResolution => AvailableResolutions[CurrentResolutionIndex];
 
-    public enum GameSpeedType { Normal, Fast}
-    public GameSpeedType GameSpeed { get; private set; } = GameSpeedType.Normal;
+    public enum GameSpeedType { Slow, Fast}
+    public GameSpeedType GameSpeed { get; private set; } = GameSpeedType.Fast;
 
     public enum LanguageType { English, Japanese }
     public LanguageType Language { get; private set; } = LanguageType.English;

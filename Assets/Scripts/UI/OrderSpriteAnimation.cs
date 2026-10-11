@@ -21,6 +21,7 @@ public class OrderSpriteAnimation : MonoBehaviour
     {
         // シーケンスを作成
         Sequence sequence = DOTween.Sequence();
+        sequence.SetLink(gameObject);
 
         // 1回の往復にかかる時間
         float singleShakeDuration = shakeDuration / shakeVibrato;
@@ -60,6 +61,7 @@ public class OrderSpriteAnimation : MonoBehaviour
     [ContextMenu("Play Animation")]
     public void PlayAnimation()
     {
+        if (this == null || gameObject == null) return;
         PlayShakeRotationAnimation().Forget();
     }
 }

@@ -14,7 +14,7 @@ public class AudioManager : MonoBehaviour
     [SerializeField] private UnityEngine.Audio.AudioMixer audioMixer;
     private Tween masterHighPassTween;
 
-    public void SetMasterHighPassFilter(float cutoffFrequency, float duration = 0.2f)
+    public void SetMasterHighPassFilter(float cutoffFrequency, float duration = 0.05f)
     {
         if (audioMixer != null)
         {
@@ -150,6 +150,13 @@ public class AudioManager : MonoBehaviour
         superposition,
         rush,
         wipeout,
+        cursor,
+        heal,
+        damaged,
+        explode,
+        solve,
+        king,
+        buy,
     }
 
     public enum BGMType
@@ -219,7 +226,7 @@ public class AudioManager : MonoBehaviour
 
         //bgmSource = gameObject.AddComponent<AudioSource>();
         //bgmSource.volume = GetBGMVolume();
-        bgmSource.volume = 1;
+        bgmSource.volume = 0.5f;
         bgmSource.loop = true;
     }
 
@@ -249,19 +256,25 @@ public class AudioManager : MonoBehaviour
 
     public void SetBGMVolume(float volume)
     {
-        bgmSource.volume = volume * volume / maxVolume;
+        float vol = volume * volume / maxVolume;
+        bgmSource.volume = vol;
     }
 
     public void PlaySE(SEType seType)
     {
-        // デバウンスチェック：短時間に同じSEが再生されるのを防ぐ
         float currentTime = Time.time;
-        if (lastPlayedTime.TryGetValue(seType, out float lastTime))
+
+        // デバウンスチェック：短時間に同じSEが再生されるのを防ぐ
+        // ただしkingは文字送りで1文字ごとに鳴らすためデバウンスしない
+        if (seType != SEType.king)
         {
-            if (currentTime - lastTime < debounceTime)
+            if (lastPlayedTime.TryGetValue(seType, out float lastTime))
             {
-                // デバウンス期間内なのでスキップ
-                return;
+                if (currentTime - lastTime < debounceTime)
+                {
+                    // デバウンス期間内なのでスキップ
+                    return;
+                }
             }
         }
 

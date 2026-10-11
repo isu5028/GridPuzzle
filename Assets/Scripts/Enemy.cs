@@ -9,15 +9,57 @@ public class Enemy : Unit
     [SerializeField] private EnemyType type;
     public EnemyType Type { get { return type; } }
     private EnemyAI enemyAI = null!;
+    public EnemyAI EnemyAI => enemyAI;
 
     [SerializeField] private TextMeshPro ammoText = null!;
     [SerializeField] private Transform ammoTransform = null!;
     [SerializeField] private AmmoSpriteAnimation ammoSpriteAnimation = null!;
+    [SerializeField] private GameObject coinPrefab = null!;
     private Vector3 ammoOriginalPos; // Store original position for revival
+    private bool dropsCoin = false;
 
     private int maxAmmo = -1;
     protected ReactiveProperty<int> currentAmmo = new ReactiveProperty<int>(-1);
     public IReadOnlyReactiveProperty<int> CurrentAmmo => currentAmmo;
+
+    public string EnemyID { get; set; }
+
+    /// <summary>
+    /// Shopステージ・出口ステージ共通の固定共有ID。
+    /// このIDで「初回コインドロップ済み」を管理する。
+    /// </summary>
+    public const string KingCoinSharedID = "__king_coin_shared__";
+
+    /// <summary>
+    /// 出口ステージのKing専用ID。
+    /// 常に「既に倒されたことがある」扱いにするために使用する。
+    /// </summary>
+    public const string ExitKingAlwaysDefeatedID = "__exit_king_always_defeated__";
+
+    protected override System.Collections.Generic.IEnumerable<TextMeshPro> GetAdditionalTextsToFade()
+    {
+        if (ammoText != null)
+        {
+            yield return ammoText;
+        }
+    }
+
+    protected override System.Collections.Generic.IEnumerable<Transform> GetAdditionalTransformsToFade()
+    {
+        if (ammoTransform != null)
+        {
+            yield return ammoTransform;
+        }
+    }
+
+    public void UpdateDefeatedIcon()
+    {
+        if (defeatedIconTransform != null)
+        {
+            bool isDefeated = GameProgressManager.Instance.IsEnemyDefeated(EnemyID);
+            defeatedIconTransform.gameObject.SetActive(isDefeated);
+        }
+    }
 
     public override void Initialize(GridManager gridMgr,
                            TurnManager turnMgr,
@@ -37,21 +79,36 @@ public class Enemy : Unit
                            Direction startDirection,
                            int maxHp,
                            int startOrder,
-                           int startAmmo)
+                           int startAmmo,
+                           bool dropsCoin = false)
     {
+        this.dropsCoin = dropsCoin;
         base.Initialize(gridMgr, turnMgr, commandMgr, startPos, startDirection, maxHp, startOrder);
         enemyAI = GetComponent<EnemyAI>();
-        enemyAI.Initialize(gridMgr, commandMgr);
+        enemyAI.Initialize(gridMgr, turnMgr, commandMgr);
+
+        // Update Text again to apply AI overrides (e.g. infinite symbol)
+        UpdateHPText(maxHp);
+        UpdateOrderText(startOrder);
 
         maxAmmo = startAmmo;
         currentAmmo.Value = startAmmo;
 
         if (ammoText != null)
         {
+            // Subscribe regardless of startAmmo to allow dynamic activation by AI (like Bomb)
+            currentAmmo.Subscribe(x =>
+            {
+                if (ammoText != null && maxAmmo >= 0)
+                {
+                    ammoText.text = x.ToString();
+                    if (ammoSpriteAnimation != null) ammoSpriteAnimation.PlayAnimation();
+                }
+            }).AddTo(this);
+
             if (startAmmo >= 0)
             {
                 ammoText.gameObject.SetActive(true);
-                ammoText.text = startAmmo.ToString();
             }
             else
             {
@@ -59,15 +116,7 @@ public class Enemy : Unit
             }
         }
 
-        // Subscribe only if using ammo to check updates
-        if (startAmmo >= 0)
-        {
-            currentAmmo.Subscribe(x =>
-            {
-                if (ammoText != null) ammoText.text = x.ToString();
-                if (ammoSpriteAnimation != null) ammoSpriteAnimation.PlayAnimation();
-            }).AddTo(this);
-        }
+        UpdateDefeatedIcon();
     }
 
     public void SetAmmo(int value)
@@ -90,6 +139,32 @@ public class Enemy : Unit
         SetAmmo(currentAmmo.Value + amount);
     }
 
+    public void SetMaxAmmo(int value)
+    {
+        maxAmmo = value;
+        if (currentAmmo.Value < 0) currentAmmo.Value = value;
+
+        if (ammoText != null && value >= 0)
+        {
+            ammoText.text = currentAmmo.Value.ToString();
+        }
+    }
+
+    public void SetDropsCoin(bool value)
+    {
+        dropsCoin = value;
+    }
+    public bool DropsCoin => dropsCoin;
+    public bool RegisterDefeated { get; set; } = true;
+
+    public void SetAmmoTextActive(bool active)
+    {
+        if (ammoText != null) ammoText.gameObject.SetActive(active);
+    }
+
+    public TextMeshPro GetAmmoText() => ammoText;
+    public int MaxAmmo => maxAmmo;
+
     public bool HasAmmo()
     {
         if (maxAmmo < 0) return true; // Infinite if not set (or handle as restricted? User said "only ChaserRange has it", others ignore)
@@ -104,6 +179,35 @@ public class Enemy : Unit
     public async UniTask ExecuteTurn()
     {
         await enemyAI.ExecuteAI(this);
+    }
+
+    public override void TakeDamage(int damage, Vector2Int attackerPos, bool shakeCamera = true)
+    {
+        int effectiveDamage = damage;
+        if (enemyAI != null)
+        {
+            effectiveDamage = enemyAI.ModifyDamage(damage);
+            enemyAI.OnDamageTaken(this, attackerPos);
+        }
+
+        bool willDie = HP.Value - effectiveDamage <= 0;
+
+        if (!isDead && willDie)
+        {
+            if (RegisterDefeated && !string.IsNullOrEmpty(EnemyID) && !GameProgressManager.Instance.IsEnemyDefeated(EnemyID))
+            {
+                GameProgressManager.Instance.MarkEnemyDefeated(EnemyID);
+                UpdateDefeatedIcon(); // Icon updates before potential destruction
+
+                // 初回撃破でコインを落とす場合、その場にCoinPrefabを生成
+                if (dropsCoin && coinPrefab != null)
+                {
+                    Instantiate(coinPrefab, transform.position, Quaternion.identity);
+                }
+            }
+        }
+
+        base.TakeDamage(effectiveDamage, attackerPos, shakeCamera);
     }
 
     protected override void InitializeVisuals()
@@ -123,42 +227,19 @@ public class Enemy : Unit
         if (ammoTransform != null)
         {
             ammoTransform.DOKill();
-            ammoTransform.localPosition = new Vector3(ammoOriginalPos.x, ammoOriginalPos.y - 50.0f, ammoOriginalPos.z);
+            ammoTransform.localPosition = ammoOriginalPos;
         }
     }
 
     protected override async UniTask DieAsync(Vector2Int attackerPos)
     {
-        // Start Ammo animation in parallel with base animation
-        // Timing: Flash(150)+Delay(200) = 350 -> Sprite
-        // 350 + 100 = 450 -> HP
-        // 450 + 50 = 500 -> Order
-        // Let's do 500 + 50 = 550 for Ammo
-
-        AnimateDieAmmo().Forget();
-
         await base.DieAsync(attackerPos);
-    }
-
-    private async UniTask AnimateDieAmmo()
-    {
-        if (ammoTransform == null) return;
-
-        try
-        {
-             // Wait for roughly the time when Order finishes starting or slightly after
-             // Flash (150) + 200 + 100 + 50 = 500ms is when Order starts.
-             // Let's wait 550ms.
-             await UniTask.Delay(550, cancellationToken: this.GetCancellationTokenOnDestroy());
-
-             ammoTransform.DOLocalMoveY(ammoOriginalPos.y - 50.0f, 0.4f).SetEase(Ease.InCubic).SetLink(gameObject);
-        }
-        catch (System.OperationCanceledException) { }
     }
 
     public override void Revive()
     {
         base.Revive();
+
         if (ammoTransform != null)
         {
             ammoTransform.DOKill();
@@ -172,6 +253,8 @@ public class Enemy : Unit
         {
             ammoSpriteAnimation.transform.localScale = Vector3.one; // Reset scale if stuck
         }
+
+        UpdateDefeatedIcon();
     }
 
     protected override void OnEnable()
@@ -212,12 +295,41 @@ public class Enemy : Unit
         gameObject.SetActive(true);
         unitAnimator.SetDirection(currentDirection);
     }
-    public void PerformRangedAttack(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab)
+
+    protected override void UpdateHPText(int value)
     {
-        PerformRangedAttackAsync(targetPos, targetUnit, arrowPrefab).Forget();
+        if (enemyAI != null)
+        {
+            string customText = enemyAI.GetHPText(value);
+            if (customText != null)
+            {
+                if (hpText != null) hpText.text = customText;
+                return;
+            }
+        }
+        base.UpdateHPText(value);
     }
 
-    private async UniTask PerformRangedAttackAsync(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab)
+    protected override void UpdateOrderText(int value)
+    {
+        if (enemyAI != null)
+        {
+            string customText = enemyAI.GetOrderText(value);
+            if (customText != null)
+            {
+                if (orderText != null) orderText.text = customText;
+                return;
+            }
+        }
+        base.UpdateOrderText(value);
+    }
+
+    public void PerformRangedAttack(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab, System.Action onHit = null)
+    {
+        PerformRangedAttackAsync(targetPos, targetUnit, arrowPrefab, onHit).Forget();
+    }
+
+    private async UniTask PerformRangedAttackAsync(Vector2Int targetPos, Unit targetUnit, Transform arrowPrefab, System.Action onHit = null)
     {
         isMoving = true;
         orderSpriteAnimation.PlayAnimation();
@@ -249,11 +361,12 @@ public class Enemy : Unit
                 Vector3 targetWorldPos = gridManager.GridToWorldPosition(targetPos);
 
                 arrowScript.Launch(spawnPos, targetWorldPos, () => {
-                    // Apply Damage IMMEDIATELY when arrow reaches target
                     if (targetUnit != null)
                     {
-                        targetUnit.TakeDamage(1, currentPos);
+                        if (targetUnit is Crate c) c.BreakCrate(currentPos);
+                        else targetUnit.TakeDamage(1, currentPos);
                     }
+                    onHit?.Invoke();
                     source.TrySetResult();
                 });
 
@@ -271,8 +384,10 @@ public class Enemy : Unit
              // Fallback damage if no arrow
              if (targetUnit != null)
              {
-                 targetUnit.TakeDamage(1, currentPos);
+                 if (targetUnit is Crate c) c.BreakCrate(currentPos);
+                 else targetUnit.TakeDamage(1, currentPos);
              }
+             onHit?.Invoke();
         }
 
         // Return to original pos

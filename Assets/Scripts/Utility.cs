@@ -10,6 +10,10 @@ public enum EnemyType
     Skeleton,
     Zombie,
     Boar,
+    Crystal,
+    Ghost,
+    Bomb,
+    King,
 }
 
 public enum CellType
@@ -21,6 +25,9 @@ public enum CellType
     Ice,
     SyncMap,
     Tutorial,
+    StairUp,    // 上の階へ移動（フロアインデックス-1）
+    StairDown,  // 下の階へ移動（フロアインデックス+1）
+    BrokenStairUp, // 通行不能な壊れた上り階段
 }
 
 public enum Direction
@@ -52,6 +59,8 @@ public static class Utility
     {
         return new Color(r / 255f, g / 255f, b / 255f, a / 255f);
     }
+
+    public static readonly Direction[] SearchOrder = { Direction.Right, Direction.Left, Direction.Up, Direction.Down };
 
     public static Direction GetDirectionFromStickInput(Vector2 input)
     {
@@ -140,5 +149,17 @@ public static class Utility
         // ループ処理
         j = (j % length + length) % length;
         return arr[j];
+    }
+
+    public static Direction GetOppositeDirection(Direction direction)
+    {
+        switch (direction)
+        {
+            case Direction.Right: return Direction.Left;
+            case Direction.Down: return Direction.Up;
+            case Direction.Left: return Direction.Right;
+            case Direction.Up: return Direction.Down;
+            default: return Direction.Right;
+        }
     }
 }

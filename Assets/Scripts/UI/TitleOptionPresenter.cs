@@ -283,6 +283,7 @@ public class TitleOptionPresenter : MonoBehaviour
         {
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Auto);
             GameProgressManager.Instance.DeleteSaveFile(GameProgressManager.SaveType.Manual);
+            GameProgressManager.Instance.ResetEntireProgress();
             Debug.Log("Save Data Deleted");
         }
     }

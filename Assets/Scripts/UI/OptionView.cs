@@ -86,7 +86,7 @@ public class OptionView : MonoBehaviour
     {
         if (isAnimating) return;
 
-        //AudioManager.Instance.SetMasterHighPassFilter(400);
+        AudioManager.Instance.SetMasterHighPassFilter(400);
 
         isAnimating = true;
         optionPanel.DOLocalMove(visiblePosition, slideDuration).SetUpdate(true).SetEase(Ease.OutCubic);
@@ -191,7 +191,7 @@ public class OptionView : MonoBehaviour
 
     public void UpdateGameSpeedDisplay(OptionModel.GameSpeedType speed, int direction = 0)
     {
-        string key = speed == OptionModel.GameSpeedType.Normal ? "OPTION_GAME_SPEED_NORMAL" : "OPTION_GAME_SPEED_FAST";
+        string key = speed == OptionModel.GameSpeedType.Slow ? "OPTION_GAME_SPEED_NORMAL" : "OPTION_GAME_SPEED_FAST";
         SetLocalizedText(gameSpeedText, "StringTable", key);
         SetLocalizedText(maskedGameSpeedText, "StringTable", key);
 
@@ -207,9 +207,22 @@ public class OptionView : MonoBehaviour
         }
         else
         {
-            // フォールバック: 直接取得して設定
+            SetTextAsync(textComp, table, key).Forget();
+        }
+    }
+
+    private async UniTaskVoid SetTextAsync(TextMeshPro textComp, string table, string key)
+    {
+        var op = UnityEngine.Localization.Settings.LocalizationSettings.InitializationOperation;
+        if (!op.IsDone)
+        {
+            await op;
+        }
+
+        if (UnityEngine.Localization.Settings.LocalizationSettings.SelectedLocale != null)
+        {
             var text = UnityEngine.Localization.Settings.LocalizationSettings.StringDatabase.GetLocalizedString(table, key);
-            textComp.text = text;
+            if (textComp != null) textComp.text = text;
         }
     }
 }

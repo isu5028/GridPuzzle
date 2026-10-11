@@ -10,6 +10,13 @@ public class SaveFeedback : MonoBehaviour
     Vector3 hiddenPos;
     private CancellationTokenSource cts;
 
+    private void CancelAndDisposeFeedbackCts()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        cts = null;
+    }
+
     void Start()
     {
         originPos = transform.localPosition;
@@ -34,8 +41,7 @@ public class SaveFeedback : MonoBehaviour
 
     async UniTask PlayFeedbackAsync()
     {
-        cts?.Cancel();
-        cts?.Dispose();
+        CancelAndDisposeFeedbackCts();
         cts = new CancellationTokenSource();
 
         try
@@ -48,5 +54,10 @@ public class SaveFeedback : MonoBehaviour
         {
 
         }
+    }
+
+    private void OnDestroy()
+    {
+        CancelAndDisposeFeedbackCts();
     }
 }

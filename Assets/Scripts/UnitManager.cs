@@ -9,11 +9,15 @@ public class UnitManager : MonoBehaviour
     private Player playerScript;
     private List<GameObject> enemyObjects = new List<GameObject>();
     private List<Enemy> enemyScripts = new List<Enemy>();
+    private List<GameObject> crateObjects = new List<GameObject>();
+    private List<Crate> crateScripts = new List<Crate>();
 
     public Player Player => playerScript;
     public List<Enemy> Enemies => enemyScripts;
+    public List<Crate> Crates => crateScripts;
     public GameObject PlayerObject => playerObject;
     public List<GameObject> EnemyObjects => enemyObjects;
+    public List<GameObject> CrateObjects => crateObjects;
 
     // ユニットの状態変化通知イベント (UniRx)
     private Subject<Unit> unitStateChangedSubject = new Subject<Unit>();
@@ -23,12 +27,31 @@ public class UnitManager : MonoBehaviour
     {
         foreach (var enemy in enemyObjects)
         {
-            if (enemy != null) Destroy(enemy);
+            if (enemy != null)
+            {
+                enemy.SetActive(false);
+                Destroy(enemy);
+            }
         }
-        if (playerObject != null) Destroy(playerObject);
+        if (playerObject != null)
+        {
+            playerObject.SetActive(false);
+            Destroy(playerObject);
+        }
+
+        foreach (var crate in crateObjects)
+        {
+            if (crate != null)
+            {
+                crate.SetActive(false);
+                Destroy(crate);
+            }
+        }
 
         enemyObjects.Clear();
         enemyScripts.Clear();
+        crateObjects.Clear();
+        crateScripts.Clear();
         playerScript = null;
         playerObject = null;
     }
@@ -79,9 +102,31 @@ public class UnitManager : MonoBehaviour
 
     public void SetAllEnemiesActive(bool isActive)
     {
-        foreach (var enemy in enemyObjects)
+        for (int i = enemyObjects.Count - 1; i >= 0; i--)
         {
-            if (enemy != null) enemy.gameObject.SetActive(isActive);
+            var enemy = enemyObjects[i];
+            if (enemy != null)
+            {
+                enemy.SetActive(isActive);
+            }
+            else
+            {
+                // Clean up references to destroyed objects
+                enemyObjects.RemoveAt(i);
+            }
+        }
+
+        for (int i = crateObjects.Count - 1; i >= 0; i--)
+        {
+            var crate = crateObjects[i];
+            if (crate != null)
+            {
+                crate.SetActive(isActive);
+            }
+            else
+            {
+                crateObjects.RemoveAt(i);
+            }
         }
     }
 
@@ -97,18 +142,67 @@ public class UnitManager : MonoBehaviour
 
         foreach (var enemy in enemyScripts)
         {
-            if (enemy != null && !enemy.IsDead && enemy.CurrentPos == pos)
+            // Unity Object null check
+            if (enemy == null) continue;
+
+            if (!enemy.IsDead && enemy.CurrentPos == pos)
                 return enemy;
+        }
+        foreach (var crate in crateScripts)
+        {
+            if (crate == null) continue;
+
+            if (!crate.IsDead && crate.CurrentPos == pos)
+                return crate;
         }
 
         return null;
+    }
+
+    public bool IsAnyCrateMoving()
+    {
+        foreach (var crate in crateScripts)
+        {
+            if (crate != null && crate.IsMoving) return true;
+        }
+        return false;
+    }
+
+    public void RegisterCrate(GameObject crateObj)
+    {
+        if (!crateObjects.Contains(crateObj))
+        {
+            crateObjects.Add(crateObj);
+            var script = crateObj.GetComponent<Crate>();
+            crateScripts.Add(script);
+        }
+    }
+
+    public void AddCrate(Crate crate)
+    {
+        if (!crateScripts.Contains(crate))
+        {
+            crateScripts.Add(crate);
+            crateObjects.Add(crate.gameObject);
+        }
+    }
+
+    public void RemoveCrate(Crate crate)
+    {
+        if (crateScripts.Contains(crate))
+        {
+            crateScripts.Remove(crate);
+            crateObjects.Remove(crate.gameObject);
+        }
     }
 
     public bool HasAliveEnemy()
     {
         foreach (var enemy in enemyScripts)
         {
-            if (enemy != null && !enemy.IsDead)
+            if (enemy == null) continue;
+
+            if (!enemy.IsDead)
             {
                 return true;
             }

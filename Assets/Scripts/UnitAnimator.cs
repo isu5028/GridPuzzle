@@ -28,10 +28,18 @@ public class UnitAnimator : MonoBehaviour
     [SerializeField] private Animator _animator;
     [SerializeField] private DirectionAnimations _directionAnimation;
     [SerializeField] private AnimationClip _deathAnimation;
+    [SerializeField] private AnimationClip _ignitionAnimation;
+    [Header("Optional Emote Animations")]
+    [SerializeField] private AnimationClip _smileAnimation;
+    [SerializeField] private string _smileStateName = "smile";
 
+    public AnimationClip IgnitionAnimation => _ignitionAnimation;
+    public bool IsAnimationLocked { get; set; } = false;
 
     public void SetDirection(Direction direction)
     {
+        if (IsAnimationLocked) return;
+
         AnimationClip clip = _directionAnimation.GetClip(direction);
         if (clip == null)
         {
@@ -47,8 +55,48 @@ public class UnitAnimator : MonoBehaviour
         _animator.Play(clip.name, 0, normalizedTime);
     }
 
+    public void PlayAnimation(AnimationClip clip)
+    {
+        if (clip == null || _animator == null) return;
+        _animator.Play(clip.name);
+    }
+
+    public bool PlaySmileAnimation()
+    {
+        if (IsAnimationLocked || _animator == null) return false;
+
+        if (_smileAnimation != null)
+        {
+            _animator.Play(_smileAnimation.name, 0, 0f);
+            return true;
+        }
+
+        if (TryPlayState(_smileStateName)) return true;
+        if (!string.Equals(_smileStateName, "Smile", StringComparison.Ordinal) && TryPlayState("Smile")) return true;
+        if (!string.Equals(_smileStateName, "smile", StringComparison.Ordinal) && TryPlayState("smile")) return true;
+
+        return false;
+    }
+
+    public void StopEmoteAnimation(Direction fallbackDirection)
+    {
+        if (IsAnimationLocked || _animator == null) return;
+        SetDirection(fallbackDirection);
+    }
+
     public void SetDeath()
     {
         _animator.Play(_deathAnimation.name);
+    }
+
+    private bool TryPlayState(string stateName)
+    {
+        if (_animator == null || string.IsNullOrWhiteSpace(stateName)) return false;
+
+        int stateHash = Animator.StringToHash(stateName);
+        if (!_animator.HasState(0, stateHash)) return false;
+
+        _animator.Play(stateHash, 0, 0f);
+        return true;
     }
 }

@@ -4,10 +4,11 @@ public static class GameSettings
 {
     public static int screenMode = 0;
     public static Vector2Int Resolution = new Vector2Int(960, 540);
-    public static int GameSpeed = 0;
-    public static int Language = 1; // 0: English, 1: Japanese
+    public static int GameSpeed = 1;
+    public static int Language = 0; // 0: English, 1: Japanese
     public static int BgmVolume = 50;
     public static int SeVolume = 50;
+    private static bool isLanguageApplyCallbackRegistered = false;
 
     public static void ApplySettings()
     {
@@ -29,9 +30,10 @@ public static class GameSettings
         {
             SetLanguage(Language);
         }
-        else
+        else if (!isLanguageApplyCallbackRegistered)
         {
-            op.Completed += _ => SetLanguage(Language);
+            isLanguageApplyCallbackRegistered = true;
+            op.Completed += OnLocalizationInitialized;
         }
 
         if (AudioManager.Instance != null)
@@ -48,5 +50,11 @@ public static class GameSettings
         {
             UnityEngine.Localization.Settings.LocalizationSettings.SelectedLocale = locales[langIndex];
         }
+    }
+
+    private static void OnLocalizationInitialized(UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationHandle<UnityEngine.Localization.Settings.LocalizationSettings> _)
+    {
+        isLanguageApplyCallbackRegistered = false;
+        SetLanguage(Language);
     }
 }

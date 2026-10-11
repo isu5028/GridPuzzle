@@ -117,6 +117,14 @@ public class EnemyAIChaserSlow : EnemyAI
             MoveCommand moveCommand = new MoveCommand(enemy, currentPos, nextPos, currentDirection, moveDirection);
             commandManager.ExecuteCommand(moveCommand);
             if (GameSettings.GameSpeed == 0) await UniTask.WaitUntil(() => !enemy.IsMoving);
+
+            // 階段遷移チェック
+            var transition = gridManager.GetEnemyStairDestination(enemy, nextPos, moveDirection);
+            if (transition != null)
+            {
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(200);
+                await gridManager.MoveEnemyToStage(enemy, transition.Value.targetStage, transition.Value.targetPos, moveDirection);
+            }
         }
         else
         {

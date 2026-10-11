@@ -33,7 +33,14 @@ public class CrossStageAttackCommand : ICommand
 
         // 2. Apply Damage to Target
         Debug.Log($"[CrossStageAttack] Attacking {target.name} (Active:{target.gameObject.activeInHierarchy}) with damage {damage}");
-        target.TakeDamage(damage, attacker.CurrentPos);
+        if (target is Crate c)
+        {
+            c.BreakCrate(attacker.CurrentPos);
+        }
+        else
+        {
+            target.TakeDamage(damage, attacker.CurrentPos);
+        }
 
         // 3. Apply Recoil to Attacker
         Debug.Log($"[CrossStageAttack] Recoil Damage to {attacker.name}");

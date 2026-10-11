@@ -3,57 +3,25 @@ using System.Collections.Generic;
 using UnityEngine;
 using Cysharp.Threading.Tasks;
 
-public class TransitionCommand : ICommand
+public class TransitionCommand : ICommand, IAsyncUndoCommand
 {
     private GridManager gridManager;
     private StageSO fromStage;
     private StageSO toStage;
     private Direction entryDirection; // Undoで戻る時の向き（あるいは位置）
+    private Direction opposite;
     private Vector2Int undoPos; // Undoで戻るべき座標
     private Vector2Int entryPos; // 新しいステージでの入場位置（Y座標を保持）
 
-    public TransitionCommand(GridManager grid, StageSO from, StageSO to, Direction dir, Vector2Int returnPos)
+    public TransitionCommand(GridManager manager, StageSO from, StageSO to, Direction dir, Vector2Int returnPos)
     {
-        this.gridManager = grid;
+        this.gridManager = manager;
         this.fromStage = from;
         this.toStage = to;
         this.entryDirection = dir;
+        this.opposite = Utility.GetOppositeDirection(dir);
         this.undoPos = returnPos;
-
-        // 遷移前の位置からY座標を保持して計算
-        this.entryPos = CalculateEntryPosition(to, dir, returnPos);
-    }
-
-    private Vector2Int CalculateEntryPosition(StageSO nextStage, Direction fromDirection, Vector2Int currentPos)
-    {
-        int targetX = 0;
-        int targetY = 0;
-
-        // fromStageの高さを使って「上からのインデックス」を算出
-        int fromHeight = fromStage != null ? fromStage.Height : nextStage.Height;
-        int rowFromTop = (fromHeight - 1) - currentPos.y;
-
-        switch (fromDirection)
-        {
-            case Direction.Right: // 左端に出る
-                targetX = 0;
-                targetY = Mathf.Clamp((nextStage.Height - 1) - rowFromTop, 0, nextStage.Height - 1);
-                break;
-            case Direction.Left: // 右端に出る
-                targetX = nextStage.Width - 1;
-                targetY = Mathf.Clamp((nextStage.Height - 1) - rowFromTop, 0, nextStage.Height - 1);
-                break;
-            case Direction.Up: // 下端に出る
-                targetX = Mathf.Clamp(currentPos.x, 0, nextStage.Width - 1);
-                targetY = 0;
-                break;
-            case Direction.Down: // 上端に出る
-                targetX = Mathf.Clamp(currentPos.x, 0, nextStage.Width - 1);
-                targetY = nextStage.Height - 1;
-                break;
-        }
-
-        return new Vector2Int(targetX, targetY);
+        this.entryPos = GridCalculation.CalculateEntryPosition(to, dir, returnPos);
     }
 
     public void Execute()

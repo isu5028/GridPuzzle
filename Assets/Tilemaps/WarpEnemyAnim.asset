@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 13b75c95f34a00d4e8c04f76b73312e6, type: 3}
+  m_Name: WarpEnemyAnim
+  m_EditorClassIdentifier: 
+  m_AnimatedSprites:
+  - {fileID: -3006853362391353108, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -600707782859929910, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -8844177322882389097, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -7520862455942004047, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 6587207790948418766, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -1875922536148338400, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 1156855502848508972, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -2032937118884536436, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -3523694117135918953, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 7905978662278565756, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -6786028667507475998, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 5381492584239688641, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -8127485958484931851, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -4669984775177596768, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -5403936333398554888, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -4307035419960130492, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 7506647526969663220, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 6269167447529800610, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: 477178090935834868, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  - {fileID: -4795892453321097487, guid: 282baddb20ccbbc418aad639d0818eee, type: 3}
+  m_MinSpeed: 10
+  m_MaxSpeed: 10
+  m_AnimationStartTime: 0
+  m_AnimationStartFrame: 0
+  m_TileColliderType: 0
+  m_TileAnimationFlags: 0

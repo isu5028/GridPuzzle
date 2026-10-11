@@ -71,8 +71,8 @@ public class RushAttackCommand : ICommand
         // EnemyAIRush used `enemy.TryAttack()` which uses `attackTargetPos`.
         // But in Rush loop, we know exactly where we hit.
         // `Unit.Attack(targetPos)` exists.
-        // Pass recoilDamage to sync Recoil with Impact
-        attacker.Attack(targetPositions, recoilDamage);
+        // Target that is a Crate should be broken
+        attacker.Attack(targetPositions, recoilDamage, true);
 
         // 4. Apply Recoil Damage to Attacker
         Debug.Log($"[RushAttack] Recoil Damage to {attacker.name} handled by Attack");

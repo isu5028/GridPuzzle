@@ -9,6 +9,7 @@ public class StageEditor : Editor
     private bool showGridEditor = true;
     private bool showEnemyList = true;
     private ReorderableList enemyReorderableList;
+    private ReorderableList stairConnectionsReorderableList;
 
     // エディタの状態
     private enum EditMode
@@ -19,7 +20,13 @@ public class StageEditor : Editor
         Player,     // プレイヤー位置
         Enemy,      // 敵の配置
         EraseUnit,  // Unit削除
-        Tutorial    // チュートリアル配置
+        Tutorial,   // チュートリアル配置
+        StairUp,    // 上階段配置
+        StairDown,  // 下階段配置
+        BrokenStairUp, // 壊れた上階段配置
+        Crate,      // Crate配置
+        ShopItem,   // Shop Item配置
+        StairLink   // 階段リンク設定（追加）
     }
 
     private EditMode currentMode = EditMode.Wall;
@@ -28,7 +35,9 @@ public class StageEditor : Editor
     private Direction currentEnemyDirection = Direction.Up;
 
     private int currentAmmo = 3; // Default ammo for Skeleton
+    private bool currentDropsCoin = false;
     private int currentTutorialIndex = 1;
+    private int currentShopItemId = 0;
 
     // グリッド描画設定
     private const float CELL_SIZE = 30f;
@@ -42,8 +51,14 @@ public class StageEditor : Editor
     private readonly Color enemyColor = new Color(0.8f, 0.2f, 0.2f);
     private readonly Color syncMapColor = new Color(0.0f, 1.0f, 1.0f, 0.5f); // シアン半透明
     private readonly Color tutorialColor = new Color(1f, 0.64f, 0f, 0.5f); // オレンジ半透明
+    private readonly Color stairUpColor = new Color(0.3f, 0.5f, 0.9f, 0.7f); // 青（上へ）
+    private readonly Color stairDownColor = new Color(0.9f, 0.4f, 0.3f, 0.7f); // 赤（下へ）
+    private readonly Color brokenStairUpColor = new Color(0.5f, 0.6f, 0.7f, 0.7f); // グレー青（壊れた上階段）
     private readonly Color gridLineColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
-    private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // 黄色半透明
+    private readonly Color highlightColor = new Color(1f, 0f, 1f, 0.5f); // マゼンタ半透明
+    private readonly Color stairLinkColor = new Color(0.5f, 0.0f, 1.0f, 0.7f); // 紫（リンク）
+    private readonly Color crateColor = new Color(0.55f, 0.40f, 0.20f, 0.8f); // 茶色
+    private readonly Color shopItemColor = new Color(0.95f, 0.75f, 0.10f, 0.85f); // 黄
 
     private void OnEnable()
     {
@@ -54,6 +69,12 @@ public class StageEditor : Editor
     }
 
     private void SetupReorderableList()
+    {
+        SetupEnemyReorderableList();
+        SetupStairConnectionsReorderableList();
+    }
+
+    private void SetupEnemyReorderableList()
     {
         // StageSO のフィールド名に合わせる
         SerializedProperty enemyListProp = serializedObject.FindProperty("enemyStartData");
@@ -82,8 +103,8 @@ public class StageEditor : Editor
             xPos += 45;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "弾数");
             xPos += 45;
-            //EditorGUI.LabelField(new Rect(xPos, rect.y, 60, rect.height), "行動順");
-            //xPos += 65;
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 40, rect.height), "coin");
+            xPos += 40;
             EditorGUI.LabelField(new Rect(xPos, rect.y, 50, rect.height), "削除");
         };
 
@@ -114,9 +135,10 @@ public class StageEditor : Editor
             EditorGUI.PropertyField(new Rect(xPos, rect.y, 40, height), maxHPProp, GUIContent.none);
             xPos += 45;
 
-            // Ammo (Only for Skeleton)
+            // Ammo (Only for Skeleton or Bomb)
             SerializedProperty typeVal = element.FindPropertyRelative("EnemyType");
-            if (typeVal.enumValueIndex == (int)EnemyType.Skeleton)
+            int enemyTypeIndex = typeVal.enumValueIndex;
+            if (enemyTypeIndex == (int)EnemyType.Skeleton || enemyTypeIndex == (int)EnemyType.Bomb)
             {
                 SerializedProperty ammoProp = element.FindPropertyRelative("Ammo");
                 EditorGUI.PropertyField(new Rect(xPos, rect.y, 40, height), ammoProp, GUIContent.none);
@@ -127,9 +149,10 @@ public class StageEditor : Editor
             }
             xPos += 45;
 
-            // 行動順は読み取り専用でインデックスを表示
-            //EditorGUI.LabelField(new Rect(xPos, rect.y, 60, height), $"{index}");
-            //xPos += 65;
+            // DropsCoin Toggle
+            SerializedProperty dropsCoinProp = element.FindPropertyRelative("DropsCoin");
+            dropsCoinProp.boolValue = EditorGUI.Toggle(new Rect(xPos + 10, rect.y, 20, height), dropsCoinProp.boolValue);
+            xPos += 40;
 
             if (GUI.Button(new Rect(xPos, rect.y, 50, height), "削除"))
             {
@@ -154,6 +177,46 @@ public class StageEditor : Editor
             stage.UpdateEnemyActionIndices();
             serializedObject.Update();
             EditorUtility.SetDirty(stage);
+        };
+    }
+
+    private void SetupStairConnectionsReorderableList()
+    {
+        SerializedProperty connectionsProp = serializedObject.FindProperty("stairConnections");
+
+        stairConnectionsReorderableList = new ReorderableList(
+            serializedObject,
+            connectionsProp,
+            draggable: true,
+            displayHeader: true,
+            displayAddButton: true,
+            displayRemoveButton: true
+        );
+
+        stairConnectionsReorderableList.drawHeaderCallback = (Rect rect) =>
+        {
+            EditorGUI.LabelField(rect, "階段接続設定 (座標 -> 遷移先ステージ)");
+        };
+
+        stairConnectionsReorderableList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
+        {
+            SerializedProperty element = connectionsProp.GetArrayElementAtIndex(index);
+            rect.y += 2;
+
+            float xPos = rect.x;
+            float height = EditorGUIUtility.singleLineHeight;
+
+            // Position
+            float posWidth = 100;
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 40, height), "Pos:");
+            xPos += 40;
+            EditorGUI.PropertyField(new Rect(xPos, rect.y, posWidth, height), element.FindPropertyRelative("Position"), GUIContent.none);
+            xPos += posWidth + 10;
+
+            // Target Stage
+            EditorGUI.LabelField(new Rect(xPos, rect.y, 60, height), "Target:");
+            xPos += 60;
+            EditorGUI.PropertyField(new Rect(xPos, rect.y, rect.width - xPos, height), element.FindPropertyRelative("TargetStage"), GUIContent.none);
         };
     }
 
@@ -187,13 +250,14 @@ public class StageEditor : Editor
     {
         EditorGUILayout.LabelField("ステージ情報", EditorStyles.boldLabel);
 
-        SerializedProperty stageNameProp = serializedObject.FindProperty("stageName");
+        // Name is now derived from Asset Name
+        EditorGUILayout.LabelField("ステージ名", stage.name);
+
         SerializedProperty widthProp = serializedObject.FindProperty("width");
         SerializedProperty heightProp = serializedObject.FindProperty("height");
         SerializedProperty syncMapOffsetProp = serializedObject.FindProperty("syncMapOffset");
 
         EditorGUI.BeginChangeCheck();
-        EditorGUILayout.PropertyField(stageNameProp, new GUIContent("ステージ名"));
 
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.PropertyField(widthProp, new GUIContent("幅"));
@@ -208,12 +272,86 @@ public class StageEditor : Editor
             stage.InitializeWallData();
         }
 
-        EditorGUILayout.LabelField($"グリッドサイズ: {stage.Width} × {stage.Height}");
+        // Display Derived Info
+        string floorDisplay = stage.FloorIndex == 0 ? "1F" : $"B{stage.FloorIndex}F";
+        EditorGUILayout.LabelField($"グリッドサイズ: {stage.Width} × {stage.Height} | フロア: {floorDisplay}");
+
+        EditorGUILayout.Space(10);
+
+        // --- ワールドマップ位置設定 ---
+        EditorGUILayout.LabelField("ワールドマップ位置設定", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
+
+        SerializedProperty mapPositionProp = serializedObject.FindProperty("mapPosition");
+
+        // Show raw MapPosition but interpreted
+        EditorGUILayout.PropertyField(mapPositionProp, new GUIContent("マップ位置 (MapPosition)", "X=Column(0-8), Y=Floor(0-6)"));
+
+        // StairColumn Interpretation (Column 0-8)
+        // We allow changing Column via a friendly dropdown that updates MapPosition.X
+        string[] columnOptions = {
+            "0 - 奥の左 (Back Left)", "1 - 奥の中央 (Back Center)", "2 - 奥の右 (Back Right)",
+            "3 - 中の左 (Mid Left)", "4 - 中の中央 (Mid Center)", "5 - 中の右 (Mid Right)",
+            "6 - 手前の左 (Front Left)", "7 - 手前の中央 (Front Center)", "8 - 手前の右 (Front Right)"
+        };
+
+        int currentX = mapPositionProp.vector2IntValue.x;
+        int currentY = mapPositionProp.vector2IntValue.y;
+
+        int newX = EditorGUILayout.Popup(new GUIContent("階段列 (Layer/Column)", "マップ位置のX座標に対応"), Mathf.Clamp(currentX, 0, 8), columnOptions);
+
+        // Floor Selection via IntField that updates MapPosition.Y
+        int newY = EditorGUILayout.IntField(new GUIContent("深さ (Floor/Depth)", "マップ位置のY座標に対応 (0=Hub)"), currentY);
+
+        if (newX != currentX || newY != currentY)
+        {
+            mapPositionProp.vector2IntValue = new Vector2Int(newX, newY);
+        }
+
+        // HelpBox
+        string layerName = newX <= 2 ? "Back (奥)" : (newX <= 5 ? "Mid (中)" : "Front (手前)");
+        EditorGUILayout.HelpBox(
+            $"Current Setting:\nLayer: {layerName}\nFloor: {(newY==0?"Hub":$"B{newY}F")}\n\nAdjusting these values updates MapPosition.",
+            MessageType.Info
+        );
+
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(10);
+
+        // --- 階層マップ設定 ---
+        EditorGUILayout.LabelField("階層マップ設定 (上下階接続)", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
+
+        SerializedProperty defaultUpProp = serializedObject.FindProperty("defaultUpStage");
+        SerializedProperty defaultDownProp = serializedObject.FindProperty("defaultDownStage");
+
+        EditorGUILayout.PropertyField(defaultUpProp, new GUIContent("上の階 (Default StairUp)", "上り階段のデフォルト移動先"));
+        EditorGUILayout.PropertyField(defaultDownProp, new GUIContent("下の階 (Default StairDown)", "下り階段のデフォルト移動先"));
+
+        EditorGUILayout.HelpBox("※通常ステージでは、配置された階段(StairUp/Down)は自動的に上記のデフォルト設定に接続されます。\n" +
+                                "明示的な接続先が必要な場合(Hubなど)のみ、以下のリストに追加してください。", MessageType.Info);
 
         EditorGUILayout.Space(5);
 
-        // 隣接ステージ設定
-        EditorGUILayout.LabelField("隣接ステージ", EditorStyles.boldLabel);
+        // 階段接続リストの描画
+        EditorGUILayout.LabelField("特殊接続 / HUB設定 (Overrides)", EditorStyles.boldLabel);
+        if (stairConnectionsReorderableList != null)
+        {
+            stairConnectionsReorderableList.DoLayoutList();
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("Stair Connections List not initialized", MessageType.Warning);
+        }
+
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(5);
+
+        // --- 平面マップ設定 (Legacy/Optional) ---
+        EditorGUILayout.LabelField("平面マップ設定 (隣接ステージ)", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
 
         SerializedProperty upStageProp = serializedObject.FindProperty("upStage");
         SerializedProperty downStageProp = serializedObject.FindProperty("downStage");
@@ -224,6 +362,31 @@ public class StageEditor : Editor
         EditorGUILayout.PropertyField(downStageProp, new GUIContent("South"));
         EditorGUILayout.PropertyField(rightStageProp, new GUIContent("East"));
         EditorGUILayout.PropertyField(leftStageProp, new GUIContent("West"));
+
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(10);
+
+        // --- 出口ステージ設定 ---
+        EditorGUILayout.LabelField("出口ステージ設定", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical("Box");
+
+        SerializedProperty isExitStageProp = serializedObject.FindProperty("isExitStage");
+        EditorGUILayout.PropertyField(isExitStageProp, new GUIContent("Is Exit Stage",
+            "ONにすると、繋ぎ先のない階段を踏んでもブロックされず、ゲームクリアになります。\n" +
+            "また、全ショップアイテム購入済みのときのみKingが出現します。"));
+
+        if (isExitStageProp.boolValue)
+        {
+            EditorGUILayout.HelpBox(
+                "出口ステージ：\n" +
+                "・繋ぎ先なし階段 → ゲームクリア\n" +
+                "・King → 全ショップ購入済み時のみ出現\n" +
+                "・Kingのセリフは出口専用のものが使用されます",
+                MessageType.Info);
+        }
+
+        EditorGUILayout.EndVertical();
     }
 
     private void DrawEditModeSelector()
@@ -252,6 +415,21 @@ public class StageEditor : Editor
 
         if (GUILayout.Toggle(currentMode == EditMode.Tutorial, "Tutorial", "Button"))
             currentMode = EditMode.Tutorial;
+
+        if (GUILayout.Toggle(currentMode == EditMode.StairUp, "階段↑", "Button"))
+            currentMode = EditMode.StairUp;
+
+        if (GUILayout.Toggle(currentMode == EditMode.StairDown, "階段↓", "Button"))
+            currentMode = EditMode.StairDown;
+
+        if (GUILayout.Toggle(currentMode == EditMode.BrokenStairUp, "壊階段↑", "Button"))
+            currentMode = EditMode.BrokenStairUp;
+
+        if (GUILayout.Toggle(currentMode == EditMode.Crate, "Crate", "Button"))
+            currentMode = EditMode.Crate;
+
+        if (GUILayout.Toggle(currentMode == EditMode.ShopItem, "Item", "Button"))
+            currentMode = EditMode.ShopItem;
 
         EditorGUILayout.EndHorizontal();
 
@@ -282,13 +460,19 @@ public class StageEditor : Editor
             currentEnemyDirection = (Direction)EditorGUILayout.EnumPopup(currentEnemyDirection);
             EditorGUILayout.EndHorizontal();
 
-            if (currentEnemyType == EnemyType.Skeleton)
+            if (currentEnemyType == EnemyType.Skeleton || currentEnemyType == EnemyType.Bomb)
             {
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("初期弾数(Ammo):", GUILayout.Width(150));
+                string ammoLabel = currentEnemyType == EnemyType.Bomb ? "起爆までのターン:" : "初期弾数(Ammo):";
+                EditorGUILayout.LabelField(ammoLabel, GUILayout.Width(150));
                 currentAmmo = EditorGUILayout.IntField(currentAmmo);
                 EditorGUILayout.EndHorizontal();
             }
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("コインを落とす:", GUILayout.Width(150));
+            currentDropsCoin = EditorGUILayout.Toggle(currentDropsCoin);
+            EditorGUILayout.EndHorizontal();
         }
 
         if (currentMode == EditMode.Tutorial)
@@ -297,6 +481,22 @@ public class StageEditor : Editor
             EditorGUILayout.LabelField("Index:", GUILayout.Width(50));
             currentTutorialIndex = EditorGUILayout.IntField(currentTutorialIndex);
             EditorGUILayout.EndHorizontal();
+        }
+
+        if (currentMode == EditMode.ShopItem)
+        {
+            string[] itemOptions =
+            {
+                "0 (20コイン)",
+                "1 (20コイン)",
+                "2 (26コイン)",
+                "3 (26コイン)",
+                "4 (32コイン)",
+            };
+            int[] itemValues = { 0, 1, 2, 3, 4 };
+
+            currentShopItemId = EditorGUILayout.IntPopup("Item番号:", currentShopItemId, itemOptions, itemValues);
+            currentShopItemId = StageSO.NormalizeShopItemId(currentShopItemId);
         }
 
         // 現在の編集モードを表示
@@ -310,6 +510,14 @@ public class StageEditor : Editor
             case EditMode.Enemy: modeText = $"{currentEnemyType}敵を配置"; break;
             case EditMode.EraseUnit: modeText = "プレイヤーまたは敵をクリックして削除"; break;
             case EditMode.Tutorial: modeText = "チュートリアルセル(Index)を配置"; break;
+            case EditMode.StairUp: modeText = "上階段を配置（上の階へ移動）"; break;
+            case EditMode.StairDown: modeText = "下階段を配置（下の階へ移動）"; break;
+            case EditMode.BrokenStairUp: modeText = "壊れた上階段を配置（通行不能）"; break;
+            case EditMode.Crate: modeText = "Crateを配置"; break;
+            case EditMode.ShopItem:
+                modeText = $"ショップItemマスを配置（ID:{currentShopItemId} / {StageSO.GetShopItemPriceById(currentShopItemId)}コイン）";
+                break;
+            case EditMode.StairLink: modeText = "階段をクリックして接続設定（StairConnections）を追加・選択"; break;
         }
 
         EditorGUILayout.HelpBox(modeText, MessageType.Info);
@@ -368,6 +576,9 @@ public class StageEditor : Editor
                 if (cellType == CellType.Wall) cellColor = wallColor;
                 else if (cellType == CellType.SyncMap) cellColor = syncMapColor;
                 else if (cellType == CellType.Tutorial) cellColor = tutorialColor;
+                else if (cellType == CellType.StairUp) cellColor = stairUpColor;
+                else if (cellType == CellType.StairDown) cellColor = stairDownColor;
+                else if (cellType == CellType.BrokenStairUp) cellColor = brokenStairUpColor;
 
                 EditorGUI.DrawRect(cellRect, cellColor);
 
@@ -448,6 +659,75 @@ public class StageEditor : Editor
 
                             // 敵の向きを描画
                             DrawDirectionArrow(cellRect, enemy.Direction, Color.white);
+                        }
+                    }
+                }
+
+                if (stage.CrateStartPositions != null)
+                {
+                    foreach (var pos in stage.CrateStartPositions)
+                    {
+                        if (pos.x == x && pos.y == y)
+                        {
+                            Rect crateRect = new Rect(
+                                cellRect.x + CELL_SIZE * 0.1f,
+                                cellRect.y + CELL_SIZE * 0.1f,
+                                CELL_SIZE * 0.8f,
+                                CELL_SIZE * 0.8f
+                            );
+                            EditorGUI.DrawRect(crateRect, crateColor);
+                            GUI.Label(crateRect, "CR", new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter,
+                                fontStyle = FontStyle.Bold,
+                                normal = { textColor = Color.white }
+                            });
+                        }
+                    }
+                }
+
+                if (stage.ShopItemPositions != null)
+                {
+                    foreach (var pos in stage.ShopItemPositions)
+                    {
+                        if (pos.x == x && pos.y == y)
+                        {
+                            int itemId = stage.GetShopItemIdAt(pos);
+                            int price = stage.GetShopItemPriceAt(pos);
+
+                            Rect itemRect = new Rect(
+                                cellRect.x + CELL_SIZE * 0.15f,
+                                cellRect.y + CELL_SIZE * 0.15f,
+                                CELL_SIZE * 0.7f,
+                                CELL_SIZE * 0.7f
+                            );
+                            EditorGUI.DrawRect(itemRect, shopItemColor);
+
+                            GUIStyle idStyle = new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter,
+                                fontStyle = FontStyle.Bold,
+                                normal = { textColor = Color.black }
+                            };
+                            GUI.Label(itemRect, $"I{itemId}", idStyle);
+
+                            Rect priceRect = new Rect(
+                                cellRect.x + CELL_SIZE * 0.05f,
+                                cellRect.y + CELL_SIZE * 0.70f,
+                                CELL_SIZE * 0.9f,
+                                CELL_SIZE * 0.25f
+                            );
+                            GUIStyle priceStyle = new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter,
+                                fontStyle = FontStyle.Bold,
+                                fontSize = 9,
+                                normal = { textColor = Color.black }
+                            };
+                            if (price >= 0)
+                            {
+                                GUI.Label(priceRect, $"{price}", priceStyle);
+                            }
                         }
                     }
                 }
@@ -573,7 +853,7 @@ public class StageEditor : Editor
                 stage.RemoveEnemyAt(new Vector2Int(x, y));
 
                 int ammo = (currentEnemyType == EnemyType.Skeleton) ? currentAmmo : -1;
-                stage.AddEnemy(new Vector2Int(x, y), currentEnemyType, currentEnemyDirection, currentMaxHP, 0, ammo);
+                stage.AddEnemy(new Vector2Int(x, y), currentEnemyType, currentEnemyDirection, currentMaxHP, 0, ammo, currentDropsCoin);
 
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();
@@ -593,6 +873,13 @@ public class StageEditor : Editor
                 }
                 // 敵がその位置にいる場合は削除
                 stage.RemoveEnemyAt(clickPos);
+
+                // Crateがその位置にいる場合は削除
+                stage.RemoveCrateAt(clickPos);
+
+                // Shop Itemがその位置にある場合は削除
+                stage.RemoveShopItemSlotAt(clickPos);
+
                 stage.UpdateEnemyActionIndices();
                 serializedObject.Update();
 
@@ -601,6 +888,88 @@ public class StageEditor : Editor
             case EditMode.Tutorial:
                 stage.SetCellTypeAt(x, y, CellType.Tutorial);
                 stage.SetTutorialData(new Vector2Int(x, y), currentTutorialIndex);
+                break;
+
+            case EditMode.StairUp:
+                // 上階段セルを配置
+                stage.SetCellTypeAt(x, y, CellType.StairUp);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.StairDown:
+                // 下階段セルを配置
+                stage.SetCellTypeAt(x, y, CellType.StairDown);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.BrokenStairUp:
+                // 壊れた上階段セルを配置
+                stage.SetCellTypeAt(x, y, CellType.BrokenStairUp);
+                stage.RemoveTutorialData(new Vector2Int(x, y));
+                break;
+
+            case EditMode.Crate:
+                // Crateを配置 (既にあれば無視される想定)
+                stage.AddCrate(new Vector2Int(x, y));
+                break;
+
+            case EditMode.ShopItem:
+                Vector2Int itemPos = new Vector2Int(x, y);
+                int existingItemId = stage.GetShopItemIdAt(itemPos);
+                if (existingItemId == currentShopItemId)
+                {
+                    stage.RemoveShopItemSlotAt(itemPos);
+                }
+                else
+                {
+                    stage.AddShopItemSlot(itemPos, currentShopItemId);
+                }
+                break;
+
+            case EditMode.StairLink:
+                CellType type = stage.GetWallAt(x, y);
+                if (type == CellType.StairUp || type == CellType.StairDown)
+                {
+                    // 既にリストにあるかチェック
+                    Vector2Int pos = new Vector2Int(x, y);
+                    bool exists = false;
+                    for (int i = 0; i < stage.StairConnections.Count; i++)
+                    {
+                        if (stage.StairConnections[i].Position == pos)
+                        {
+                            exists = true;
+                            // 選択状態にする（reorderable listのインデックスを設定）
+                            if (stairConnectionsReorderableList != null)
+                            {
+                                stairConnectionsReorderableList.index = i;
+                            }
+                            break;
+                        }
+                    }
+
+                    if (!exists)
+                    {
+                        // リストに追加
+                        var connectionsProp = serializedObject.FindProperty("stairConnections");
+                        connectionsProp.InsertArrayElementAtIndex(connectionsProp.arraySize);
+                        var element = connectionsProp.GetArrayElementAtIndex(connectionsProp.arraySize - 1);
+                        element.FindPropertyRelative("Position").vector2IntValue = pos;
+                        element.FindPropertyRelative("TargetStage").objectReferenceValue = null;
+
+                        serializedObject.ApplyModifiedProperties();
+
+                        // 追加した要素を選択
+                        if (stairConnectionsReorderableList != null)
+                        {
+                            stairConnectionsReorderableList.index = connectionsProp.arraySize - 1;
+                        }
+                        Debug.Log($"Added stair connection for {pos}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning("階段ではない場所です。階段をクリックして設定を追加してください。");
+                }
                 break;
         }
 
@@ -615,13 +984,19 @@ public class StageEditor : Editor
 
         EditorGUILayout.BeginHorizontal();
         DrawColorBox(wallColor);
-        EditorGUILayout.LabelField("壁", GUILayout.Width(100));
+        EditorGUILayout.LabelField("壁", GUILayout.Width(60));
         DrawColorBox(floorColor);
-        EditorGUILayout.LabelField("床", GUILayout.Width(100));
+        EditorGUILayout.LabelField("床", GUILayout.Width(60));
         DrawColorBox(syncMapColor);
-        EditorGUILayout.LabelField("SyncMap", GUILayout.Width(100));
+        EditorGUILayout.LabelField("SyncMap", GUILayout.Width(70));
         DrawColorBox(tutorialColor);
-        EditorGUILayout.LabelField("Tutorial", GUILayout.Width(100));
+        EditorGUILayout.LabelField("Tutorial", GUILayout.Width(70));
+        DrawColorBox(stairUpColor);
+        EditorGUILayout.LabelField("階段↑", GUILayout.Width(60));
+        DrawColorBox(stairDownColor);
+        EditorGUILayout.LabelField("階段↓", GUILayout.Width(60));
+        DrawColorBox(brokenStairUpColor);
+        EditorGUILayout.LabelField("壊階段↑", GUILayout.Width(60));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();
@@ -629,6 +1004,10 @@ public class StageEditor : Editor
         EditorGUILayout.LabelField("プレイヤー (P)", GUILayout.Width(100));
         DrawColorBox(enemyColor);
         EditorGUILayout.LabelField("敵 (E)", GUILayout.Width(100));
+        DrawColorBox(crateColor);
+        EditorGUILayout.LabelField("Crate", GUILayout.Width(60));
+        DrawColorBox(shopItemColor);
+        EditorGUILayout.LabelField("Item", GUILayout.Width(60));
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.EndVertical();

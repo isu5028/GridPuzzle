@@ -6,9 +6,9 @@ using System.Collections.Generic;
 public class OptionModel
 {
     // 設定項目の定義
-    public enum ItemType { Save, Load, GameSpeed, BgmVolume, SeVolume, ScreenMode, Resolution, Language, ReturnToTitle, Close}
+    public enum ItemType { GameSpeed, BgmVolume, SeVolume, ScreenMode, Resolution, Language, ReturnToTitle, Close}
 
-    public ItemType CurrentItem { get; private set; } = ItemType.Save;
+    public ItemType CurrentItem { get; private set; } = ItemType.GameSpeed;
 
     // 音量 (0〜100の整数で管理する例)
     public int BgmLevel { get; private set; } = 50;
@@ -30,8 +30,8 @@ public class OptionModel
     public Vector2Int CurrentResolution => AvailableResolutions[CurrentResolutionIndex];
 
 
-    public enum GameSpeedType { Normal, Fast}
-    public GameSpeedType GameSpeed { get; private set; } = GameSpeedType.Normal;
+    public enum GameSpeedType { Slow, Fast}
+    public GameSpeedType GameSpeed { get; private set; } = GameSpeedType.Fast;
 
     public enum LanguageType { English, Japanese }
     public LanguageType Language { get; private set; } = LanguageType.English;

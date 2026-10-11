@@ -5,10 +5,13 @@ using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using Cysharp.Threading;
 
+public enum PlayerActionType { Move, Attack }
+
 [RequireComponent(typeof(UnitManager))]
 public class TurnManager : MonoBehaviour
 {
     [SerializeField] private HUDFeedback undoFeedback = null!;
+    [SerializeField] private HUDFeedback redoFeedback = null!;
     [SerializeField] private HUDFeedback resetFeedback = null!;
     private GridManager gridManager = null!;
     private UnitManager unitManager = null!;
@@ -23,6 +26,10 @@ public class TurnManager : MonoBehaviour
     public bool IsOptionOpen => isOptionOpen;
     private bool isMapOpen = false;
     public bool IsMapOpen => isMapOpen;
+    private Direction lastPlayerActionDirection = Direction.Right;
+    public Direction LastPlayerActionDirection { get => lastPlayerActionDirection; set => lastPlayerActionDirection = value; }
+    private PlayerActionType lastPlayerAction = PlayerActionType.Move;
+    public PlayerActionType LastPlayerAction { get => lastPlayerAction; set => lastPlayerAction = value; }
 
     public void SetOptionState(bool isOpen)
     {
@@ -41,6 +48,17 @@ public class TurnManager : MonoBehaviour
         // 最初のターン開始時スナップショット
         commandManager.CaptureTurnStart(unitManager.Player, unitManager.Enemies);
         snapshotCapturedThisTurn = true;
+
+        // Redo不可能な初期状態を反映
+        RefreshRedoFeedbackState();
+    }
+
+    /// <summary>
+    /// Redoの可否に応じてREDO HUDのIcon/Characterの透明度を更新する
+    /// </summary>
+    public void RefreshRedoFeedbackState()
+    {
+        redoFeedback.SetIconCharacterAlpha(commandManager.CanRedo() ? 1f : 0f);
     }
 
     public void SetMapState(bool isOpen)
@@ -58,7 +76,7 @@ public class TurnManager : MonoBehaviour
         }
     }
 
-    public async UniTask OnPlayerActionComplete()
+    public async UniTask OnPlayerActionComplete(bool skipEnemyTurn = false)
     {
         if (isProcessingTurn) return;
 
@@ -67,9 +85,47 @@ public class TurnManager : MonoBehaviour
 
         try
         {
-            await ExecuteEnemyTurns();
+            // 高速モード判定
+            bool isFastMode = GameSettings.GameSpeed == 1;
+
+            // 箱が階段に入ったかチェック（階段落ちが発生するかどうか）
+            bool crateOnStair = false;
+            foreach (var crate in unitManager.Crates)
+            {
+                if (crate == null || !crate.gameObject.activeInHierarchy) continue;
+                // MoveCommandによって currentPos は既に移動先（階段マス）になっている
+                StageSO stage = gridManager.GetStageOfCrate(crate) ?? gridManager.CurrentStageSOInternal;
+                CellType cell = gridManager.GetCellTypeAt(stage, crate.CurrentPos);
+                if (cell == CellType.StairUp || cell == CellType.StairDown)
+                {
+                    crateOnStair = true;
+                    break;
+                }
+            }
+
+            // 通常モード、または箱が階段に乗った場合は、全ての解決を待つ
+            // 高速モードかつ階段移動がないなら、待たずに直ちに敵のターンを開始し同時行動させる
+            if (!isFastMode || crateOnStair)
+            {
+                await WaitUntilOrTimeout(
+                    () => !gridManager.UnitManager.IsAnyCrateMoving(),
+                    8000,
+                    "[TurnManager] Timeout while waiting crate movement to settle.");
+
+                await WaitUntilOrTimeout(
+                    () => !gridManager.HasActiveAsyncTransitions,
+                    8000,
+                    "[TurnManager] Timeout while waiting async transitions to settle.");
+            }
+
+            if (!skipEnemyTurn)
+            {
+                await ExecuteEnemyTurns();
+            }
 
             commandManager.CompleteTurn();
+            // プレイヤー行動後はredoRecordsがクリアされるため表示を更新
+            RefreshRedoFeedbackState();
 
             // UnitManagerへの状態変更通知
             unitManager.NotifyUnitStateChanged();
@@ -88,9 +144,9 @@ public class TurnManager : MonoBehaviour
 
     private async UniTask ExecuteEnemyTurns()
     {
-        const float minTotalSeconds = 0f;
+        // 全ての敵が行動し終えた後の最低待機時間（ターン区切りを明確にするため）
+        const float minTotalSeconds = 0.15f;
 
-        bool anyExecuted = false;
         float startAll = Time.realtimeSinceStartup;
 
         // Create a snapshot of the enemy list to allow modification (e.g. map transition removals) during iteration
@@ -98,27 +154,19 @@ public class TurnManager : MonoBehaviour
 
         foreach (var enemy in enemiesSnapshot)
         {
-            // Check if enemy is still valid and active in the current context
-            // If enemy was removed from UnitManager (e.g. moved to another map), we might still want to execute?
-            // "Active" check (gameObject.activeSelf) handles this if MoveEnemyToStage deactivates it.
-            // But if it deactivate itself, it shouldn't run?
-            // The enemy.ExecuteTurn() is awaited. If it moved, it finished its turn.
-
             if (enemy != null && !enemy.IsDead && enemy.gameObject.activeInHierarchy)
             {
-                anyExecuted = true;
                 await enemy.ExecuteTurn();
             }
         }
 
-        if (anyExecuted)
+        // 敵がいてもいなくても、ターン終了後の最低待機時間を確保
+        // これにより連続入力時に一瞬で移動することを防ぐ
+        float elapsed = Time.realtimeSinceStartup - startAll;
+        if (elapsed < minTotalSeconds)
         {
-            float elapsed = Time.realtimeSinceStartup - startAll;
-            if (elapsed < minTotalSeconds)
-            {
-                int waitMs = Mathf.CeilToInt((minTotalSeconds - elapsed) * 1000f);
-                await UniTask.Delay(waitMs);
-            }
+            int waitMs = Mathf.CeilToInt((minTotalSeconds - elapsed) * 1000f);
+            await UniTask.Delay(waitMs);
         }
     }
 
@@ -133,6 +181,22 @@ public class TurnManager : MonoBehaviour
             unitManager.NotifyUnitStateChanged();
             undoFeedback.PlayFeedback();
         }
+        // Undo後はRedoが可能になる可能性があるため表示を更新
+        RefreshRedoFeedbackState();
+    }
+
+    public async UniTask RedoTurn()
+    {
+        if (!isPlayerTurn || isProcessingTurn) return;
+        bool executedRedo = await commandManager.RedoTurn(unitManager.Player, unitManager.Enemies);
+
+        if (executedRedo)
+        {
+            unitManager.NotifyUnitStateChanged();
+            redoFeedback.PlayFeedback();
+        }
+        // Redo後は残りRedoが変化するため表示を更新
+        RefreshRedoFeedbackState();
     }
 
     public void ResetTurn()
@@ -144,5 +208,21 @@ public class TurnManager : MonoBehaviour
         // Resetで敵が復活するので通知
         unitManager.NotifyUnitStateChanged();
         resetFeedback.PlayFeedback();
+        // Reset後はredoRecordsがクリアされるため表示を更新
+        RefreshRedoFeedbackState();
+    }
+
+    private static async UniTask<bool> WaitUntilOrTimeout(System.Func<bool> condition, int timeoutMs, string timeoutMessage)
+    {
+        if (condition()) return true;
+
+        int completedIndex = await UniTask.WhenAny(
+            UniTask.WaitUntil(condition),
+            UniTask.Delay(timeoutMs));
+
+        if (completedIndex == 0) return true;
+
+        Debug.LogWarning(timeoutMessage);
+        return false;
     }
 }

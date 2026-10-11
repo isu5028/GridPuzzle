@@ -13,12 +13,16 @@ public class AttackCommand : ICommand
         public bool wasDead;
     }
     private List<DamageInfo> damageInfos = new List<DamageInfo>();
+    private bool breaksCrate;
+    private bool resolveInstantly;
 
-    public AttackCommand(Unit unit, Vector2Int[] target, GridManager grid)
+    public AttackCommand(Unit unit, Vector2Int[] target, GridManager grid, bool breaksCrate = false, bool resolveInstantly = false)
     {
         this.attacker = unit;
         this.targetPos = target;
         this.gridManager = grid;
+        this.breaksCrate = breaksCrate;
+        this.resolveInstantly = resolveInstantly;
     }
 
     public void Execute()
@@ -39,7 +43,27 @@ public class AttackCommand : ICommand
             }
         }
 
-        attacker.Attack(targetPos);
+        if (resolveInstantly)
+        {
+            for (int i = 0; i < damageInfos.Count; i++)
+            {
+                Unit targetUnit = damageInfos[i].target;
+                if (targetUnit == null) continue;
+
+                if (targetUnit is Crate crate)
+                {
+                    if (breaksCrate) crate.BreakCrate(attacker.CurrentPos);
+                }
+                else
+                {
+                    targetUnit.TakeDamage(1, attacker.CurrentPos);
+                }
+            }
+        }
+        else
+        {
+            attacker.Attack(targetPos, 0, breaksCrate);
+        }
     }
 
     public void Undo()

@@ -1,32 +1,42 @@
 using System;
 using System.Collections.Generic;
-using NUnit.Framework;
 using UnityEngine;
 using Cysharp.Threading.Tasks;
-using UnityEngine.UIElements;
 using DG.Tweening;
 using UnityEngine.SceneManagement;
 using UniRx;
 
 [RequireComponent(typeof(GridVisualizer))]
 [RequireComponent(typeof(UnitManager))]
-public class GridManager : MonoBehaviour
+public partial class GridManager : MonoBehaviour
 {
-    [SerializeField] private TextPopUpEach popup = null!;
-    [SerializeField] private ShowWin showWin = null!;
-    [SerializeField] private SaveFeedback saveFeedback = null!;
+    [Header("UI Manager")]
+    [SerializeField] private GridUIManager uiManager = null!; // Set in Inspector or acquire
+    public GridUIManager UIManager => uiManager;
+
     [SerializeField] private WorldMapSO worldMapSO = null!;
     public WorldMapSO WorldMapSO => worldMapSO;
     [SerializeField] private StageSO[] stageSOs = null!;
     private StageSO initialStageSO = null!;
     private StageSO currentStageSO = null!;
     public StageSO CurrentStageSO => currentStageSO;
-    private Dictionary<StageSO, List<Enemy>> stageEnemiesMap = new Dictionary<StageSO, List<Enemy>>();
-    // ロード時に復元されたがまだ実体化されていない敵データ
-    private Dictionary<StageSO, List<EnemySaveData>> loadedStageEnemyData = new Dictionary<StageSO, List<EnemySaveData>>();
 
+    // ステージごとの動的データを管理するクラス
+    private StageDataManager stageData = new StageDataManager();
+    public StageDataManager StageData => stageData;
+
+    // --- Legacy Accessors (Delegated to StageData) ---
+    // Stage -> List of Crates
+    public Dictionary<StageSO, List<Enemy>> StageEnemiesMap => stageData.StageEnemiesMap;
+    public Dictionary<StageSO, List<Crate>> StageCratesMap => stageData.StageCratesMap;
+    // ロード時に復元されたがまだ実体化されていない敵データ
+    public Dictionary<StageSO, List<EnemySaveData>> LoadedStageEnemyData => stageData.LoadedStageEnemyData;
+    // Undo時の敵インスタンス重複を防ぐための待機リスト
+    public Dictionary<StageSO, List<Enemy>> PendingStageEnemies => stageData.PendingStageEnemies;
     // Destroyed Walls: Stage -> Set of positions
-    private Dictionary<StageSO, HashSet<Vector2Int>> destroyedWalls = new Dictionary<StageSO, HashSet<Vector2Int>>();
+    public Dictionary<StageSO, HashSet<Vector2Int>> DestroyedWalls => stageData.DestroyedWalls;
+    public Dictionary<StageSO, HashSet<Vector2Int>> PermanentDestroyedWalls => stageData.PermanentDestroyedWalls;
+    public HashSet<StageSO> StageCratesInitialized => stageData.StageCratesInitialized;
 
     [Header("Visualizer")]
     [SerializeField] private GridVisualizer gridVisualizer = null!;
@@ -38,7 +48,20 @@ public class GridManager : MonoBehaviour
     [SerializeField] private GameObject skeletonEnemyPrefab = null!;
     [SerializeField] private GameObject zombieEnemyPrefab = null!;
     [SerializeField] private GameObject boarEnemyPrefab = null!;
+    [SerializeField] private GameObject crystalEnemyPrefab = null!;
+    [SerializeField] private GameObject ghostEnemyPrefab = null!;
+    [SerializeField] private GameObject bombEnemyPrefab = null!;
+    [SerializeField] private GameObject kingEnemyPrefab = null!;
+    [SerializeField] private GameObject crateEnemyPrefab = null!;
     [SerializeField] private GameObject errorEffectPrefab = null!;
+    [SerializeField] private GameObject blockedPrefab = null!;
+    [SerializeField] private GameObject explosionVFXPrefab = null!;
+    [SerializeField] private Shader explosionShader = null!;
+    [SerializeField] private Sprite explosionSprite = null!;
+
+    public Shader ExplosionShader => explosionShader;
+    public Sprite ExplosionSprite => explosionSprite;
+    public GameObject ExplosionVFXPrefab => explosionVFXPrefab;
 
     private CellType[,] cellData = new CellType[0, 0];
     private int width;
@@ -46,10 +69,6 @@ public class GridManager : MonoBehaviour
 
     // UnitManagerへの参照
     private UnitManager unitManager = null!;
-    public void SortEnemies()
-    {
-        unitManager.SortEnemiesByOrder();
-    }
 
     public UnitManager UnitManager => unitManager;
 
@@ -62,24 +81,85 @@ public class GridManager : MonoBehaviour
 
     private TurnManager turnManager = null!;
     private CommandManager commandManager = null!;
+    private int transitionCount = 0;
     private bool isTransitioning = false;
-    public bool IsTransitioning => isTransitioning;
+    internal bool IsTransitioning { get => isTransitioning || transitionCount > 0; set => isTransitioning = value; }
+    internal bool HasActiveAsyncTransitions => transitionCount > 0;
+
+    public void BeginTransition() => transitionCount++;
+    public void EndTransition() => transitionCount--;
+
+    // Internal accessors for subsystems
+    internal StageSO InitialStageSO { get => initialStageSO; set => initialStageSO = value; }
+    internal StageSO CurrentStageSOInternal { get => currentStageSO; set => currentStageSO = value; }
+    internal Vector2Int CurrentResetMapPos { get => currentResetMapPos; set => currentResetMapPos = value; }
+    internal StageSO[] StageSOs => stageSOs;
+    internal SaveFeedback SaveFeedback => uiManager.SaveFeedback;
+
+    internal TurnManager TurnManager => turnManager;
+    internal CommandManager CommandManager => commandManager;
+
+    // Prefab and Presenter Accessors
+    internal GameObject PlayerPrefab => playerPrefab;
+    internal StairConfirmationPresenter StairConfirmationPresenter => uiManager.StairConfirmationPresenter;
+    internal GameObject SlimeEnemyPrefab => slimeEnemyPrefab;
+    internal GameObject GoblinEnemyPrefab => goblinEnemyPrefab;
+    internal GameObject SkeletonEnemyPrefab => skeletonEnemyPrefab;
+    internal GameObject ZombieEnemyPrefab => zombieEnemyPrefab;
+    internal GameObject BoarEnemyPrefab => boarEnemyPrefab;
+    internal GameObject CrystalEnemyPrefab => crystalEnemyPrefab;
+    internal GameObject GhostEnemyPrefab => ghostEnemyPrefab;
+    internal GameObject BombEnemyPrefab => bombEnemyPrefab;
+    internal GameObject KingEnemyPrefab => kingEnemyPrefab;
+    internal GameObject CrateEnemyPrefab => crateEnemyPrefab;
+    internal GameObject ErrorEffectPrefab => errorEffectPrefab;
+    public GameObject BlockedPrefab => blockedPrefab;
 
     private const float TransitionDuration = 0.2f;
     private const int TransitionDelayMs = 250;
+#if UNITY_EDITOR
+    private const KeyCode debugResetPermanentWallsKey = KeyCode.F11;
+#endif
 
-    private bool previousWarpState = true; // true: enemyWarpTile, false: playerWarpTile
     private Vector2Int currentResetMapPos;
 
-    [SerializeField] private ShowWipeOut showWipeOut = null!;
-    [SerializeField] private TransitionOut transitionOut = null!;
+    // Stage6-7 固定ギミック（1-based: 左6上3 ～ 左8上6）
+    private static readonly Vector2Int stage67MapPosition = new Vector2Int(6, 7);
+    private const int stage67PatternLeft = 5;   // 0-based
+    private const int stage67PatternTopFromTop = 2; // 「上から3番目」なので0-basedで2
+    private const int stage67PatternWidth = 3;
+    private const int stage67PatternHeight = 4;
 
-    [SerializeField] private End end = null!;
-    [SerializeField] private WorldMapPresenter worldMapPresenter = null!;
+    // Stage6-7 パターン達成履歴フラグ（恒久壁データに保存するための番兵座標）
+    // 描画範囲外の座標を使うことで、見た目に影響なくSave/Load/Resetを跨いで履歴を保持する
+    private static readonly Vector2Int stage67PatternACompletedFlagPos = new Vector2Int(-1000, -1000);
+    private static readonly Vector2Int stage67PatternBCompletedFlagPos = new Vector2Int(-1001, -1000);
+
+    // 壁= true, 床= false
+    private static readonly bool[,] stage67PatternA = new bool[stage67PatternHeight, stage67PatternWidth]
+    {
+        { false, false, false },
+        { true,  true,  true  },
+        { true,  true,  false },
+        { true,  false, false }
+    };
+
+    private static readonly bool[,] stage67PatternB = new bool[stage67PatternHeight, stage67PatternWidth]
+    {
+        { true,  true,  true  },
+        { true,  true,  true  },
+        { true,  false, true  },
+        { false, false, false }
+    };
 
     private bool isEventPlaying = false;
     private bool isWaitingForTitleInput = false;
+
+    [SerializeField] private int kingAutoUndoDelayMs = 500;
+    private bool isKingAutoUndoInProgress = false;
     public bool IsEventPlaying => isEventPlaying;
+    public bool IsStairDialogOpen => uiManager.IsStairDialogOpen;
+    public bool IsShopItemReading => unitManager != null && unitManager.Player != null && unitManager.Player.IsShopItemReadMode;
 
     public bool IsPositionInBounds(Vector2Int pos)
     {
@@ -88,19 +168,30 @@ public class GridManager : MonoBehaviour
 
     private void Start()
     {
+        // Initialize Subsystems
+        saveSystem = new GridSaveSystem(this);
+        stageEnemySystem = new StageEnemySystem(this);
+        stageTransitionSystem = new StageTransitionSystem(this);
+        stairTraversalSystem = new StairTraversalSystem(this);
+        shopSystem = new ShopSystem(this);
+
         if (gridVisualizer == null)
             gridVisualizer = GetComponent<GridVisualizer>();
 
+        if (gridVisualizer != null)
+        {
+            gridVisualizer.SetShopItemPurchasedResolver(IsShopItemPurchased);
+        }
+
         gridVisualizer.OnSyncMapActivated += HandleSyncMapActivated;
 
-        if (showWipeOut == null) showWipeOut = FindObjectOfType<ShowWipeOut>();
-        if (transitionOut == null) transitionOut = FindObjectOfType<TransitionOut>();
-        if (end == null) end = FindObjectOfType<End>();
-        if (worldMapPresenter == null) worldMapPresenter = FindObjectOfType<WorldMapPresenter>();
+        if (uiManager == null)
+            uiManager = GetComponent<GridUIManager>() ?? GetComponentInChildren<GridUIManager>() ?? FindObjectOfType<GridUIManager>();
 
-        if (showWipeOut != null)
+        if (uiManager != null)
         {
-            showWipeOut.OnHide += HandleWipeOutHidden;
+            uiManager.Initialize();
+            uiManager.SubscribeWipeOut(HandleWipeOutHidden);
         }
 
         unitManager = GetComponent<UnitManager>();
@@ -109,7 +200,15 @@ public class GridManager : MonoBehaviour
 
         // UnitManagerのイベント購読
         unitManager.OnUnitStateChanged
-             .Subscribe(_ => UpdateWarpTiles())
+             .Subscribe(unit =>
+             {
+                 OnEnemyStateChanged();
+                 if (shopSystem != null)
+                 {
+                     shopSystem.OnUnitStateChanged(unit);
+                 }
+                 TryHandleKingAutoUndo(unit).Forget();
+             })
              .AddTo(this);
 
         // debug
@@ -121,6 +220,9 @@ public class GridManager : MonoBehaviour
         GameProgressManager.Instance.NextLoadType = null; // Reset
 
         ContinueGame(loadType);
+
+        var allStages = worldMapSO != null ? worldMapSO.GetAllStages() : new List<StageSO>();
+        GameProgressManager.Instance.RegisterStagesForClearCheck(allStages.ToArray());
     }
 
     private void HandleSyncMapActivated()
@@ -128,38 +230,111 @@ public class GridManager : MonoBehaviour
         PlayEndingSequence().Forget();
     }
 
+    /// <summary>
+    /// 出口ステージで階段を踏んだ際などに呼び出し、ゲームクリアエンディングを開始する
+    /// </summary>
+    internal void TriggerGameClear()
+    {
+        bool clearAllCondition = currentStageSO != null
+            && currentStageSO.IsExitStage
+            && shopSystem != null
+            && shopSystem.AreAllShopItemsPurchasedAcrossAllShopStages()
+            && IsExitStageKingPresent();
+
+        SteamAchievementHelper.TryUnlockClearAchievements(clearAllCondition);
+        PlayEndingSequence().Forget();
+    }
+
+    private bool IsExitStageKingPresent()
+    {
+        if (currentStageSO == null || !currentStageSO.IsExitStage) return false;
+        if (unitManager == null || unitManager.Enemies == null) return false;
+
+        foreach (var enemy in unitManager.Enemies)
+        {
+            if (enemy != null && !enemy.IsDead && enemy.Type == EnemyType.King)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async UniTaskVoid PlayEndingSequence()
     {
         isEventPlaying = true;
-
-        if (showWipeOut != null)
+        try
         {
-            showWipeOut.Show();
-            AudioManager.Instance.PlaySE(AudioManager.SEType.wipeout);
+            await uiManager.PlayEndingSequence();
+            isWaitingForTitleInput = true;
         }
-
-        await UniTask.Delay(TimeSpan.FromSeconds(2.0f));
-
-        if (transitionOut != null)
+        catch (Exception e)
         {
-            await transitionOut.AnimateAsync();
+            Debug.LogError($"[GridManager] PlayEndingSequence failed: {e}");
+            isEventPlaying = false;
+            isWaitingForTitleInput = false;
         }
-
-        await UniTask.Delay(TimeSpan.FromSeconds(0.5f));
-
-        if (end != null)
-        {
-            end.Show();
-        }
-
-        await UniTask.Delay(TimeSpan.FromSeconds(0.5f));
-
-        isWaitingForTitleInput = true;
     }
 
     private void HandleWipeOutHidden()
     {
         // isEventPlaying = false;
+    }
+
+    private async UniTaskVoid TryHandleKingAutoUndo(Unit changedUnit)
+    {
+        try
+        {
+            Enemy changedEnemy = changedUnit as Enemy;
+
+            if (isKingAutoUndoInProgress) return;
+            if (isWaitingForTitleInput) return;
+            if (turnManager == null || commandManager == null || unitManager == null) return;
+            if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+            if (changedEnemy == null) return;
+            if (changedEnemy.Type != EnemyType.King) return;
+            if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
+            if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
+            if (!commandManager.CanUndo()) return;
+
+            isKingAutoUndoInProgress = true;
+            bool previousEventPlaying = isEventPlaying;
+            isEventPlaying = true;
+
+            try
+            {
+                int waitMs = Mathf.Max(0, kingAutoUndoDelayMs);
+                if (waitMs > 0)
+                {
+                    await UniTask.Delay(waitMs);
+                }
+
+                if (commandManager.IsUndoing || commandManager.IsRedoing) return;
+                if (changedEnemy == null) return;
+                if (!changedEnemy.IsDead || changedEnemy.HP.Value > 0) return;
+                if (!turnManager.IsPlayerTurn || turnManager.IsProcessingTurn) return;
+
+                if (shopSystem != null)
+                {
+                    shopSystem.SetSuppressNextKingEnterDialogue(true);
+                }
+
+                await turnManager.UndoTurn();
+            }
+            finally
+            {
+                isKingAutoUndoInProgress = false;
+                if (!isWaitingForTitleInput)
+                {
+                    isEventPlaying = previousEventPlaying;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[GridManager] TryHandleKingAutoUndo failed: {e}");
+        }
     }
 
     private void OnDestroy()
@@ -169,9 +344,9 @@ public class GridManager : MonoBehaviour
             gridVisualizer.OnSyncMapActivated -= HandleSyncMapActivated;
         }
 
-        if (showWipeOut != null)
+        if (uiManager != null)
         {
-            showWipeOut.OnHide -= HandleWipeOutHidden;
+            uiManager.UnsubscribeWipeOut(HandleWipeOutHidden);
         }
     }
 
@@ -189,6 +364,11 @@ public class GridManager : MonoBehaviour
 
         if (isEventPlaying) return;
 
+        if (shopSystem != null)
+        {
+            shopSystem.Tick(Time.deltaTime);
+        }
+
 #if UNITY_EDITOR
         if(Input.GetKeyDown(KeyCode.L))
         {
@@ -197,11 +377,16 @@ public class GridManager : MonoBehaviour
             Debug.Log("Game progress reset.");
         }
 
+        if (Input.GetKeyDown(debugResetPermanentWallsKey))
+        {
+            DebugResetPermanentDestroyedWalls();
+        }
+
         if(Input.GetKeyDown(KeyCode.F12))
         {
             GameProgressManager.Instance.DebugUnlockAllStages(worldMapSO);
             SyncWorldMapStatus(); // Refresh visuals immediately
-            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
+            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsHierarchicalCellCleared, 0f, true);
         }
 #endif
     }
@@ -209,165 +394,271 @@ public class GridManager : MonoBehaviour
     public void Reset()
     {
         isEventPlaying = false;
-        if (showWipeOut != null) showWipeOut.Hide();
+        uiManager.HideWipeOut();
 
-        if (initialStageSO == null)
+        bool wasPlayerHealed = false;
+        if (unitManager.Player != null)
         {
-            initialStageSO = worldMapSO.GetStageAt(currentResetMapPos.x, currentResetMapPos.y);
+            wasPlayerHealed = unitManager.Player.HP.Value < unitManager.Player.MaxHP || unitManager.Player.IsDead;
         }
 
-        gridVisualizer.ClearAllTiles();
+        // Determine which stage to reset to (Current Stage)
+        StageSO stageToReset = currentStageSO;
+        if (stageToReset != null && stageToReset.name.Contains("_HiddenWallNeighbor_"))
+        {
+            // Fallback to the real stage that this neighbor is attached to
+            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
+            {
+                StageSO adj = stageToReset.GetAdjacentStage(dir);
+                if (adj != null && !adj.name.Contains("_HiddenWallNeighbor_"))
+                {
+                    stageToReset = adj;
+                    break;
+                }
+            }
+        }
+
+        if (stageToReset == null)
+        {
+             if (initialStageSO == null)
+             {
+                 initialStageSO = worldMapSO.GetStageAt(currentResetMapPos.x, currentResetMapPos.y);
+             }
+             stageToReset = initialStageSO;
+        }
+
+        gridVisualizer.ClearAllTiles(true);
         GameProgressManager.Instance.ResetStageCleared();
 
         unitManager.ClearAllUnits(); // Destroys Player and current active enemies
-        CleanupAllEnemies(); // Destroys any remaining enemies (inactive/other stages) and clears map
-        destroyedWalls.Clear(); // Return walls to normal on reset
+        ResetAllEnemies(); // Destroys any remaining enemies and clears saved data to reset positions
+        ClearDestroyedWallsKeepPermanent(); // 恒久破壊壁は維持してリセット
 
-        currentStageSO = initialStageSO;
+        currentStageSO = stageToReset; // Ensure current is set
         gridVisualizer.ResetGridParentPosition();
-        LoadStage(initialStageSO, true, currentStageSO.PlayerStartPosition);
+
+        // Determine reset position: Prioritize StairUp, fallback to PlayerStartPosition
+        Vector2Int resetPos = stageToReset.PlayerStartPosition;
+        Vector2Int? stairUpPos = stageToReset.GetStairUpPosition();
+        if (stairUpPos.HasValue)
+        {
+            resetPos = stairUpPos.Value;
+        }
+
+        LoadStage(stageToReset, true, resetPos, null, true, true);
 
         if(unitManager.Player != null)
         {
-            unitManager.Player.WarpToNewStage(currentStageSO.PlayerStartPosition, currentStageSO.PlayerStartDirection);
-        }
-    }
-
-    public async UniTask SwitchStageAsync(StageSO nextstage, Direction entryDirection)
-    {
-        // 次のステージに敵がいるかどうかをチェック（TransitionTilemapのWarp表示用）
-        bool nextStageHasEnemy = CheckIfStageHasEnemy(nextstage);
-
-        HashSet<Vector2Int> destroyed = destroyedWalls.ContainsKey(nextstage) ? destroyedWalls[nextstage] : null;
-
-        gridVisualizer.SetupTransitionTilemap(nextstage, entryDirection, nextStageHasEnemy, destroyed, GameProgressManager.Instance.IsPositionCleared);
-
-        var dirVector = Utility.GetVectorFromDirection(entryDirection);
-        Vector3 transitionOffset = (Vector3)(dirVector * gridVisualizer.TilemapOffset * 2);
-
-        // Prepare ACTUAL enemies for the next stage
-        PrepareEnemiesForTransition(nextstage, transitionOffset);
-
-        gridVisualizer.MoveGridParent(transitionOffset, TransitionDuration);
-
-        await UniTask.Delay(TransitionDelayMs);
-
-        // Note: No need to destroy temp enemies anymore.
-        // The real enemies will be snapped to correct position in LoadStage -> PrepareEnemiesForStage.
-        // gridVisualizer.ResetGridParentPosition() is called in LoadStage (via clear/reset logic) or should be called here?
-        // LoadStage calls ResetGridParentPosition() at start (line 122 in Reset, but line 268 LoadStage doesn't have it explicitly?)
-        // Let's check LoadStage. It calls GenerateTilemap.
-        // We probably should reset the grid parent position before LoadStage executes or inside LoadStage.
-        // For safety, let's reset it here before we swap data, OR rely on LoadStage to reset it.
-        // Existing code had gridVisualizer.ResetGridParentPosition(); at the end of SwitchStageAsync.
-        // If we do it here, it might snap before the logical switch.
-        // Actually, SwitchStage (sync) is called immediately after this await in ExecuteTransition.
-        // Note: ResetGridParentPosition is now handled in LoadStage to ensure atomic update with unit positions.
-        // gridVisualizer.ResetGridParentPosition();
-    }
-
-    private void PrepareEnemiesForTransition(StageSO nextstage, Vector3 transitionOffset)
-    {
-        // 1. Ensure enemies are loaded in memory
-        EnsureStageEnemiesLoaded(nextstage);
-
-        // 2. Get the list of enemies
-        List<Enemy> enemies = stageEnemiesMap[nextstage];
-
-        // 3. Set them active and offset their position
-        foreach (var enemy in enemies)
-        {
-            // Set position relative to the visually offset grid
-            // GridToWorldPosition returns the "standard" world pos for that grid coord.
-            // We subtract transitionOffset so they appear in the sliding-in map.
-            Vector3 worldPos = GridToWorldPosition(enemy.CurrentPos);
-            enemy.transform.position = worldPos - transitionOffset;
-
-            // Activate
-            enemy.gameObject.SetActive(true);
-
-            // Visual updates
-            enemy.UnitAnimator.SetDirection(enemy.CurrentDirection);
-            if (enemy.IsDead)
-            {
-                enemy.ApplyDeadStateVisual();
-            }
-        }
-    }
-
-    private void CleanupAllEnemies()
-    {
-        foreach (var list in stageEnemiesMap.Values)
-        {
-            foreach (var enemy in list)
-            {
-                if (enemy != null) Destroy(enemy.gameObject);
-            }
-        }
-        stageEnemiesMap.Clear();
-    }
-
-    public void WarpToStage(StageSO stage)
-    {
-        CleanupAllEnemies();
-        destroyedWalls.Clear(); // Return walls to normal on warp
-        GameProgressManager.Instance.ResetStageCleared();
-        if (unitManager.Player != null)
-        {
-            unitManager.Player.Revive();
+            unitManager.Player.WarpToNewStage(resetPos, stageToReset.PlayerStartDirection);
+            // Ensure HP is full on reset
             unitManager.Player.SetHP(unitManager.Player.MaxHP);
+
+            if (wasPlayerHealed)
+            {
+                Debug.Log("Player HP Restored via Reset");
+                unitManager.Player.PlayHealEffect();
+            }
         }
 
-        currentStageSO = stage;
-        initialStageSO = stage;
-        commandManager.Warped();
+        // 敵のHPも全回復させる（死亡状態の敵も含めて全員リセット）
+        foreach (var enemy in unitManager.Enemies)
+        {
+            if (enemy != null)
+            {
+                DOTween.Kill(enemy.gameObject); // 残存するDOTweenアニメーションを強制停止
+                enemy.Revive();                 // 先に復活処理（isDead=false、ビジュアルリセット）
+                enemy.SetHP(enemy.MaxHP);       // その後HP全回復
+            }
+        }
 
-        currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
-
-        currentResetMapPos = worldMapSO.GetStageCoordinates(stage);
-
-        LoadStage(stage, true, stage.PlayerStartPosition);
-        // ワープ完了後にオートセーブ
         SaveGame(GameProgressManager.SaveType.Auto);
     }
 
-    private GameObject getEnemyPrefab(EnemyType type)
+    public void ClearDestroyedWallsKeepPermanent()
     {
-        switch (type)
+        DestroyedWalls.Clear();
+        ReapplyPermanentDestroyedWalls();
+    }
+
+    public void ReapplyPermanentDestroyedWalls()
+    {
+        foreach (var kvp in PermanentDestroyedWalls)
         {
-            case EnemyType.Slime:
-                return slimeEnemyPrefab;
-            case EnemyType.Goblin:
-                return goblinEnemyPrefab;
-            case EnemyType.Skeleton:
-                return skeletonEnemyPrefab;
-            case EnemyType.Zombie:
-                return zombieEnemyPrefab;
-            case EnemyType.Boar:
-                return boarEnemyPrefab;
-            default:
-                return null!;
+            StageSO stage = kvp.Key;
+            HashSet<Vector2Int> permanentSet = kvp.Value;
+
+            if (stage == null || permanentSet == null || permanentSet.Count == 0) continue;
+
+            if (!DestroyedWalls.ContainsKey(stage))
+            {
+                DestroyedWalls[stage] = new HashSet<Vector2Int>();
+            }
+
+            foreach (var pos in permanentSet)
+            {
+                DestroyedWalls[stage].Add(pos);
+            }
         }
     }
 
-    public void SwitchStage(StageSO nextstage, Direction entryDirection)
+    /// <summary>
+    /// デバッグ用：恒久破壊壁の状態だけをリセットする
+    /// </summary>
+    public void DebugResetPermanentDestroyedWalls()
     {
-        Vector2Int newStartPos = CalculateEntryPosition(nextstage, entryDirection);
-        currentStageSO = nextstage;
-        LoadStage(nextstage, false, newStartPos);
-        turnManager.OnPlayerActionComplete().Forget();
+        int removedCount = 0;
+
+        foreach (var kvp in PermanentDestroyedWalls)
+        {
+            StageSO stage = kvp.Key;
+            HashSet<Vector2Int> permanentSet = kvp.Value;
+            if (stage == null || permanentSet == null || permanentSet.Count == 0) continue;
+
+            if (DestroyedWalls.TryGetValue(stage, out var destroyedSet))
+            {
+                foreach (var pos in permanentSet)
+                {
+                    if (destroyedSet.Remove(pos)) removedCount++;
+                }
+
+                if (destroyedSet.Count == 0)
+                {
+                    DestroyedWalls.Remove(stage);
+                }
+            }
+        }
+
+        PermanentDestroyedWalls.Clear();
+
+        // 敵撃破状態もリセット（全ステージ）
+        int playerHPBeforeReload = unitManager.Player != null ? unitManager.Player.HP.Value : 0;
+        StageSO stageBeforeReload = currentStageSO;
+        Vector2Int playerPosBeforeReload = unitManager.Player != null
+            ? unitManager.Player.CurrentPos
+            : (stageBeforeReload != null ? stageBeforeReload.PlayerStartPosition : Vector2Int.zero);
+        Direction playerDirBeforeReload = unitManager.Player != null
+            ? unitManager.Player.CurrentDirection
+            : (stageBeforeReload != null ? stageBeforeReload.PlayerStartDirection : Direction.Down);
+
+        GameProgressManager.Instance.ClearDefeatedEnemies();
+        stageEnemySystem.ResetAllEnemies();
+
+        if (stageBeforeReload != null)
+        {
+            LoadStage(stageBeforeReload, false, playerPosBeforeReload, playerDirBeforeReload, true);
+
+            if (unitManager.Player != null)
+            {
+                unitManager.Player.WarpToNewStage(playerPosBeforeReload, playerDirBeforeReload);
+                unitManager.Player.SetHP(playerHPBeforeReload);
+            }
+        }
+
+        // リセット前のUndo履歴は敵参照が無効化されるためクリア
+        ClearUndoHistory();
+
+        if (currentStageSO != null)
+        {
+            GenerateTilemap(currentStageSO);
+            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsHierarchicalCellCleared, 0f, false, !isTransitioning);
+        }
+
+        Debug.Log($"[Debug] Permanent wall destruction and defeated enemy icon states have been reset. RemovedWallEntries={removedCount}");
     }
 
-    public void SwitchStageDirect(StageSO stage, Vector2Int startPos)
+    /// <summary>
+    /// Undo履歴をクリアする
+    /// </summary>
+    public void ClearUndoHistory()
     {
-        currentStageSO = stage;
-        LoadStage(stage, false, startPos);
+        commandManager.Warped();
+        // Undo/Redo履歴クリア後、Redo HUD表示を更新
+        turnManager.RefreshRedoFeedbackState();
     }
 
-    private void LoadStage(StageSO stage, bool isFirstInit, Vector2Int startPos, Direction? customStartDir = null)
+    /// <summary>
+    /// プレイヤーのHPを最大まで回復する
+    /// </summary>
+    public void RestorePlayerHP()
+    {
+        if (unitManager.Player != null)
+        {
+            bool wasHealed = unitManager.Player.HP.Value < unitManager.Player.MaxHP || unitManager.Player.IsDead;
+            unitManager.Player.Revive();
+            unitManager.Player.SetHP(unitManager.Player.MaxHP);
+            if (wasHealed)
+            {
+                Debug.Log("Player HP Restored");
+                unitManager.Player.PlayHealEffect();
+            }
+        }
+    }
+
+    #region Grid Data / Cell Type
+    private bool IsWalkableType(CellType cellType)
+    {
+        return cellType == CellType.Floor ||
+               cellType == CellType.Ice ||
+               cellType == CellType.DamageFloor ||
+               cellType == CellType.Warp ||
+               cellType == CellType.SyncMap ||
+               cellType == CellType.Tutorial ||
+               cellType == CellType.StairUp ||
+               cellType == CellType.StairDown ||
+               cellType == CellType.BrokenStairUp;
+    }
+
+    public bool IsWalkableAt(StageSO stage, Vector2Int pos)
+    {
+        CellType type = GetCellTypeAt(stage, pos);
+        return IsWalkableType(type);
+    }
+
+    public bool IsBoundaryCoordinate(StageSO stage, Vector2Int pos)
+    {
+        if (pos.x == -1 && pos.y >= 0 && pos.y < stage.Height) return true;
+        if (pos.x == stage.Width && pos.y >= 0 && pos.y < stage.Height) return true;
+        if (pos.y == -1 && pos.x >= 0 && pos.x < stage.Width) return true;
+        if (pos.y == stage.Height && pos.x >= 0 && pos.x < stage.Width) return true;
+        return false;
+    }
+
+    public StageSO GetAdjacentStageFromBoundary(StageSO stage, Vector2Int pos)
+    {
+        if (pos.x == -1) return stage.GetAdjacentStage(Direction.Left);
+        if (pos.x == stage.Width) return stage.GetAdjacentStage(Direction.Right);
+        if (pos.y == -1) return stage.GetAdjacentStage(Direction.Down);
+        if (pos.y == stage.Height) return stage.GetAdjacentStage(Direction.Up);
+        return null;
+    }
+
+    private bool IsCrystalStage(StageSO stage)
+    {
+        if (stage == null || stage.EnemyStartData == null) return false;
+
+        foreach (var enemyData in stage.EnemyStartData)
+        {
+            if (enemyData.EnemyType == EnemyType.Crystal) return true;
+        }
+
+        return false;
+    }
+
+    private void MarkStageClearedOnEntryIfCrystal(StageSO stage)
+    {
+        if (!IsCrystalStage(stage)) return;
+
+        Vector2Int mapPosition = stage.MapPosition;
+        if (!GameProgressManager.Instance.IsHierarchicalCellCleared(mapPosition))
+        {
+            GameProgressManager.Instance.MarkHierarchicalCellAsCleared(mapPosition);
+        }
+    }
+
+    internal void LoadStage(StageSO stage, bool isFirstInit, Vector2Int startPos, Direction? customStartDir = null, bool resetTurnManager = true, bool keepTutorial = false)
     {
         gridVisualizer.ResetGridParentPosition(); // Ensure parent is at zero before loading
-        gridVisualizer.ClearAllTiles();
+        gridVisualizer.ClearAllTiles(keepTutorial);
 
         // 現在の敵を非表示にする
         unitManager.SetAllEnemiesActive(false);
@@ -387,13 +678,22 @@ public class GridManager : MonoBehaviour
             unitManager.Player.WarpToNewStage(pos, startDir);
         }
 
-        PrepareEnemiesForStage(stage);
-        GenerateTilemap(stage);
+        stageEnemySystem.PrepareEnemiesForStage(stage);
+        GenerateCrates(stage);
+        GenerateTilemap(stage, keepTutorial);
+        MarkStageClearedOnEntryIfCrystal(stage);
+        if (shopSystem != null)
+        {
+            shopSystem.OnStageLoaded(stage);
+        }
 
-        turnManager.Initialize();
+        if (resetTurnManager)
+        {
+            turnManager.Initialize();
+        }
         SyncWorldMapStatus();
         CheckAndResolveCollisions();
-        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, false, !isTransitioning);
+        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsHierarchicalCellCleared, 0f, false, !isTransitioning);
     }
 
     private void CheckAndResolveCollisions()
@@ -406,6 +706,10 @@ public class GridManager : MonoBehaviour
         foreach (var e in unitManager.Enemies)
         {
             if (e != null && !e.IsDead && e.gameObject.activeInHierarchy) activeUnits.Add(e);
+        }
+        foreach (var c in unitManager.Crates)
+        {
+            if (c != null && !c.IsDead && c.gameObject.activeInHierarchy) activeUnits.Add(c);
         }
 
         HashSet<Unit> unitsToKill = new HashSet<Unit>();
@@ -440,200 +744,13 @@ public class GridManager : MonoBehaviour
         // Apply Death
         foreach (var unit in unitsToKill)
         {
-            //Debug.Log($"[GridManager] Unit {unit.name} died due to collision at {unit.CurrentPos}");
-
             // Execute InstantDeathCommand
             // visual effect is handled inside the command now
             commandManager.ExecuteCommand(new InstantDeathCommand(unit, 999, errorEffectPrefab));
         }
     }
 
-    public void MoveEnemyToStage(Enemy enemy, StageSO toStage, Vector2Int toGridPos, Direction toDir)
-    {
-        // Add to new list (Ensure list exists first)
-        EnsureStageEnemiesLoaded(toStage);
-
-        // Remove from old list
-        // Note: This is O(N) over all stages if we don't know fromStage.
-        // Ideally we should know fromStage, but for now we search or the caller should provide it.
-        // Let's assume we search for robustness.
-        StageSO fromStage = null!;
-        foreach (var pair in stageEnemiesMap)
-        {
-            if (pair.Value.Contains(enemy))
-            {
-                fromStage = pair.Key;
-                break;
-            }
-        }
-
-        if (fromStage != null)
-        {
-            stageEnemiesMap[fromStage].Remove(enemy);
-        }
-
-        stageEnemiesMap[toStage].Add(enemy);
-
-        // Update Order to be last in the new stage
-        int maxOrder = 0;
-        foreach (var e in stageEnemiesMap[toStage])
-        {
-            if (e != enemy && e.Order > maxOrder)
-            {
-                maxOrder = e.Order;
-            }
-        }
-        enemy.SetOrder(maxOrder + 1);
-
-        // Update Enemy State
-        enemy.WarpTo(toGridPos, toDir);
-
-        // If moved to current stage, register to UnitManager
-        if (toStage == currentStageSO)
-        {
-            unitManager.AddEnemy(enemy);
-            unitManager.SortEnemiesByOrder();
-
-            // Re-activate
-            enemy.gameObject.SetActive(true);
-            enemy.ReviveSilent(); // Just in case
-        }
-        else
-        {
-            // If moved away from current stage, remove from UnitManager
-            if (fromStage == currentStageSO)
-            {
-                unitManager.RemoveEnemy(enemy);
-            }
-            // Deactivate visual
-            enemy.gameObject.SetActive(false);
-        }
-    }
-
-    public Enemy GetEnemyAt(StageSO stage, Vector2Int pos)
-    {
-        EnsureStageEnemiesLoaded(stage);
-        if (!stageEnemiesMap.ContainsKey(stage)) return null;
-
-        foreach (var e in stageEnemiesMap[stage])
-        {
-            if (e.CurrentPos == pos && !e.IsDead) return e;
-        }
-        return null;
-    }
-
-    public void EnsureStageEnemiesLoaded(StageSO stage)
-    {
-        if (stageEnemiesMap.ContainsKey(stage)) return;
-
-        List<Enemy> newEnemies = new List<Enemy>();
-
-        if (loadedStageEnemyData.ContainsKey(stage))
-        {
-            // Load from save data
-            List<EnemySaveData> saveDataList = loadedStageEnemyData[stage];
-            newEnemies = GenerateEnemiesFromSaveData(stage, saveDataList);
-            loadedStageEnemyData.Remove(stage);
-        }
-        else
-        {
-            // Create new
-            newEnemies = GenerateEnemies(stage);
-        }
-
-        // Initially inactive if not current stage (Safe default)
-        foreach(var e in newEnemies) e.gameObject.SetActive(false);
-
-        stageEnemiesMap.Add(stage, newEnemies);
-    }
-
-    private void PrepareEnemiesForStage(StageSO stage)
-    {
-        EnsureStageEnemiesLoaded(stage);
-
-        List<Enemy> enemies = stageEnemiesMap[stage];
-        unitManager.SetEnemies(enemies);
-
-        // 状態に応じて表示
-        foreach (var enemy in enemies)
-        {
-            // 先にSetActive(true)してからWarpTo(SetDirection)しないと、Animatorがリセットされて向きが初期化されてしまう
-            enemy.gameObject.SetActive(true);
-
-            // Update visual position to match logical position (in case it moved while inactive/background)
-            enemy.WarpTo(enemy.CurrentPos, enemy.CurrentDirection);
-
-            // ロード直後の「死んでいるけどActiveでありたい」要件を満たすため、SetActive(true)した上で見た目を調整
-            if (enemy.IsDead)
-            {
-                enemy.ApplyDeadStateVisual();
-            }
-        }
-
-        unitManager.SortEnemiesByOrder();
-    }
-
-    private List<Enemy> GenerateEnemiesFromSaveData(StageSO stage, List<EnemySaveData> saveDataList)
-    {
-        List<Enemy> generatedEnemies = new List<Enemy>();
-        // ステージ初期データのPrefab情報を使うため、stage.EnemyStartDataを参照する
-        // ただし、SavedDataのIndexとEnemyStartDataの順序が一致している前提
-        List<EnemyStartData> defaultDataList = stage.EnemyStartData;
-
-        foreach (var data in saveDataList)
-        {
-            Vector3 worldPos = GridToWorldPosition(new Vector2Int(data.gridX, data.gridY));
-
-            // Allow cross-stage enemies by checking saved type first, then fallback to stage data
-            GameObject prefab = null;
-            if (data.enemyType != 0) // Assuming 0 is invalid or we handle default. Actually 0 might be Slime?
-                                     // Enum starts at 0. If we default to 0, old saves are Slime. That's fine.
-            {
-                 prefab = getEnemyPrefab((EnemyType)data.enemyType);
-            }
-            else
-            {
-                 // Fallback for old saves or safety
-                 if(data.index >= 0 && data.index < stage.EnemyStartData.Count)
-                    prefab = getEnemyPrefab(stage.EnemyStartData[data.index].EnemyType);
-            }
-
-            if (prefab != null)
-            {
-                 // Order restoration: logic uses data.order if available.
-                 // If old save (order=0), it might conflict, but re-sorting will handle relative order.
-                 int orderToUse = data.order;
-                 if (orderToUse == 0 && data.index >= 0 && data.index < stage.EnemyStartData.Count)
-                     orderToUse = stage.EnemyStartData[data.index].SetActionOrder; // Fallback
-
-                 int maxHPToUse = data.maxHP;
-                 if (maxHPToUse == 0)
-                 {
-                     if (data.index >= 0 && data.index < stage.EnemyStartData.Count)
-                        maxHPToUse = stage.EnemyStartData[data.index].MaxHP; // Fallback
-                     else
-                        maxHPToUse = 3; // Default fallback
-                 }
-
-                var newEnemy = InstantiateAndInitializeEnemy(prefab, worldPos, new Vector2Int(data.gridX, data.gridY), (Direction)data.direction, maxHPToUse, orderToUse, data.ammo);
-
-                newEnemy.SetHP(data.currentHP);
-                newEnemy.SetAIState(data.aiState);
-                if(data.isDead) newEnemy.ForceKillSilent();
-
-                // Ensure name is unique/helpful
-                newEnemy.name = $"Enemy_{(EnemyType)data.enemyType}_{data.index}_Loaded";
-
-                // Force update direction visuals immediately
-                newEnemy.SetDirection((Direction)data.direction);
-
-                generatedEnemies.Add(newEnemy);
-            }
-        }
-        return generatedEnemies;
-    }
-
-    private void GenerateTilemap(StageSO stage)
+    private void GenerateTilemap(StageSO stage, bool keepTutorial = false)
     {
         cellData = new CellType[width, height];
         for (int y = 0; y < height; y++)
@@ -645,8 +762,9 @@ public class GridManager : MonoBehaviour
             }
         }
 
-        gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
-        UpdateWarpTiles(true);
+        HashSet<Vector2Int> destroyed = DestroyedWalls.ContainsKey(stage) ? DestroyedWalls[stage] : null;
+        gridVisualizer.RefreshTilemap(width, height, cellData, stage, destroyed, GameProgressManager.Instance.IsHierarchicalCellCleared, keepTutorial);
+        OnEnemyStateChanged(true);
     }
 
     public CellType GetCellTypeAt(StageSO stage, Vector2Int pos)
@@ -659,7 +777,7 @@ public class GridManager : MonoBehaviour
     private CellType GetCellTypeAtLogic(StageSO stage, Vector2Int pos)
     {
         // 1. Check destroyed walls
-        if (destroyedWalls.ContainsKey(stage) && destroyedWalls[stage].Contains(pos))
+        if (DestroyedWalls.ContainsKey(stage) && DestroyedWalls[stage].Contains(pos))
         {
             return CellType.Floor;
         }
@@ -667,89 +785,373 @@ public class GridManager : MonoBehaviour
         // 2. Default from SO
         return stage.GetWallAt(pos.x, pos.y);
     }
+    #endregion
 
-    public void BreakWall(StageSO stage, Vector2Int pos)
+    #region Wall Management
+    private bool IsInStageBounds(StageSO stage, Vector2Int pos)
     {
-        if (!destroyedWalls.ContainsKey(stage))
+        return pos.x >= 0 && pos.x < stage.Width && pos.y >= 0 && pos.y < stage.Height;
+    }
+
+    private bool IsBreakableWallCoordinate(StageSO stage, Vector2Int pos)
+    {
+        if (IsInStageBounds(stage, pos) || IsBoundaryCoordinate(stage, pos))
         {
-            destroyedWalls[stage] = new HashSet<Vector2Int>();
+            return true;
         }
 
-        if (!destroyedWalls[stage].Contains(pos))
+        bool inRenderedBorderX = pos.x >= -1 && pos.x <= stage.Width;
+        bool inRenderedBorderY = pos.y >= -1 && pos.y <= stage.Height;
+        return inRenderedBorderX && inRenderedBorderY;
+    }
+
+    public void BreakWall(StageSO stage, Vector2Int pos, bool permanent = false)
+    {
+        if (stage == null || !IsBreakableWallCoordinate(stage, pos))
         {
-            destroyedWalls[stage].Add(pos);
+            return;
+        }
+
+        if (!DestroyedWalls.ContainsKey(stage))
+        {
+            DestroyedWalls[stage] = new HashSet<Vector2Int>();
+        }
+
+        if (!DestroyedWalls[stage].Contains(pos))
+        {
+            DestroyedWalls[stage].Add(pos);
+
+            if (permanent)
+            {
+                MarkPermanentDestroyedWall(stage, pos);
+            }
 
             // Reflect if current stage
             if (stage == currentStageSO)
             {
+                // 壁破壊エフェクトをタイル更新前に再生（タイルが消える前にスプライトを取得するため）
+                // OOB境界壁（x=-1, x=width, y=-1, y=height）も含めてエフェクトを出す
+                gridVisualizer.PlayWallBreakEffect(pos);
+
                 if(pos.x >= 0 && pos.x < width && pos.y >= 0 && pos.y < height)
                 {
                     cellData[pos.x, pos.y] = CellType.Floor;
-                    // Visualizer update (Might need a method to update single tile, but Refresh is safe)
-                    // Optimization: Add UpdateTile(x, y, type) to Visualizer later if needed.
-                    gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
-                    UpdateWarpTiles();
                 }
+
+                // Visualizer update (Always refresh to handle OOB as well)
+                HashSet<Vector2Int> destroyed = DestroyedWalls.ContainsKey(stage) ? DestroyedWalls[stage] : null;
+                gridVisualizer.RefreshTilemap(width, height, cellData, stage, destroyed, GameProgressManager.Instance.IsHierarchicalCellCleared);
+                OnEnemyStateChanged();
             }
 
-            // --- Recursive Break for Adjacent Stage ---
-            CheckAndBreakNeighborWall(stage, pos, Direction.Left, pos.x == 0);
-            CheckAndBreakNeighborWall(stage, pos, Direction.Right, pos.x == stage.Width - 1);
-            CheckAndBreakNeighborWall(stage, pos, Direction.Down, pos.y == 0);
-            CheckAndBreakNeighborWall(stage, pos, Direction.Up, pos.y == stage.Height - 1);
+            // --- Recursive Break for Adjacent Stage (Virtual Walls ONLY) ---
+            // Only propagate to the "Outermost" wall (Virtual Wall) of the neighbor.
+            // Do NOT break inner walls (Real Walls) automatically, so units might crash into them.
+
+            // Left Neighbor Interactions: Breaking Left Boundary (-1) -> Breaks Neighbor's Right Boundary (Width)
+            if (pos.x == -1 && pos.y >= 0 && pos.y < stage.Height)
+            {
+                // 隣接ステージの境界壁が破壊される = 現在ステージ側も境界エフェクト（PropagateBreakが呼ぶ）
+                PropagateBreak(stage, Direction.Left, pos.y, permanent);
+            }
+
+            // Right Neighbor Interactions: Breaking Right Boundary (Width) -> Breaks Neighbor's Left Boundary (-1)
+            if (pos.x == stage.Width && pos.y >= 0 && pos.y < stage.Height)
+            {
+                PropagateBreak(stage, Direction.Right, pos.y, permanent);
+            }
+
+            // Down Neighbor Interactions: Breaking Bottom Boundary (-1) -> Breaks Neighbor's Top Boundary (Height)
+            if (pos.y == -1 && pos.x >= 0 && pos.x < stage.Width)
+            {
+                PropagateBreak(stage, Direction.Down, pos.x, permanent);
+            }
+
+            // Up Neighbor Interactions: Breaking Top Boundary (Height) -> Breaks Neighbor's Bottom Boundary (-1)
+            if (pos.y == stage.Height && pos.x >= 0 && pos.x < stage.Width)
+            {
+                PropagateBreak(stage, Direction.Up, pos.x, permanent);
+            }
+
+            // Stage6-7の矩形エリア内が更新されたときのみ形状判定
+            if (IsStage67PatternAreaCell(stage, pos))
+            {
+                EvaluateStage67WallPuzzle(stage);
+            }
         }
     }
 
-    private void CheckAndBreakNeighborWall(StageSO currentStage, Vector2Int currentPos, Direction dir, bool isEdge)
+    private void PropagateBreak(StageSO currentStage, Direction dir, int lateralPos, bool permanent = false)
     {
-        if (!isEdge) return;
-
         StageSO neighbor = currentStage.GetAdjacentStage(dir);
-        if (neighbor == null) return;
-
-        // Create a 'dummy' unit position (just for calculation) or calculate manually
-        // If we break wall at (0, y), neighbor is Left.
-        // Corresponding pos in Left neighbor is (NeighborWidth-1, y).
+        if (neighbor == null)
+        {
+            neighbor = GetOrCreateAdjacentStage(currentStage, dir);
+        }
 
         Vector2Int targetPos = Vector2Int.zero;
-        switch(dir)
+        if (dir == Direction.Left) targetPos = new Vector2Int(neighbor.Width, lateralPos);
+        else if (dir == Direction.Right) targetPos = new Vector2Int(-1, lateralPos);
+        else if (dir == Direction.Up) targetPos = new Vector2Int(lateralPos, -1);
+        else if (dir == Direction.Down) targetPos = new Vector2Int(lateralPos, neighbor.Height);
+
+        // Infinite recursion is prevented by the `Contains` check in BreakWall.
+        BreakWall(neighbor, targetPos, permanent);
+    }
+
+    private bool IsPermanentDestroyedWall(StageSO stage, Vector2Int pos)
+    {
+        return PermanentDestroyedWalls.ContainsKey(stage) && PermanentDestroyedWalls[stage].Contains(pos);
+    }
+
+    private void MarkPermanentDestroyedWall(StageSO stage, Vector2Int pos)
+    {
+        if (!PermanentDestroyedWalls.ContainsKey(stage))
         {
-            case Direction.Left:
-                targetPos = new Vector2Int(neighbor.Width - 1, currentPos.y);
-                break;
-            case Direction.Right:
-                targetPos = new Vector2Int(0, currentPos.y);
-                break;
-            case Direction.Down:
-                targetPos = new Vector2Int(currentPos.x, neighbor.Height - 1);
-                break;
-            case Direction.Up:
-                targetPos = new Vector2Int(currentPos.x, 0);
-                break;
+            PermanentDestroyedWalls[stage] = new HashSet<Vector2Int>();
         }
 
-        // Check if the target cell is actually a wall
-        // We use GetCellTypeAt(neighbor, targetPos) which checks *its* destroyed state too.
-        // But we want to know if it *was* a wall originally or currently.
-        // If it's already Floor (or destroyed), BreakWall will filter it out (if destroyed) or do nothing (if original floor).
-        // Wait, BreakWall blindly adds to destroyed set if not present.
-        // If original is Floor, we shouldn't add to destroyed set?
-        // BreakWallCommand doesn't check if it's wall. It assumes caller checked.
-        // But here we are automating. We should check if it IS a wall before breaking.
+        PermanentDestroyedWalls[stage].Add(pos);
+    }
 
-        // Use GetCellTypeAtLogic to see current state (including destroyed).
-        CellType type = GetCellTypeAtLogic(neighbor, targetPos);
-        if (type == CellType.Wall)
+    private bool IsStage67PatternAreaCell(StageSO stage, Vector2Int pos)
+    {
+        /*
+        if (stage == null || stage.MapPosition != stage67MapPosition) return false;
+
+        int topY = stage.Height - 1 - stage67PatternTopFromTop;
+        int bottomY = topY - (stage67PatternHeight - 1);
+
+        return pos.x >= stage67PatternLeft
+            && pos.x < stage67PatternLeft + stage67PatternWidth
+            && pos.y >= bottomY
+            && pos.y <= topY;
+            */
+            return false;
+    }
+
+    private void EvaluateStage67WallPuzzle(StageSO stage)
+    {
+        /*
+        if (stage == null || stage.MapPosition != stage67MapPosition) return;
+
+        bool matchedA = MatchesStage67Pattern(stage, stage67PatternA);
+        bool matchedB = MatchesStage67Pattern(stage, stage67PatternB);
+
+        if (matchedA)
         {
-             BreakWall(neighbor, targetPos);
+            MarkStage67PatternCompleted(stage, true);
         }
+
+        if (matchedB)
+        {
+            MarkStage67PatternCompleted(stage, false);
+        }
+
+        bool completedA = IsStage67PatternCompleted(stage, true);
+        bool completedB = IsStage67PatternCompleted(stage, false);
+
+        // 1つ目（A/Bどちらでも）を達成したら右端列を解放
+        if (!IsStage67RightmostColumnUnlocked(stage) && (completedA || completedB))
+        {
+            BreakRightmostColumnWallsPermanently(stage);
+        }
+
+        // もう片方も達成したら右側外壁を解放
+        if (!IsStage67RightOuterBoundaryUnlocked(stage) && completedA && completedB)
+        {
+            BreakRightOuterBoundaryPermanently(stage);
+        }
+        */
+    }
+
+    private void MarkStage67PatternCompleted(StageSO stage, bool isPatternA)
+    {
+        /*
+        Vector2Int flagPos = isPatternA ? stage67PatternACompletedFlagPos : stage67PatternBCompletedFlagPos;
+        if (IsPermanentDestroyedWall(stage, flagPos)) return;
+
+        MarkPermanentDestroyedWall(stage, flagPos);
+
+        if (!DestroyedWalls.ContainsKey(stage))
+        {
+            DestroyedWalls[stage] = new HashSet<Vector2Int>();
+        }
+        DestroyedWalls[stage].Add(flagPos);
+        */
+    }
+
+    private bool IsStage67PatternCompleted(StageSO stage, bool isPatternA)
+    {
+        /*
+        Vector2Int flagPos = isPatternA ? stage67PatternACompletedFlagPos : stage67PatternBCompletedFlagPos;
+        return IsPermanentDestroyedWall(stage, flagPos);
+        */
+        return false;
+    }
+
+    private bool IsStage67RightmostColumnUnlocked(StageSO stage)
+    {
+        /*
+        int x = stage.Width - 1;
+        for (int y = 0; y < stage.Height; y++)
+        {
+            Vector2Int pos = new Vector2Int(x, y);
+            if (stage.GetWallAt(x, y) == CellType.Wall && !IsPermanentDestroyedWall(stage, pos))
+            {
+                return false;
+            }
+        }
+*/
+        return true;
+    }
+
+    private bool IsStage67RightOuterBoundaryUnlocked(StageSO stage)
+    {
+        /*
+        int boundaryX = stage.Width;
+        for (int y = 0; y < stage.Height; y++)
+        {
+            if (!IsPermanentDestroyedWall(stage, new Vector2Int(boundaryX, y)))
+            {
+                return false;
+            }
+        }
+*/
+        return true;
+    }
+
+    private bool MatchesStage67Pattern(StageSO stage, bool[,] patternWallMask)
+    {
+        /*
+        if (stage.Width <= stage67PatternLeft + stage67PatternWidth - 1) return false;
+        if (stage.Height <= stage67PatternTopFromTop + stage67PatternHeight - 1) return false;
+
+        int topY = stage.Height - 1 - stage67PatternTopFromTop;
+
+        for (int row = 0; row < stage67PatternHeight; row++)
+        {
+            for (int col = 0; col < stage67PatternWidth; col++)
+            {
+                // パターン配列は「上から下」の順なので、Yは上段から減らして参照する
+                Vector2Int pos = new Vector2Int(stage67PatternLeft + col, topY - row);
+                bool isWall = GetCellTypeAtLogic(stage, pos) == CellType.Wall;
+                if (isWall != patternWallMask[row, col])
+                {
+                    return false;
+                }
+            }
+        }
+*/
+        return true;
+    }
+
+    private void BreakRightmostColumnWallsPermanently(StageSO stage)
+    {
+        int x = stage.Width - 1;
+        bool didBreak = false;
+
+        for (int y = 0; y < stage.Height; y++)
+        {
+            Vector2Int pos = new Vector2Int(x, y);
+            if (GetCellTypeAtLogic(stage, pos) == CellType.Wall)
+            {
+                BreakWall(stage, pos, true);
+                didBreak = true;
+            }
+        }
+
+        if (didBreak)
+        {
+            TriggerStage67SolveFeedback();
+        }
+    }
+
+    private void BreakRightOuterBoundaryPermanently(StageSO stage)
+    {
+        int boundaryX = stage.Width;
+        bool didBreak = false;
+
+        for (int y = 0; y < stage.Height; y++)
+        {
+            Vector2Int pos = new Vector2Int(boundaryX, y);
+            if (GetCellTypeAtLogic(stage, pos) == CellType.Wall)
+            {
+                BreakWall(stage, pos, true);
+                didBreak = true;
+            }
+        }
+
+        if (didBreak)
+        {
+            //TriggerStage67SolveFeedback();
+        }
+    }
+
+    private void TriggerStage67SolveFeedback()
+    {
+        /*
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlaySE(AudioManager.SEType.solve);
+        }
+
+        if (CameraManager.Instance != null)
+        {
+            // パズル解決演出として強めの揺れ
+            CameraManager.Instance.ShakeCamera(0.5f, 12.0f, 30f, new Vector2(1f, 1f));
+        }
+        */
+    }
+
+    private StageSO GetOrCreateAdjacentStage(StageSO currentStage, Direction dir)
+    {
+        StageSO neighbor = currentStage.GetAdjacentStage(dir);
+        if (neighbor != null) return neighbor;
+
+        neighbor = ScriptableObject.CreateInstance<StageSO>();
+        neighbor.name = currentStage.name + "_HiddenWallNeighbor_" + dir.ToString();
+
+        // 16x9 wall fill
+        neighbor.InitializeWallData();
+        for (int x = 0; x < neighbor.Width; x++)
+        {
+            for (int y = 0; y < neighbor.Height; y++)
+            {
+                neighbor.SetWallAt(x, y, true);
+            }
+        }
+
+        // Link them
+        currentStage.SetAdjacentStage(dir, neighbor);
+
+        Direction opp = dir switch {
+            Direction.Up => Direction.Down,
+            Direction.Down => Direction.Up,
+            Direction.Left => Direction.Right,
+            Direction.Right => Direction.Left,
+            _ => Direction.Left
+        };
+        neighbor.SetAdjacentStage(opp, currentStage);
+
+        return neighbor;
     }
 
     public void RestoreWall(StageSO stage, Vector2Int pos)
     {
-        if (destroyedWalls.ContainsKey(stage))
+        if (stage == null || !IsBreakableWallCoordinate(stage, pos))
         {
-            if (destroyedWalls[stage].Remove(pos))
+            return;
+        }
+
+        if (IsPermanentDestroyedWall(stage, pos))
+        {
+            return;
+        }
+
+        if (DestroyedWalls.ContainsKey(stage))
+        {
+            if (DestroyedWalls[stage].Remove(pos))
             {
                 // Reflect if current
                 if (stage == currentStageSO)
@@ -758,40 +1160,38 @@ public class GridManager : MonoBehaviour
                      {
                          // Re-read default
                          cellData[pos.x, pos.y] = stage.GetWallAt(pos.x, pos.y);
-                         gridVisualizer.RefreshTilemap(width, height, cellData, stage, GameProgressManager.Instance.IsPositionCleared);
-                         UpdateWarpTiles();
                      }
+
+                     HashSet<Vector2Int> destroyed = DestroyedWalls.ContainsKey(stage) ? DestroyedWalls[stage] : null;
+                     gridVisualizer.RefreshTilemap(width, height, cellData, stage, destroyed, GameProgressManager.Instance.IsHierarchicalCellCleared);
+                     OnEnemyStateChanged();
                 }
+
+                // --- Recursive Restore for Adjacent Stage (Virtual Walls ONLY) ---
+                if (pos.x == -1 && pos.y >= 0 && pos.y < stage.Height) PropagateRestore(stage, Direction.Left, pos.y);
+                if (pos.x == stage.Width && pos.y >= 0 && pos.y < stage.Height) PropagateRestore(stage, Direction.Right, pos.y);
+                if (pos.y == -1 && pos.x >= 0 && pos.x < stage.Width) PropagateRestore(stage, Direction.Down, pos.x);
+                if (pos.y == stage.Height && pos.x >= 0 && pos.x < stage.Width) PropagateRestore(stage, Direction.Up, pos.x);
             }
         }
     }
 
-    public bool CheckIfStageHasEnemy(StageSO stage)
+    private void PropagateRestore(StageSO currentStage, Direction dir, int lateralPos)
     {
-        // 1. Check active runtime list
-        if (stageEnemiesMap.TryGetValue(stage, out var enemies))
-        {
-             foreach (var enemy in enemies)
-             {
-                 if(enemy != null && !enemy.IsDead) return true;
-             }
-             return false; // Loaded and empty/all dead -> No enemies
-        }
+        StageSO neighbor = currentStage.GetAdjacentStage(dir);
+        if (neighbor == null) return;
 
-        // 2. Check loaded save data (not yet instantiated)
-        if (loadedStageEnemyData.TryGetValue(stage, out var saveDataList))
-        {
-            foreach (var data in saveDataList)
-            {
-                if (!data.isDead) return true;
-            }
-            return false; // All dead in save data
-        }
+        Vector2Int targetPos = Vector2Int.zero;
+        if (dir == Direction.Left) targetPos = new Vector2Int(neighbor.Width, lateralPos);
+        else if (dir == Direction.Right) targetPos = new Vector2Int(-1, lateralPos);
+        else if (dir == Direction.Up) targetPos = new Vector2Int(lateralPos, -1);
+        else if (dir == Direction.Down) targetPos = new Vector2Int(lateralPos, neighbor.Height);
 
-        // 3. Fallback to default SO data (First time visit)
-        return stage.EnemyStartData.Count > 0;
+        RestoreWall(neighbor, targetPos);
     }
+    #endregion
 
+    #region World Map Sync
     public void SyncStageStatus(StageSO stage)
     {
         if (worldMapSO == null || stage == null) return;
@@ -799,57 +1199,89 @@ public class GridManager : MonoBehaviour
         Vector2Int coords = worldMapSO.GetStageCoordinates(stage);
         if (coords.x == -1) return;
 
-        bool hasEnemy = CheckIfStageHasEnemy(stage);
-        bool isCleared = !hasEnemy;
+        bool isCleared = GameProgressManager.Instance.IsStageFullyDefeated(stage);
         bool isCurrent = (stage == currentStageSO);
 
         GameProgressManager.Instance.UpdateStageStatus(coords, isCurrent, isCleared, worldMapSO);
     }
 
-    private void UpdateWarpTiles(bool quiet = false)
+    private bool previousEnemyAliveState = true;
+
+    private void OnEnemyStateChanged(bool quiet = false)
     {
         bool hasAliveEnemy = unitManager.HasAliveEnemy();
 
-        bool currentWarpState = hasAliveEnemy;
-        bool stateChanged = previousWarpState != currentWarpState;
+        bool currentState = hasAliveEnemy;
+        bool stateChanged = previousEnemyAliveState != currentState;
 
         SyncWorldMapStatus();
 
-        gridVisualizer.UpdateWarpTiles(width, height, cellData, hasAliveEnemy, isTransitioning, stateChanged);
-
         if (!quiet && stateChanged)
         {
-            if(!hasAliveEnemy)
-            {
-                if (showWin != null) showWin.Show();
-            }
-            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0.5f, true);
+            gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsHierarchicalCellCleared, 0.5f, true);
         }
 
-        previousWarpState = currentWarpState;
+        previousEnemyAliveState = currentState;
     }
 
-    private void SyncWorldMapStatus()
+    internal void SyncWorldMapStatus()
     {
-        if (worldMapSO == null || currentStageSO == null) return;
+        if (currentStageSO == null) return;
 
-        Vector2Int coords = worldMapSO.GetStageCoordinates(currentStageSO);
-        if (coords.x == -1) return;
+        bool popupShown = false;
 
-        bool isCleared = !unitManager.HasAliveEnemy();
+        GameProgressManager.Instance.SetCurrentMapPosition(currentStageSO.MapPosition);
 
-        bool isNewAreaUnlocked = GameProgressManager.Instance.UpdateStageStatus(coords, true, isCleared, worldMapSO);
+        // 現在のステージに到達した時点で、階層マップのセルをアンロックする
+        // これにより境界遷移（ステージ端からの移動）でも正しくレイヤーが解放される
+        int column = currentStageSO.StairColumn;
+        int depth = currentStageSO.MapPosition.y;
+        GameProgressManager.Instance.UnlockCellByStairDescent(column, depth);
 
-        if (isNewAreaUnlocked) popup.Show();
+        foreach (var stage in stageSOs)
+        {
+            if (stage == null) continue;
+
+            bool isCurrent = (stage == currentStageSO);
+            bool isStageCleared;
+            if (isCurrent)
+            {
+                isStageCleared = GameProgressManager.Instance.IsStageFullyDefeated(stage)
+                              || GameProgressManager.Instance.IsHierarchicalCellCleared(stage.MapPosition);
+            }
+            else
+            {
+                isStageCleared = GameProgressManager.Instance.IsHierarchicalCellCleared(stage.MapPosition);
+            }
+
+            if (worldMapSO != null)
+            {
+                Vector2Int coords = worldMapSO.GetStageCoordinates(stage);
+                if (coords.x != -1)
+                {
+                    bool isNewAreaUnlocked = GameProgressManager.Instance.UpdateStageStatus(coords, isCurrent, isStageCleared, worldMapSO);
+
+                    if (isNewAreaUnlocked && !popupShown)
+                    {
+                        uiManager.ShowPopup();
+                        popupShown = true;
+                    }
+                }
+            }
+
+            if (isStageCleared)
+            {
+                Vector2Int mapPos = stage.MapPosition;
+                if (!GameProgressManager.Instance.IsHierarchicalCellCleared(mapPos))
+                {
+                    GameProgressManager.Instance.MarkHierarchicalCellAsCleared(mapPos);
+                }
+            }
+        }
     }
+    #endregion
 
-    // TurnManagerから直接呼ばれる代わりにイベント経由になったため不要だが、
-    // まだ完全移行できていない部分のために残すか、ラッパーとして残す
-    public void UpdateWarpTilesPublic()
-    {
-        UpdateWarpTiles();
-    }
-
+    #region Player Generation
     private void GeneratePlayer(StageSO stage, Vector2Int pos, Direction dir)
     {
         Vector3 worldPos = GridToWorldPosition(pos);
@@ -866,122 +1298,99 @@ public class GridManager : MonoBehaviour
         unitManager.RegisterPlayer(playerObj);
     }
 
-    private List<Enemy> GenerateEnemies(StageSO stage)
+    private void DeactivateAllCratesExcept(StageSO targetStage)
     {
-        List<EnemyStartData> enemyDataList = stage.EnemyStartData;
-        List<Enemy> generatedEnemies = new List<Enemy>();
-        int count = 0;
-
-        foreach (var enemyData in enemyDataList)
+        foreach (var kvp in StageCratesMap)
         {
-            Vector3 worldPos = GridToWorldPosition(enemyData.Position);
+            if (kvp.Key == targetStage) continue;
 
-            GameObject prefab = getEnemyPrefab(enemyData.EnemyType);
-
-            var enemyScript = InstantiateAndInitializeEnemy(prefab, worldPos, enemyData.Position, enemyData.Direction, enemyData.MaxHP, enemyData.SetActionOrder, enemyData.Ammo);
-            enemyScript.name = $"Enemy_{enemyData.EnemyType}_{count}";
-            count++;
-
-            // Force update direction visuals immediately
-            enemyScript.SetDirection(enemyData.Direction);
-
-            generatedEnemies.Add(enemyScript);
+            foreach (var crate in kvp.Value)
+            {
+                if (crate != null && crate.gameObject.activeSelf)
+                {
+                    crate.gameObject.SetActive(false);
+                }
+            }
         }
-        return generatedEnemies;
     }
 
-    private Enemy InstantiateAndInitializeEnemy(GameObject prefab, Vector3 worldPos, Vector2Int gridPos, Direction dir, int maxHp, int order, int ammo = -1)
+    public void EnsureStageCratesLoaded(StageSO stage)
     {
-        GameObject enemyObj = Instantiate(prefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
-        var enemyScript = enemyObj.GetComponent<Enemy>();
+        if (stage == null || StageCratesInitialized.Contains(stage)) return;
 
-        // Ammo limitation applies only to Ranged Chaser
-        var ai = enemyObj.GetComponent<EnemyAIChaserRanged>();
-        if (ai == null)
+        // This logic is mostly duplicated from GenerateCrates but without the visual deactivation/reactivation logic
+        // which is specific to the current active stage.
+        StageCratesInitialized.Add(stage);
+        if (!StageCratesMap.ContainsKey(stage)) StageCratesMap[stage] = new List<Crate>();
+
+        if (stage.CrateStartPositions != null && crateEnemyPrefab != null)
         {
-            ammo = -1;
+            foreach (var pos in stage.CrateStartPositions)
+            {
+                Vector3 worldPos = GridToWorldPosition(pos);
+                GameObject crateObj = Instantiate(crateEnemyPrefab, worldPos, Quaternion.identity, gridVisualizer.GridParent);
+                Crate crateScript = crateObj.GetComponent<Crate>();
+
+                // Active/Inactive state based on whether this is the current stage
+                // If we are calling this from EnsureStageCratesLoaded, it's likely a non-current stage,
+                // so we should probably keep them disabled initially.
+                crateObj.SetActive(stage == currentStageSO);
+
+                crateScript.Initialize(this, turnManager, commandManager, pos, Direction.Right, 1, 0);
+                StageCratesMap[stage].Add(crateScript);
+            }
         }
-
-        // Note: Initialize内でGridManagerを渡しているが、UnitManagerを使うようにUnit側も修正が必要かもしれない
-        // 一旦はGridManagerのプロキシメソッド(GetUnitAtPositionなど)経由でUnitManagerにアクセスする形になる
-        enemyScript.Initialize(this, turnManager, commandManager, gridPos, dir, maxHp, order, ammo);
-        return enemyScript;
     }
 
-    public Vector2Int CalculateEntryPosition(StageSO nextStage, Direction fromDirection)
+    private void GenerateCrates(StageSO stage)
     {
-        Vector2Int current = unitManager.Player.CurrentPos; // Note: This uses Player pos. We need generic pos.
-        // Wait, the original method uses Player.CurrentPos. This is specific to Player transition!
-        return CalculateEntryPosition(nextStage, fromDirection, unitManager.Player.CurrentPos);
-    }
+        DeactivateAllCratesExcept(stage);
 
-    public Vector2Int CalculateEntryPosition(StageSO nextStage, Direction fromDirection, Vector2Int currentPos)
-    {
-        int targetX = 0;
-        int targetY = 0;
+        // 既存のアクティブなCrate参照をクリア
+        unitManager.CrateObjects.Clear();
+        unitManager.Crates.Clear();
 
-        switch (fromDirection)
+        if (!StageCratesInitialized.Contains(stage))
         {
-            case Direction.Right: // 左端に出る
-                targetX = 0;
-                targetY = Mathf.Clamp(currentPos.y, 0, nextStage.Height - 1);
-                break;
-            case Direction.Left: // 右端に出る
-                targetX = nextStage.Width - 1;
-                targetY = Mathf.Clamp(currentPos.y, 0, nextStage.Height - 1);
-                break;
-            case Direction.Up: // 下端に出る
-                targetX = Mathf.Clamp(currentPos.x, 0, nextStage.Width - 1);
-                targetY = 0;
-                break;
-            case Direction.Down: // 上端に出る
-                targetX = Mathf.Clamp(currentPos.x, 0, nextStage.Width - 1);
-                targetY = nextStage.Height - 1;
-                break;
+            EnsureStageCratesLoaded(stage);
         }
-        return new Vector2Int(targetX, targetY);
-    }
 
-    public bool TryTransition(Direction direction)
-    {
-        StageSO nextStage = currentStageSO.GetAdjacentStage(direction);
-        if (nextStage != null)
+        if (StageCratesMap.TryGetValue(stage, out var existingCrates))
         {
-            ExecuteTransition(nextStage, direction).Forget();
-            return true;
+            // 既に生成済みのCrateがあればそれを復元して再配置
+            foreach (var crate in existingCrates)
+            {
+                if (crate != null)
+                {
+                    crate.gameObject.SetActive(true);
+                    crate.transform.SetParent(gridVisualizer.GridParent); // Ensure correct parent
+                    crate.SetDissolveAmount(0f); // Reset dissolve first
+                    crate.WarpTo(crate.CurrentPos, crate.CurrentDirection); // Ensure correct position is applied
+
+                    if (crate.IsDead)
+                    {
+                        crate.ApplyDeadStateVisual();
+                    }
+
+                    unitManager.AddCrate(crate);
+                }
+            }
         }
-        return false;
     }
+    #endregion
 
-    public async UniTask ExecuteTransition(StageSO stage, Direction direction)
-    {
-        isTransitioning = true;
-        AudioManager.Instance.TriggerStageChangeEffect();
-        TransitionCommand transitionCommand = new TransitionCommand(this, currentStageSO, stage, direction, unitManager.Player.CurrentPos);
-        commandManager.ExecuteCommand(transitionCommand);
-        await SwitchStageAsync(stage, direction);
-        SwitchStage(stage, direction);
-        isTransitioning = false;
-        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
-    }
-
-    public async UniTask PlayTransitionWithoutCommand(StageSO stage, Direction direction, Vector2Int startPos)
-    {
-        isTransitioning = true;
-        AudioManager.Instance.TriggerStageChangeEffect();
-        await SwitchStageAsync(stage, direction);
-        SwitchStageDirect(stage, startPos);
-        isTransitioning = false;
-        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, true);
-    }
-
-    #region utility methods (Proxy to UnitManager / Visualizer)
+    #region Utility Methods (Proxy to UnitManager / Visualizer)
     public bool IsCellWalkable(Vector2Int pos)
     {
-        if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height)
-            return false;
-        CellType cellType = cellData[pos.x, pos.y];
-        return cellType == CellType.Floor || cellType == CellType.Ice || cellType == CellType.DamageFloor || cellType == CellType.Warp || cellType == CellType.SyncMap || cellType == CellType.Tutorial;
+        // 1. Check Walkable (Floor or Broken Wall)
+        // IsWalkableAt handles DestroyedWalls for OOB coordinates
+        if (!IsWalkableAt(currentStageSO, pos)) return false;
+
+        // 2. Check Unit Occupancy
+        // Note: GetUnitAtPosition checks bounds internally and returns null if OOB, so it's safe.
+        if (GetUnitAtPosition(pos) != null) return false;
+
+        return true;
     }
 
     public Unit GetUnitAtPosition(Vector2Int pos)
@@ -998,255 +1407,286 @@ public class GridManager : MonoBehaviour
     {
         return gridVisualizer.WorldToGridPosition(worldPos);
     }
+
+    // ==========================================
+    // Save System Delegation
+    // ==========================================
+    private ISaveSystem saveSystem;
+
+    public void SaveGame(GameProgressManager.SaveType saveType = GameProgressManager.SaveType.Manual) => saveSystem.SaveGame(saveType);
+    public void ContinueGame(GameProgressManager.SaveType saveType) => saveSystem.ContinueGame(saveType);
+    public void ResetAndStartNewGame() => saveSystem.ResetAndStartNewGame();
+
+    public void LoadStageWithCustomStart(StageSO stage, Vector2Int startPos, Direction dir, bool resetEnemy = false)
+        => saveSystem.LoadStageWithCustomStart(stage, startPos, dir, resetEnemy);
+
+    // ==========================================
+    // Stage Enemy System Delegation
+    // ==========================================
+    private IStageEnemySystem stageEnemySystem;
+    internal IStageEnemySystem StageEnemySystem => stageEnemySystem;
+
+    public Enemy GetEnemyAt(StageSO stage, Vector2Int pos) => stageEnemySystem.GetEnemyAt(stage, pos);
+    public void EnsureStageEnemiesLoaded(StageSO stage) => stageEnemySystem.EnsureStageEnemiesLoaded(stage);
+    public bool CheckIfStageHasEnemy(StageSO stage) => stageEnemySystem.CheckIfStageHasEnemy(stage);
+    public StageSO GetStageOfEnemy(Enemy enemy) => stageEnemySystem.GetStageOfEnemy(enemy);
+    public List<Enemy> GetEnemiesOnStage(StageSO stage) => stageEnemySystem.GetEnemiesOnStage(stage);
+
+    public StageSO GetStageOfCrate(Crate crate)
+    {
+        foreach (var pair in StageCratesMap)
+        {
+            if (pair.Value.Contains(crate)) return pair.Key;
+        }
+        return null;
+    }
+
+    internal void ResetAllEnemies()
+    {
+        stageEnemySystem.ResetAllEnemies();
+
+        foreach (var list in StageCratesMap.Values)
+        {
+            foreach (var crate in list)
+            {
+                if (crate != null)
+                {
+                    crate.gameObject.SetActive(false);
+                    Destroy(crate.gameObject);
+                }
+            }
+        }
+        StageCratesMap.Clear();
+        StageCratesInitialized.Clear();
+        unitManager.CrateObjects.Clear();
+        unitManager.Crates.Clear();
+    }
+
+    internal void ApplySavedEnemyData(StageSO stage, List<EnemySaveData> savedEnemies) => stageEnemySystem.ApplySavedEnemyData(stage, savedEnemies);
+    internal void AddPendingEnemy(StageSO stage, Enemy enemy) => stageEnemySystem.AddPendingEnemy(stage, enemy);
+    public int GetMaxEnemyOrderInStage(StageSO stage) => stageEnemySystem.GetMaxEnemyOrderInStage(stage);
+
+
+    // ==========================================
+    // Stage Transition System Delegation
+    // ==========================================
+    private IStageTransitionSystem stageTransitionSystem;
+    internal IStageTransitionSystem StageTransitionSystem => stageTransitionSystem;
+
+    public UniTask SwitchStageAsync(StageSO nextstage, Direction entryDirection) => stageTransitionSystem.SwitchStageAsync(nextstage, entryDirection);
+    public UniTask WarpToStageAsync(StageSO stage, Vector2Int gridPos, Direction dir, System.Action onComplete = null) => stageTransitionSystem.WarpToStageAsync(stage, gridPos, dir, onComplete);
+    public void WarpToStage(StageSO stage, Vector2Int gridPos, Direction dir) => stageTransitionSystem.WarpToStage(stage, gridPos, dir);
+    public void WarpToStage(StageSO stage) => WarpToStage(stage, stage.PlayerStartPosition, stage.PlayerStartDirection);
+    public void WarpToStageAtStairUp(StageSO stage) => stageTransitionSystem.WarpToStageAtStairUp(stage);
+    public UniTask WarpToStageAtStairUpAsync(StageSO stage) => stageTransitionSystem.WarpToStageAtStairUpAsync(stage);
+    public UniTask WarpWithAnimationAsync(StageSO targetStage, Vector2Int targetPos, Direction targetDir, bool restoreHP = false, GridCalculation.WarpDirection? overrideWarpDir = null, System.Collections.Generic.List<Crate> pushedCrates = null, System.Collections.Generic.List<Vector2Int> crateSourcePositions = null, System.Collections.Generic.List<Vector2Int> crateTargetPositions = null) => stageTransitionSystem.WarpWithAnimationAsync(targetStage, targetPos, targetDir, restoreHP, overrideWarpDir, pushedCrates, crateSourcePositions, crateTargetPositions);
+    public void SwitchStage(StageSO nextstage, Direction entryDirection) => stageTransitionSystem.SwitchStage(nextstage, entryDirection);
+    public void SwitchStageDirect(StageSO nextstage, Direction entryDirection) => stageTransitionSystem.SwitchStageDirect(nextstage, entryDirection);
+    public UniTask PlayTransitionWithoutCommand(StageSO nextStage, Direction entryDirection) => stageTransitionSystem.PlayTransitionWithoutCommand(nextStage, entryDirection);
+    public UniTask PlayTransitionWithoutCommand(StageSO nextStage, Direction entryDirection, Vector2Int entryPos) => stageTransitionSystem.PlayTransitionWithoutCommand(nextStage, entryDirection, entryPos);
+    public void PrepareEnemiesForTransition(StageSO nextstage, Vector3 transitionOffset) => stageTransitionSystem.PrepareEnemiesForTransition(nextstage, transitionOffset);
+    public bool CheckAndPerformBoundaryTransition(Unit unit) => stageTransitionSystem.CheckAndPerformBoundaryTransition(unit);
+    public bool CheckAndPerformBoundaryTransition(Unit unit, Vector2Int? overrideTargetPos) => stageTransitionSystem.CheckAndPerformBoundaryTransition(unit, overrideTargetPos);
+    public bool CheckAndPerformEnemyBoundaryTransfer(Enemy enemy) => stageTransitionSystem.CheckAndPerformEnemyBoundaryTransfer(enemy);
+
+    // ==========================================
+    // Stair Traversal System Delegation
+    // ==========================================
+    private IStairTraversalSystem stairTraversalSystem;
+    internal IStairTraversalSystem StairTraversalSystem => stairTraversalSystem;
+
+    // ==========================================
+    // Shop System Delegation
+    // ==========================================
+    private IShopSystem shopSystem;
+    internal IShopSystem ShopSystem => shopSystem;
+
+    public bool IsShopStage(StageSO stage) => shopSystem != null && shopSystem.IsShopStage(stage);
+    public bool IsCurrentStageShop() => shopSystem != null && shopSystem.IsShopStage(currentStageSO);
+
+    public bool TryGetShopItemAt(StageSO stage, Vector2Int pos, out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+        return shopSystem != null && shopSystem.TryGetShopItemAt(stage, pos, out itemId, out price);
+    }
+
+    public bool TryGetCurrentStageShopItemAt(Vector2Int pos, out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+        return shopSystem != null && shopSystem.TryGetShopItemAt(currentStageSO, pos, out itemId, out price);
+    }
+
+    public bool IsShopItemPurchased(StageSO stage, Vector2Int pos)
+        => shopSystem != null && shopSystem.IsShopItemPurchased(stage, pos);
+
+    public bool IsCurrentStageShopItemPurchased(Vector2Int pos)
+        => shopSystem != null && shopSystem.IsShopItemPurchased(currentStageSO, pos);
+
+    public bool CanPurchaseCurrentStageShopItem(Vector2Int pos)
+        => shopSystem != null && shopSystem.CanPurchaseShopItem(currentStageSO, pos);
+
+    public bool TryPurchaseCurrentStageShopItem(Vector2Int pos, out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+
+        bool purchased = shopSystem != null && shopSystem.TryPurchaseShopItem(currentStageSO, pos, out itemId, out price);
+        if (purchased && gridVisualizer != null)
+        {
+            gridVisualizer.SetShopItemPurchasedVisual(currentStageSO, pos, true);
+            shopSystem.OnShopItemPurchased(currentStageSO, pos, itemId, price);
+        }
+
+        return purchased;
+    }
+
+    public bool TryPurchaseShopItemAtPlayerPosition(out int itemId, out int price)
+    {
+        itemId = -1;
+        price = -1;
+
+        if (unitManager == null || unitManager.Player == null) return false;
+        return TryPurchaseCurrentStageShopItem(unitManager.Player.CurrentPos, out itemId, out price);
+    }
+
+    public void ResetShopPurchases(StageSO stage)
+    {
+        if (shopSystem == null) return;
+        shopSystem.ResetShopPurchases(stage);
+    }
+
+    public void ResetAllShopPurchases()
+    {
+        if (shopSystem == null) return;
+        shopSystem.ResetAllShopPurchases();
+    }
+
+    public bool TryGetCurrentShopPromptText(Vector2Int pos, out string promptText)
+    {
+        promptText = string.Empty;
+
+        if (!TryGetCurrentStageShopItemAt(pos, out _, out _))
+        {
+            return false;
+        }
+
+        bool isEnglish = GameSettings.Language == 0;
+        promptText = IsCurrentStageShopItemPurchased(pos)
+            ? (isEnglish ? "SPACE to Read" : "SPACEで読む")
+            : (isEnglish ? "SPACE to Buy" : "SPACEで買う");
+        return true;
+    }
+
+    public bool TryInteractCurrentStageShopItem(Vector2Int pos, out bool purchasedNow, out bool readMode, out int itemId, out int price)
+    {
+        purchasedNow = false;
+        readMode = false;
+        itemId = -1;
+        price = -1;
+
+        if (!TryGetCurrentStageShopItemAt(pos, out itemId, out price))
+        {
+            return false;
+        }
+
+        if (IsCurrentStageShopItemPurchased(pos))
+        {
+            readMode = true;
+            return true;
+        }
+
+        purchasedNow = TryPurchaseCurrentStageShopItem(pos, out itemId, out price);
+        return true;
+    }
+
+    public void ShowShopPromptAt(Vector2Int pos, string message)
+    {
+        if (gridVisualizer == null) return;
+        gridVisualizer.ShowShopPromptAt(GridToWorldPosition(pos), message);
+    }
+
+    public void HideShopPrompt()
+    {
+        if (gridVisualizer == null) return;
+        gridVisualizer.HideShopPrompt();
+    }
+
+    public void ShowShopItemHint(int itemId)
+    {
+        if (uiManager == null) return;
+        uiManager.ShowShopItemHint(itemId);
+    }
+
+    public void HideShopItemHint()
+    {
+        if (uiManager == null) return;
+        uiManager.HideShopItemHint();
+    }
+
+    public void HideShopItemHintImmediate()
+    {
+        if (uiManager == null) return;
+        uiManager.HideShopItemHintImmediate();
+    }
+
+    public void TriggerCurrentShopItemPriceShake(Vector2Int pos)
+    {
+        if (gridVisualizer == null) return;
+        if (currentStageSO == null) return;
+        if (!TryGetCurrentStageShopItemAt(pos, out _, out _)) return;
+        if (IsCurrentStageShopItemPurchased(pos)) return;
+
+        gridVisualizer.PlayShopItemPriceShake(currentStageSO, pos);
+    }
+
+    public void TriggerShopPromptShake()
+    {
+        if (gridVisualizer == null) return;
+        gridVisualizer.PlayShopPromptShake();
+    }
+
     #endregion
 
-    public StageSO GetStageOfEnemy(Enemy enemy)
+    #region Stair Traversal
+    public bool CheckAndShowStairDialog() => stairTraversalSystem.CheckAndShowStairDialog();
+    public (StageSO targetStage, Vector2Int targetPos)? GetEnemyStairDestination(Enemy enemy, Vector2Int stairPos, Direction approachDirection) => stairTraversalSystem.GetEnemyStairDestination(enemy, stairPos, approachDirection);
+    public UniTask MoveEnemyToStage(Enemy enemy, StageSO targetStage, Vector2Int targetPos, Direction direction) => stairTraversalSystem.MoveEnemyToStage(enemy, targetStage, targetPos, direction);
+
+    public async UniTask MoveCrateThroughStairAsync(Crate crate)
     {
-        // Search all
-        foreach (var pair in stageEnemiesMap)
+        var transition = stairTraversalSystem.GetCrateStairDestination(crate, crate.CurrentPos, crate.CurrentDirection);
+        if (transition != null)
         {
-            if (pair.Value.Contains(enemy)) return pair.Key;
-        }
-        return null;
-    }
-
-    public List<Enemy> GetEnemiesOnStage(StageSO stage)
-    {
-        if (stageEnemiesMap.TryGetValue(stage, out var list))
-        {
-            return list;
-        }
-        return null;
-    }
-
-    #region Save
-    public void SaveGame(GameProgressManager.SaveType saveType = GameProgressManager.SaveType.Manual)
-    {
-        if (unitManager.Player == null) return;
-
-        // 全ステージの敵情報を収集
-        List<StageEnemyData> allStagesEnemies = new List<StageEnemyData>();
-
-        // 1. まずloadedStageEnemyData（未訪問だがロード済みのデータ）をそのまま追加
-        foreach (var kvp in loadedStageEnemyData)
-        {
-            Vector2Int coords = worldMapSO.GetStageCoordinates(kvp.Key);
-            if (coords.x != -1)
+            BeginTransition();
+            try
             {
-                allStagesEnemies.Add(new StageEnemyData { stageX = coords.x, stageY = coords.y, enemies = kvp.Value });
+                if (GameSettings.GameSpeed == 0) await UniTask.Delay(150);
+                await stairTraversalSystem.MoveCrateToStage(crate, transition.Value.targetStage, transition.Value.targetPos, crate.CurrentDirection);
             }
-        }
-
-        // 2. 次にstageEnemiesMap（訪問済み・実体化済み）を追加。重複がある場合はこちらを優先（上書き）
-        foreach (var kvp in stageEnemiesMap)
-        {
-            StageSO stage = kvp.Key;
-            List<Enemy> enemies = kvp.Value;
-
-            // 現在のステージの場合は、UnitManagerの最新リストを使う必要があるかもしれないが、
-            // UnitManager.Enemiesの実体はstageEnemiesMap[currentStage]と同じ参照リストのはず。
-            // 念のためcurrentStageの場合はUnitManagerから取得するか、参照が同じならそのまま使う。
-            // Debug確認: stageEnemiesMap[current] == unitManager.Enemies は true になる設計。
-
-            Vector2Int coords = worldMapSO.GetStageCoordinates(stage);
-            if (coords.x == -1) continue;
-
-            // 既存リストから削除（もしloadedにあれば）
-            allStagesEnemies.RemoveAll(d => d.stageX == coords.x && d.stageY == coords.y);
-
-            // データ作成
-            List<EnemySaveData> enemyDataList = new List<EnemySaveData>();
-            for (int i = 0; i < enemies.Count; i++)
+            finally
             {
-                var enemy = enemies[i];
-                enemyDataList.Add(new EnemySaveData
-                {
-                    index = i,
-                    gridX = enemy.CurrentPos.x,
-                    gridY = enemy.CurrentPos.y,
-                    direction = (int)enemy.CurrentDirection,
-                    isDead = enemy.IsDead,
-                    currentHP = enemy.HP.Value,
-                    aiState = enemy.GetAIState(),
-                    enemyType = (int)enemy.Type,
-                    order = enemy.Order,
-                    maxHP = enemy.MaxHP,
-                    ammo = enemy.CurrentAmmo.Value
-                });
-            }
-
-            allStagesEnemies.Add(new StageEnemyData { stageX = coords.x, stageY = coords.y, enemies = enemyDataList });
-        }
-
-        // 5. 全ステージの破壊された壁情報
-        List<StageWallData> allStagesWalls = new List<StageWallData>();
-        foreach (var kvp in destroyedWalls)
-        {
-            Vector2Int coords = worldMapSO.GetStageCoordinates(kvp.Key);
-            if (coords.x != -1)
-            {
-                List<Vector2IntData> walls = new List<Vector2IntData>();
-                foreach (var wallPos in kvp.Value)
-                {
-                    walls.Add(new Vector2IntData(wallPos));
-                }
-                allStagesWalls.Add(new StageWallData { stageX = coords.x, stageY = coords.y, destroyedWalls = walls });
-            }
-        }
-        Debug.Log($"[GridManager] Saving: Captured {allStagesWalls.Count} stages with destroyed walls.");
-
-        GameProgressManager.Instance.SaveProgress(
-            unitManager.Player.CurrentPos,
-            unitManager.Player.CurrentDirection,
-            unitManager.EnemyObjects.Count > 0 ? unitManager.Enemies : new List<Enemy>(), // Currently active enemies? unitManager.Enemies is correct
-            currentResetMapPos,
-            unitManager.Player.HP.Value,
-            allStagesEnemies,
-            allStagesWalls,
-            saveType
-        );
-
-        saveFeedback.PlayFeedback();
-    }
-
-    public void ContinueGame(GameProgressManager.SaveType saveType)
-    {
-        GameProgressManager.Instance.LoadProgress(saveType);
-
-        if (GameProgressManager.Instance.HasLoadedData)
-        {
-            // --- Restore Destroyed Walls ---
-            destroyedWalls.Clear();
-            if (GameProgressManager.Instance.SavedAllStagesWalls != null)
-            {
-                foreach (var wallData in GameProgressManager.Instance.SavedAllStagesWalls)
-                {
-                    StageSO stage = worldMapSO.GetStageAt(wallData.stageX, wallData.stageY);
-                    if (stage != null)
-                    {
-                        HashSet<Vector2Int> walls = new HashSet<Vector2Int>();
-                        foreach (var w in wallData.destroyedWalls) walls.Add(w.ToVector2Int());
-                        destroyedWalls[stage] = walls;
-                    }
-                }
-            }
-            Debug.Log($"[GridManager] Loaded: Restored walls for {destroyedWalls.Count} stages.");
-
-            // Restore enemies for non-current stages (deferred loading)
-            loadedStageEnemyData.Clear();
-            if (GameProgressManager.Instance.SavedAllStagesEnemies != null)
-            {
-                foreach (var stageData in GameProgressManager.Instance.SavedAllStagesEnemies)
-                {
-                    StageSO stage = worldMapSO.GetStageAt(stageData.stageX, stageData.stageY);
-                    if (stage != null)
-                    {
-                        loadedStageEnemyData[stage] = stageData.enemies;
-                    }
-                }
-            }
-
-            // Load Initial Stage (Current Stage) based on saved map pos
-            Vector2Int mapPos = GameProgressManager.Instance.GetCurrentMapPosition();
-            StageSO savedStage = worldMapSO.GetStageAt(mapPos.x, mapPos.y);
-
-            if (savedStage != null)
-            {
-                currentStageSO = savedStage;
-                currentResetMapPos = GameProgressManager.Instance.SavedResetMapPos;
-
-                Vector2Int startPos = GameProgressManager.Instance.SavedPlayerGridPos;
-                Direction startDir = GameProgressManager.Instance.SavedPlayerDirection;
-                int playerHP = GameProgressManager.Instance.SavedPlayerHP;
-
-                // Load Stage (This will spawn player and enemies)
-                LoadStage(currentStageSO, false, startPos, startDir);
-
-                // direction is already set by LoadStage -> GeneratePlayer/WarpToNewStage using startDir
-                // unitManager.Player.SetDirection(startDir); // Redundant now but harmless
-                unitManager.Player.SetHP(playerHP);
-
-                commandManager.Warped(); // Clear undo stack
-            }
-            else
-            {
-                 // Fallback if saved stage not found
-                 ResetAndStartNewGame();
-            }
-        }
-        else
-        {
-            ResetAndStartNewGame();
-            if (worldMapPresenter != null)
-            {
-                worldMapPresenter.OpenMap(true);
+                EndTransition();
             }
         }
     }
+    public bool IsPositionOccupiedInStage(StageSO stage, Vector2Int pos) => stairTraversalSystem.IsPositionOccupiedInStage(stage, pos);
 
-    private void ResetAndStartNewGame()
+    public async UniTask MoveCrateThroughBoundaryAsync(Crate crate, StageSO sourceStage, StageSO targetStage, Vector2Int targetPos, Direction direction)
     {
-        // New Game
-        currentResetMapPos = worldMapSO.GetStageCoordinates(stageSOs[0]);
-        initialStageSO = stageSOs[0];
-        currentStageSO = initialStageSO;
-        LoadStage(initialStageSO, true, currentStageSO.PlayerStartPosition);
+        if (crate == null || targetStage == null) return;
+        BeginTransition();
+        try
+        {
+            if (GameSettings.GameSpeed == 0) await UniTask.Delay(100);
+            await stairTraversalSystem.MoveCrateThroughBoundary(crate, sourceStage, targetStage, targetPos, direction);
+        }
+        finally
+        {
+            EndTransition();
+        }
     }
 
-    private void LoadStageWithCustomStart(StageSO stage, Vector2Int startPos, Direction startDir, int playerHP)
-    {
-        gridVisualizer.ClearAllTiles();
-
-        unitManager.SetAllEnemiesActive(false);
-
-        width = stage.Width;
-        height = stage.Height;
-
-        if (unitManager.PlayerObject == null)
-        {
-            GeneratePlayer(stage, startPos, startDir);
-        }
-        else
-        {
-            unitManager.Player.WarpToNewStage(startPos, startDir);
-        }
-        unitManager.Player.SetHP(playerHP);
-        PrepareEnemiesForStage(stage);
-
-        GenerateTilemap(stage);
-
-        turnManager.Initialize();
-        turnManager.Initialize();
-        SyncWorldMapStatus();
-        gridVisualizer.UpdateSyncMapVisuals(GameProgressManager.Instance.IsPositionCleared, 0f, false, !isTransitioning);
-    }
-
-    private void ApplySavedEnemyData(List<EnemySaveData> savedList)
-    {
-        List<Enemy> enemies = unitManager.Enemies;
-        if (savedList == null || savedList.Count != enemies.Count)
-        {
-            return;
-        }
-
-        for (int i = 0; i < enemies.Count; i++)
-        {
-            Enemy enemy = enemies[i];
-            EnemySaveData data = savedList[i];
-
-            if (data.isDead)
-            {
-                enemy.ForceKillSilent();
-                //Debug.Log("Enemy is dead");
-            }
-            else
-            {
-                enemy.ReviveSilent();
-                enemy.WarpTo(new Vector2Int(data.gridX, data.gridY), (Direction)data.direction);
-                enemy.SetHP(data.currentHP);
-                //Debug.Log("Enemy is revived");
-            }
-        }
-    }
     #endregion
 }

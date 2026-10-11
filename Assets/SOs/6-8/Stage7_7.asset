@@ -1,0 +1,99 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2444d66c4f1bdcc46b77fc30f741dd82, type: 3}
+  m_Name: Stage7_7
+  m_EditorClassIdentifier: 
+  width: 12
+  height: 8
+  mapPosition: {x: 7, y: 7}
+  cellData: 010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000009000000010000000100000001000000010000000100000001000000010000000800000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+  syncMapOffset: {x: 3, y: 1}
+  playerStartPosition: {x: 2, y: 2}
+  playerStartDirection: 0
+  enemyStartData:
+  - Position: {x: 5, y: 3}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 1
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 6, y: 3}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 2
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 7, y: 3}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 3
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 5, y: 2}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 4
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 6, y: 2}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 5
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 7, y: 2}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 6
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 5, y: 1}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 7
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 6, y: 1}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 8
+    Ammo: 3
+    DropsCoin: 1
+  - Position: {x: 7, y: 1}
+    Direction: 0
+    EnemyType: 8
+    MaxHP: 2
+    SetActionOrder: 9
+    Ammo: 3
+    DropsCoin: 1
+  crateStartPositions: []
+  shopItemPositions: []
+  shopItemIds: 
+  tutorialIndexData: []
+  upStage: {fileID: 11400000, guid: 4596aab47838764429e35fe69039eb81, type: 2}
+  downStage: {fileID: 0}
+  rightStage: {fileID: 11400000, guid: 475513f202c5271409ccb9d72a4c2cf8, type: 2}
+  leftStage: {fileID: 11400000, guid: d76361e61032efd448a768400252d0e9, type: 2}
+  defaultUpStage: {fileID: 11400000, guid: 32bd5e534e649454b92e8c3c9e4ea196, type: 2}
+  defaultDownStage: {fileID: 11400000, guid: 74b8211ca06676948a989b52e2fb5db1, type: 2}
+  stairConnections: []
+  isExitStage: 0
+  PlayerMaxHP: 2
+  PlayerStartOrder: 0
